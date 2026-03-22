@@ -81,8 +81,8 @@ create_config_example() {
     if [[ ! -f "$CONFIG_EXAMPLE_FILE" ]]; then
         log "Creating config.ini.example..."
         cat > "$CONFIG_EXAMPLE_FILE" <<'EOF'
-MYNODE="67040"
-DVSWITCH_NODE="1957"
+MYNODE="CHANGE TO YOUR NODE"
+DVSWITCH_NODE="CHANGE TO YOUR DVSWITCH NODE"
 BM_SelfcarePassword="CHANGE_ME"
 TGIF_HotspotSecurityKey="CHANGE_ME"
 EOF
@@ -98,8 +98,8 @@ create_config_if_missing() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
         log "config.ini not found. Creating starter config.ini..."
         cat > "$CONFIG_FILE" <<'EOF'
-MYNODE="67040"
-DVSWITCH_NODE="1957"
+MYNODE="CHANGE TO YOUR NODE"
+DVSWITCH_NODE="CHANGE TO YOUR DVSWITCH NODE"
 BM_SelfcarePassword="CHANGE_ME"
 TGIF_HotspotSecurityKey="CHANGE_ME"
 EOF
@@ -114,19 +114,8 @@ EOF
 
 create_favorites_if_missing() {
     if [[ ! -f "$FAVORITES_FILE" ]]; then
-        log "Creating shared favorites file..."
-        cat > "$FAVORITES_FILE" <<'EOF'
-9990|Parrot|TGIF Parrot|TGIF
-9050|East Coast Reflector|East Coast TGIF|TGIF
-23510|CQ-UK World Wide|CQ-World Wide TGIF|TGIF
-311630|AA9JR Repeater Link|Morning Net|TGIF
-19570|KC3KMV|TGIF Network|TGIF
-3220008|KC3KMV|Brandmeister|BM
-68064|KD4HNZ|Allstar Node 68064|ASL
-parrot.ysfreflector.de:42020|Fusion|Parrot For Fusion|YSF
-686590|KD4HZN|Doug Mac Jr. New Allstar Node|ASL
-3147762|KF4JOZ|Outlaw Mike Larry|BM
-EOF
+        log "Creating empty shared favorites file..."
+        : > "$FAVORITES_FILE"
     else
         log "favorites.txt already exists."
     fi
@@ -344,12 +333,13 @@ show_summary() {
     echo "- Dashboard and Status are the same main screen."
     echo "- Favorites uses one shared file: data/favorites.txt"
     echo "- AllTune2 uses its own config.ini in the app root."
-    echo "- The installer now creates and validates the Asterisk sudoers rule."
+    echo "- The installer creates an empty favorites file if missing."
+    echo "- The installer creates and validates the Asterisk sudoers rule."
     echo
 
     echo "Next steps:"
     echo "1. Edit $CONFIG_FILE and set real values."
-    echo "2. Open /alltune2/public/ in the browser."
+    echo "2. Open http://YOUR-IP/alltune2/public/index.php in the browser."
     echo "3. Test BM, TGIF, YSF, AllStar, disconnects, and DVSwitch auto-load."
     echo
 }
