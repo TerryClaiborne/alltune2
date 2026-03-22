@@ -52,6 +52,7 @@ check_runtime_tools() {
     command -v php >/dev/null 2>&1 || fail "php is not installed or not in PATH."
     command -v sudo >/dev/null 2>&1 || warn "sudo not found in PATH."
     command -v apache2ctl >/dev/null 2>&1 || warn "apache2ctl not found in PATH."
+    command -v visudo >/dev/null 2>&1 || fail "visudo is not installed or not in PATH."
 }
 
 check_web_user() {
@@ -72,6 +73,8 @@ make_dirs() {
     mkdir -p "$API_DIR"
     mkdir -p "$APP_CODE_DIR"
     mkdir -p "$DATA_DIR"
+    mkdir -p "$APP_DIR/docs"
+    mkdir -p "$APP_DIR/logs"
 }
 
 create_config_example() {
@@ -163,6 +166,28 @@ set_permissions() {
     if [[ -f "$APP_DIR/setup_alltune2.sh" ]]; then
         chown root:root "$APP_DIR/setup_alltune2.sh"
         chmod 0755 "$APP_DIR/setup_alltune2.sh"
+    fi
+}
+
+create_or_update_sudoers_file() {
+    log "Ensuring Asterisk sudoers file exists..."
+
+    if [[ ! -x "$ASTERISK_BIN" ]]; then
+        warn "Asterisk binary not found at $ASTERISK_BIN"
+        warn "Skipping sudoers creation because the target command does not exist."
+        return
+    fi
+
+    cat > "$SUDOERS_FILE" <<EOF
+$EXPECTED_SUDOERS_RULE
+EOF
+
+    chmod 0440 "$SUDOERS_FILE"
+
+    if visudo -cf "$SUDOERS_FILE" >/dev/null; then
+        log "Sudoers file created and validated: $SUDOERS_FILE"
+    else
+        fail "visudo validation failed for $SUDOERS_FILE"
     fi
 }
 
@@ -277,18 +302,16 @@ check_sudoers_requirement() {
 
     if [[ -f "$SUDOERS_FILE" ]]; then
         if grep -qF "$EXPECTED_SUDOERS_RULE" "$SUDOERS_FILE"; then
-            log "Sudoers file looks present: $SUDOERS_FILE"
+            if visudo -cf "$SUDOERS_FILE" >/dev/null; then
+                log "Sudoers file looks present and valid: $SUDOERS_FILE"
+            else
+                fail "Sudoers file exists but failed validation: $SUDOERS_FILE"
+            fi
         else
-            warn "Sudoers file exists but does not contain the expected rule."
-            warn "Expected:"
-            warn "  $EXPECTED_SUDOERS_RULE"
+            fail "Sudoers file exists but does not contain the expected rule."
         fi
     else
-        warn "Missing sudoers file: $SUDOERS_FILE"
-        warn "Create it with this exact line:"
-        warn "  $EXPECTED_SUDOERS_RULE"
-        warn "Then validate it with:"
-        warn "  visudo -cf $SUDOERS_FILE"
+        fail "Missing sudoers file after attempted creation: $SUDOERS_FILE"
     fi
 }
 
@@ -321,13 +344,13 @@ show_summary() {
     echo "- Dashboard and Status are the same main screen."
     echo "- Favorites uses one shared file: data/favorites.txt"
     echo "- AllTune2 uses its own config.ini in the app root."
+    echo "- The installer now creates and validates the Asterisk sudoers rule."
     echo
 
     echo "Next steps:"
     echo "1. Edit $CONFIG_FILE and set real values."
-    echo "2. Confirm $SUDOERS_FILE exists and is valid."
-    echo "3. Open /alltune2/public/ in the browser."
-    echo "4. Test BM, TGIF, YSF, AllStar, disconnects, and DVSwitch auto-load."
+    echo "2. Open /alltune2/public/ in the browser."
+    echo "3. Test BM, TGIF, YSF, AllStar, disconnects, and DVSwitch auto-load."
     echo
 }
 
@@ -341,6 +364,7 @@ main() {
     create_config_if_missing
     create_favorites_if_missing
     set_permissions
+    create_or_update_sudoers_file
     check_required_files
     check_optional_action_files
     check_php_syntax
