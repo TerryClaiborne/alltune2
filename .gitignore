@@ -1,0 +1,24 @@
+# Local runtime config
+config.ini
+
+# Runtime data
+data/favorites.txt
+
+# OS / editor noise
+.DS_Store
+Thumbs.db
+*~
+*.swp
+*.swo
+
+# Logs / temp
+*.log
+tmp/
+temp/
+.cache/
+
+# Backup files
+*.bak
+*.old
+*.orig
+*.save

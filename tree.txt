@@ -1,0 +1,29 @@
+/var/www/html/alltune2
++-- README.md
++-- api
+¦   +-- connect.php
+¦   +-- status.php
++-- app
+¦   +-- Actions
+¦   ¦   +-- AllStarAction.php
+¦   ¦   +-- BrandMeisterAction.php
+¦   ¦   +-- TGIFAction.php
+¦   ¦   +-- YSFAction.php
+¦   +-- State
+¦   ¦   +-- StatusMapper.php
+¦   +-- Support
+¦       +-- Config.php
++-- config.ini
++-- config.ini.example
++-- data
+¦   +-- favorites.txt
++-- public
+¦   +-- assets
+¦   ¦   +-- css
+¦   ¦   ¦   +-- style.css
+¦   ¦   +-- js
+¦   ¦       +-- app.js
+¦   +-- favorites.php
+¦   +-- index.php
++-- setup_alltune2.sh
++-- tree.txt
