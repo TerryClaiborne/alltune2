@@ -56,10 +56,15 @@ function asterisk_ilink_disconnect(string $node, string $remoteNode): string
     return asterisk_rpt_cmd($node, "ilink 1 {$remoteNode}");
 }
 
+function asterisk_ilink_connect(string $node, string $remoteNode, string $linkMode): string
+{
+    $ilink = $linkMode === 'local_monitor' ? '8' : '3';
+    return asterisk_rpt_cmd($node, "ilink {$ilink} {$remoteNode}");
+}
+
 function load_dvswitch_link(string $myNode, string $dvSwitchNode, string $autoloadMode): string
 {
-    $ilink = $autoloadMode === 'local_monitor' ? '8' : '3';
-    return asterisk_rpt_cmd($myNode, "ilink {$ilink} {$dvSwitchNode}");
+    return asterisk_ilink_connect($myNode, $dvSwitchNode, $autoloadMode);
 }
 
 function dvswitch_tune(string $value): string
@@ -193,7 +198,7 @@ if ($action === 'connect') {
             pause_seconds(0.5);
         }
 
-        asterisk_rpt_fun($myNode, '*3' . $digitsOnlyTarget);
+        asterisk_ilink_connect($myNode, $digitsOnlyTarget, $autoloadDvSwitchMode);
 
         $_SESSION['last_mode'] = 'ASL';
         $_SESSION['last_target'] = $digitsOnlyTarget;

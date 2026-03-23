@@ -10,6 +10,8 @@ JS_DIR="$ASSETS_DIR/js"
 API_DIR="$APP_DIR/api"
 APP_CODE_DIR="$APP_DIR/app"
 DATA_DIR="$APP_DIR/data"
+DOCS_DIR="$APP_DIR/docs"
+LOGS_DIR="$APP_DIR/logs"
 
 CONFIG_FILE="$APP_DIR/config.ini"
 CONFIG_EXAMPLE_FILE="$APP_DIR/config.ini.example"
@@ -52,6 +54,7 @@ check_runtime_tools() {
     command -v php >/dev/null 2>&1 || fail "php is not installed or not in PATH."
     command -v sudo >/dev/null 2>&1 || warn "sudo not found in PATH."
     command -v apache2ctl >/dev/null 2>&1 || warn "apache2ctl not found in PATH."
+    command -v visudo >/dev/null 2>&1 || fail "visudo is not installed or not in PATH."
 }
 
 check_web_user() {
@@ -72,14 +75,16 @@ make_dirs() {
     mkdir -p "$API_DIR"
     mkdir -p "$APP_CODE_DIR"
     mkdir -p "$DATA_DIR"
+    mkdir -p "$DOCS_DIR"
+    mkdir -p "$LOGS_DIR"
 }
 
 create_config_example() {
     if [[ ! -f "$CONFIG_EXAMPLE_FILE" ]]; then
         log "Creating config.ini.example..."
         cat > "$CONFIG_EXAMPLE_FILE" <<'EOF'
-MYNODE="67040"
-DVSWITCH_NODE="1957"
+MYNODE="YOUR NODE"
+DVSWITCH_NODE="YOUR DVSWITCH NODE"
 BM_SelfcarePassword="CHANGE_ME"
 TGIF_HotspotSecurityKey="CHANGE_ME"
 EOF
@@ -95,8 +100,8 @@ create_config_if_missing() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
         log "config.ini not found. Creating starter config.ini..."
         cat > "$CONFIG_FILE" <<'EOF'
-MYNODE="67040"
-DVSWITCH_NODE="1957"
+MYNODE="YOUR NODE"
+DVSWITCH_NODE="YOUR DVSWITCH NODE"
 BM_SelfcarePassword="CHANGE_ME"
 TGIF_HotspotSecurityKey="CHANGE_ME"
 EOF
@@ -117,12 +122,10 @@ create_favorites_if_missing() {
 9050|East Coast Reflector|East Coast TGIF|TGIF
 23510|CQ-UK World Wide|CQ-World Wide TGIF|TGIF
 311630|AA9JR Repeater Link|Morning Net|TGIF
-19570|KC3KMV|TGIF Network|TGIF
-3220008|KC3KMV|Brandmeister|BM
-68064|KD4HNZ|Allstar Node 68064|ASL
+19570|Example TGIF|Example Favorite|TGIF
+3220008|Example BM|Example Favorite|BM
+68064|Example AllStar|Example AllStar Node|ASL
 parrot.ysfreflector.de:42020|Fusion|Parrot For Fusion|YSF
-686590|KD4HZN|Doug Mac Jr. New Allstar Node|ASL
-3147762|KF4JOZ|Outlaw Mike Larry|BM
 EOF
     else
         log "favorites.txt already exists."
@@ -163,6 +166,26 @@ set_permissions() {
     if [[ -f "$APP_DIR/setup_alltune2.sh" ]]; then
         chown root:root "$APP_DIR/setup_alltune2.sh"
         chmod 0755 "$APP_DIR/setup_alltune2.sh"
+    fi
+}
+
+create_or_update_sudoers_file() {
+    log "Ensuring Asterisk sudoers file exists..."
+
+    if [[ ! -x "$ASTERISK_BIN" ]]; then
+        fail "Asterisk binary not found at $ASTERISK_BIN"
+    fi
+
+    cat > "$SUDOERS_FILE" <<EOF
+$EXPECTED_SUDOERS_RULE
+EOF
+
+    chmod 0440 "$SUDOERS_FILE"
+
+    if visudo -cf "$SUDOERS_FILE" >/dev/null; then
+        log "Sudoers file created and validated: $SUDOERS_FILE"
+    else
+        fail "visudo validation failed for $SUDOERS_FILE"
     fi
 }
 
@@ -277,18 +300,16 @@ check_sudoers_requirement() {
 
     if [[ -f "$SUDOERS_FILE" ]]; then
         if grep -qF "$EXPECTED_SUDOERS_RULE" "$SUDOERS_FILE"; then
-            log "Sudoers file looks present: $SUDOERS_FILE"
+            if visudo -cf "$SUDOERS_FILE" >/dev/null; then
+                log "Sudoers file looks present and valid: $SUDOERS_FILE"
+            else
+                fail "Sudoers file exists but failed validation: $SUDOERS_FILE"
+            fi
         else
-            warn "Sudoers file exists but does not contain the expected rule."
-            warn "Expected:"
-            warn "  $EXPECTED_SUDOERS_RULE"
+            fail "Sudoers file exists but does not contain the expected rule."
         fi
     else
-        warn "Missing sudoers file: $SUDOERS_FILE"
-        warn "Create it with this exact line:"
-        warn "  $EXPECTED_SUDOERS_RULE"
-        warn "Then validate it with:"
-        warn "  visudo -cf $SUDOERS_FILE"
+        fail "Missing sudoers file after attempted creation: $SUDOERS_FILE"
     fi
 }
 
@@ -341,6 +362,7 @@ main() {
     create_config_if_missing
     create_favorites_if_missing
     set_permissions
+    create_or_update_sudoers_file
     check_required_files
     check_optional_action_files
     check_php_syntax
