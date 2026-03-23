@@ -1,10 +1,10 @@
 # AllTune2
 
-© Terry Claiborne - KC3KMV - kc3kmv@yahoo.com
+Â© Terry Claiborne - KC3KMV - kc3kmv@yahoo.com
 
 AllTune2 is a web-based control and status dashboard for radio network switching and favorites management on AllStarLink 3 / Debian Bookworm.
 
-It is designed to provide a cleaner, safer control flow for BrandMeister, TGIF, YSF, and AllStar, while keeping the original working AllTune install untouched in `/var/www/html/alltune`.
+It is designed to provide a cleaner, safer control flow for BrandMeister, TGIF, YSF, and AllStar.
 
 ## Important
 
@@ -37,17 +37,17 @@ It is designed to provide a cleaner, safer control flow for BrandMeister, TGIF, 
 
 ## Project structure
 
-- `public/index.php` — main dashboard
-- `public/favorites.php` — favorites manager
-- `api/connect.php` — connect/disconnect actions
-- `api/status.php` — status endpoint
-- `app/` — application classes and support code
-- `public/assets/js/app.js` — frontend logic
-- `public/assets/css/style.css` — frontend styling
-- `data/favorites.txt` — shared favorites file
-- `config.ini` — local app configuration file
-- `config.ini.example` — starter config example
-- `setup_alltune2.sh` — install/setup script
+- `public/index.php` â€” main dashboard
+- `public/favorites.php` â€” favorites manager
+- `api/connect.php` â€” connect/disconnect actions
+- `api/status.php` â€” status endpoint
+- `app/` â€” application classes and support code
+- `public/assets/js/app.js` â€” frontend logic
+- `public/assets/css/style.css` â€” frontend styling
+- `data/favorites.txt` â€” shared favorites file
+- `config.ini` â€” local app configuration file
+- `config.ini.example` â€” starter config example
+- `setup_alltune2.sh` â€” install/setup script
 
 ## Requirements
 
