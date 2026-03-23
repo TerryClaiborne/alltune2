@@ -1,6 +1,6 @@
 # AllTune2
 
-© Terry Claiborne - KC3KMV - kc3kmv@yahoo.com
+Â© Terry Claiborne - KC3KMV - kc3kmv@yahoo.com
 
 A web-based control and status dashboard for radio network switching and favorites management.
 
@@ -8,7 +8,7 @@ A web-based control and status dashboard for radio network switching and favorit
 
 **AllTune2 will not work correctly until you edit `/var/www/html/alltune2/config.ini` and enter your real settings.**
 
-**The installer may create a starter `config.ini` with placeholder values. You must change them before using AllTune2.**
+**The installer will create a starter `config.ini` with placeholder values. You must change them before using AllTune2.**
 
 ## Features
 
@@ -24,14 +24,14 @@ A web-based control and status dashboard for radio network switching and favorit
 
 ## Project Structure
 
-- `public/index.php` — main dashboard
-- `public/favorites.php` — favorites manager
-- `api/connect.php` — connect/disconnect actions
-- `api/status.php` — status endpoint
-- `app/` — application classes and support code
-- `data/favorites.txt` — shared favorites file
-- `config.ini` — local app configuration file
-- `setup_alltune2.sh` — install/setup script
+- `public/index.php` â€” main dashboard
+- `public/favorites.php` â€” favorites manager
+- `api/connect.php` â€” connect/disconnect actions
+- `api/status.php` â€” status endpoint
+- `app/` â€” application classes and support code
+- `data/favorites.txt` â€” shared favorites file
+- `config.ini` â€” local app configuration file
+- `setup_alltune2.sh` â€” install/setup script
 
 ## Requirements
 
