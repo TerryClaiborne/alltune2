@@ -1,0 +1,306 @@
+<?php
+declare(strict_types=1);
+
+session_start();
+
+require_once dirname(__DIR__) . '/app/Support/Config.php';
+
+use App\Support\Config;
+
+$config = new Config(dirname(__DIR__) . '/config.ini');
+
+function e(mixed $value): string
+{
+    return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
+}
+
+$appName = 'AllTune2';
+
+$dvswitchNode = trim((string) $config->get('DVSWITCH_NODE', ''));
+$myNode = trim((string) $config->get('MYNODE', ''));
+
+$autoloadDvSwitch = isset($_SESSION['autoload_dvswitch'])
+    ? (bool) $_SESSION['autoload_dvswitch']
+    : true;
+
+$autoloadDvSwitchMode = strtolower(trim((string) ($_SESSION['autoload_dvswitch_mode'] ?? 'transceive')));
+if ($autoloadDvSwitchMode !== 'local_monitor') {
+    $autoloadDvSwitchMode = 'transceive';
+}
+
+$selectedMode = strtoupper((string) ($_SESSION['selected_mode'] ?? 'BM'));
+$targetValue = (string) ($_SESSION['pending_target'] ?? $_SESSION['last_target'] ?? '');
+$lastStatus = (string) ($_SESSION['last_status'] ?? 'IDLE - NO CONNECTIONS');
+$lastMode = strtoupper((string) ($_SESSION['last_mode'] ?? ''));
+$lastTarget = (string) ($_SESSION['last_target'] ?? '');
+$pendingTarget = (string) ($_SESSION['pending_target'] ?? $_SESSION['pending_tg'] ?? '');
+$dmrNetwork = strtoupper((string) ($_SESSION['dmr_network'] ?? ''));
+$dmrReady = !empty($_SESSION['dmr_ready']);
+
+$navItems = [
+    ['label' => 'Dashboard', 'href' => '/alltune2/public/index.php', 'active' => true],
+    ['label' => 'Favorites', 'href' => '/alltune2/public/favorites.php', 'active' => false],
+    ['label' => 'Allscan', 'href' => '/allscan/', 'active' => false, 'target' => '_blank'],
+    ['label' => 'DVSwitch', 'href' => '/dvswitch/', 'active' => false, 'target' => '_blank'],
+];
+
+$modeOptions = [
+    'BM'   => 'BrandMeister (DMR)',
+    'TGIF' => 'TGIF Network',
+    'ASL'  => 'AllStar Link',
+    'YSF'  => 'System Fusion (YSF)',
+];
+
+$activityLines = [];
+
+if ($lastMode !== '') {
+    $activityLines[] = [
+        'label' => 'Last Mode',
+        'value' => $lastMode,
+    ];
+}
+
+if ($lastTarget !== '') {
+    $activityLines[] = [
+        'label' => 'Last Target',
+        'value' => $lastTarget,
+    ];
+}
+
+if ($pendingTarget !== '') {
+    $activityLines[] = [
+        'label' => 'Pending Target',
+        'value' => $pendingTarget,
+    ];
+}
+
+if ($dmrNetwork !== '') {
+    $activityLines[] = [
+        'label' => 'DMR Network',
+        'value' => $dmrNetwork . ($dmrReady ? ' (Ready)' : ' (Preparing)'),
+    ];
+}
+
+$activityLines[] = [
+    'label' => 'DVSwitch Auto-Load',
+    'value' => $autoloadDvSwitch
+        ? 'Enabled' . ($dvswitchNode !== '' ? ' (' . $dvswitchNode . ')' : '')
+        : 'Disabled',
+];
+
+$activityLines[] = [
+    'label' => 'DVSwitch Auto-Load Mode',
+    'value' => $autoloadDvSwitchMode === 'local_monitor' ? 'Local Monitor' : 'Transceive',
+];
+
+$activityLines[] = [
+    'label' => 'Current Status',
+    'value' => $lastStatus,
+];
+?>
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title><?= e($appName) ?></title>
+    <link rel="stylesheet" href="/alltune2/public/assets/css/style.css">
+</head>
+<body>
+<div class="page">
+    <header class="topbar">
+        <div class="branding">
+            <h1 class="branding-title"><?= e($appName) ?></h1>
+            <div class="branding-subtitle">
+                Modernized old-AllTune control flow with backend-first switching
+            </div>
+        </div>
+
+        <nav class="nav" aria-label="Primary">
+            <?php foreach ($navItems as $item): ?>
+                <a
+                    class="nav-button<?= !empty($item['active']) ? ' active' : '' ?>"
+                    href="<?= e($item['href']) ?>"
+                    <?= isset($item['target']) ? ' target="' . e((string) $item['target']) . '"' : '' ?>
+                >
+                    <?= e($item['label']) ?>
+                </a>
+            <?php endforeach; ?>
+        </nav>
+    </header>
+
+    <main class="dashboard-grid">
+        <section class="left-stack">
+            <article class="card">
+                <div class="card-header">
+                    <span>Control Center</span>
+                    <span class="badge">Node <?= e($myNode !== '' ? $myNode : 'Not Set') ?></span>
+                </div>
+
+                <div class="card-body">
+                    <form id="control-form" autocomplete="off">
+                        <div class="control-grid">
+                            <label class="sr-only" for="target">TG / Node / YSF #</label>
+                            <input
+                                id="target"
+                                name="target"
+                                class="control"
+                                type="text"
+                                placeholder="TG / Node / YSF #"
+                                value="<?= e($targetValue) ?>"
+                            >
+
+                            <label class="sr-only" for="mode">Mode</label>
+                            <select id="mode" name="mode" class="control">
+                                <?php foreach ($modeOptions as $value => $label): ?>
+                                    <option value="<?= e($value) ?>" <?= $selectedMode === $value ? 'selected' : '' ?>>
+                                        <?= e($label) ?>
+                                    </option>
+                                <?php endforeach; ?>
+                            </select>
+
+                            <button type="button" class="btn btn-primary" id="connect-button">
+                                Connect
+                            </button>
+
+                            <button type="button" class="btn btn-danger" id="disconnect-button">
+                                Disconnect
+                            </button>
+                        </div>
+
+                        <div
+                            class="checkbox-row"
+                            style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;"
+                        >
+                            <input
+                                type="checkbox"
+                                id="autoload_dvswitch"
+                                name="autoload_dvswitch"
+                                value="1"
+                                <?= $autoloadDvSwitch ? 'checked' : '' ?>
+                            >
+                            <label for="autoload_dvswitch">
+                                Auto-connect DVSwitch link<?= $dvswitchNode !== '' ? ' (' . e($dvswitchNode) . ')' : '' ?>
+                            </label>
+
+                            <label class="sr-only" for="autoload_dvswitch_mode">DVSwitch Auto-Load Mode</label>
+                            <select
+                                id="autoload_dvswitch_mode"
+                                name="autoload_dvswitch_mode"
+                                class="control"
+                                aria-label="DVSwitch Auto-Load Mode"
+                                style="width:auto; min-width:170px;"
+                            >
+                                <option value="transceive" <?= $autoloadDvSwitchMode === 'transceive' ? 'selected' : '' ?>>
+                                    Transceive
+                                </option>
+                                <option value="local_monitor" <?= $autoloadDvSwitchMode === 'local_monitor' ? 'selected' : '' ?>>
+                                    Local Monitor
+                                </option>
+                            </select>
+                        </div>
+
+                        <div class="helper-panel" id="helper-panel">
+                            <div class="helper-title">Network Flow</div>
+                            <p class="helper-text" id="helper-text">
+                                For BM and TGIF, enter or load a talkgroup, press Connect, wait until the system is ready, then press Connect again. AllStar and YSF are one-step connects. When DVSwitch auto-load is enabled, the configured DVSwitch link will be loaded using the selected mode.
+                            </p>
+                        </div>
+                    </form>
+                </div>
+            </article>
+
+            <article class="card" id="status-section">
+                <div class="card-header">
+                    <span>System Status</span>
+                    <span class="meta-line">Config-driven DVSwitch auto-load</span>
+                </div>
+                <div class="status-line<?= str_starts_with(strtoupper($lastStatus), 'WAITING') ? ' waiting' : '' ?>" id="system-status">
+                    System Status: <?= e($lastStatus) ?>
+                </div>
+            </article>
+        </section>
+
+        <aside class="right-stack">
+            <article class="card">
+                <div class="card-header">
+                    <span>Live Status</span>
+                    <span class="meta-line">Read only</span>
+                </div>
+                <div class="card-body">
+                    <div class="status-grid">
+                        <div class="status-box">
+                            <div class="status-box-label">BrandMeister</div>
+                            <div class="status-box-value" id="status-bm">Idle</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="status-box-label">TGIF</div>
+                            <div class="status-box-value" id="status-tgif">Idle</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="status-box-label">YSF</div>
+                            <div class="status-box-value" id="status-ysf">Idle</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="status-box-label">AllStar</div>
+                            <div class="status-box-value" id="status-allstar">No links</div>
+                        </div>
+                    </div>
+                </div>
+            </article>
+
+            <article class="card">
+                <div class="card-header">
+                    <span>Activity</span>
+                    <span class="meta-line">Read only</span>
+                </div>
+                <div class="card-body">
+                    <div class="activity-list">
+                        <?php foreach ($activityLines as $line): ?>
+                            <div class="activity-row">
+                                <div class="activity-label"><?= e($line['label']) ?></div>
+                                <div class="activity-value"><?= e($line['value']) ?></div>
+                            </div>
+                        <?php endforeach; ?>
+                    </div>
+                </div>
+            </article>
+        </aside>
+    </main>
+
+    <section class="favorites-section" id="favorites-section">
+        <article class="card favorites-card">
+            <div class="card-header">
+                <span>Saved Favorites</span>
+                <span class="meta-line">Shared BM / TGIF / YSF / AllStar</span>
+            </div>
+            <div class="card-body">
+                <div class="favorites-table-wrap">
+                    <table class="favorites-table" id="favorites-table">
+                        <thead>
+                        <tr>
+                            <th>TG / Node / YSF</th>
+                            <th>Station Name</th>
+                            <th>Description</th>
+                            <th>Mode</th>
+                            <th>Action</th>
+                        </tr>
+                        </thead>
+                        <tbody id="favorites-body">
+                        <tr>
+                            <td colspan="5">Loading favorites...</td>
+                        </tr>
+                        </tbody>
+                    </table>
+                </div>
+                <div class="favorites-note">
+                    Shared favorites for BM, TGIF, YSF, and AllStar.
+                </div>
+            </div>
+        </article>
+    </section>
+</div>
+
+<script src="/alltune2/public/assets/js/app.js"></script>
+</body>
+</html>
