@@ -44,6 +44,19 @@ function normalize_mode(?string $mode): string
     return $value;
 }
 
+function normalize_autoload_dvswitch_mode(mixed $mode): string
+{
+    $value = strtolower(trim((string) $mode));
+    return $value === 'local_monitor' ? 'local_monitor' : 'transceive';
+}
+
+function autoload_dvswitch_mode_label(string $mode): string
+{
+    return normalize_autoload_dvswitch_mode($mode) === 'local_monitor'
+        ? 'Local Monitor'
+        : 'Transceive';
+}
+
 function mask_value(string $value): string
 {
     $trimmed = trim($value);
@@ -108,6 +121,7 @@ $lastTarget = trim((string) ($_SESSION['last_target'] ?? ''));
 $pendingTarget = trim((string) ($_SESSION['pending_target'] ?? $_SESSION['pending_tg'] ?? ''));
 $lastStatus = trim((string) ($_SESSION['last_status'] ?? 'IDLE - NO CONNECTIONS'));
 $autoloadDvSwitch = !empty($_SESSION['autoload_dvswitch']);
+$autoloadDvSwitchMode = normalize_autoload_dvswitch_mode($_SESSION['autoload_dvswitch_mode'] ?? 'transceive');
 $dmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
 $dmrReady = !empty($_SESSION['dmr_ready']);
 
@@ -153,6 +167,7 @@ $payload = [
         'last_target' => $lastTarget,
         'pending_target' => $pendingTarget,
         'autoload_dvswitch' => $autoloadDvSwitch,
+        'autoload_dvswitch_mode' => $autoloadDvSwitchMode,
         'dmr_network' => $dmrNetwork,
         'dmr_ready' => $dmrReady,
     ],
@@ -162,6 +177,7 @@ $payload = [
     'last_target' => $lastTarget,
     'pending_target' => $pendingTarget,
     'autoload_dvswitch' => $autoloadDvSwitch,
+    'autoload_dvswitch_mode' => $autoloadDvSwitchMode,
     'dmr_network' => $dmrNetwork,
     'dmr_ready' => $dmrReady,
 
@@ -260,6 +276,10 @@ $payload = [
             'value' => $autoloadDvSwitch
                 ? 'Enabled' . ($config->getString('DVSWITCH_NODE', '') !== '' ? ' (' . $config->getString('DVSWITCH_NODE', '') . ')' : '')
                 : 'Disabled',
+        ],
+        [
+            'label' => 'DVSwitch Auto-Load Mode',
+            'value' => autoload_dvswitch_mode_label($autoloadDvSwitchMode),
         ],
         [
             'label' => 'Current Status',

@@ -16,6 +16,7 @@
         targetInput: document.getElementById('target'),
         modeSelect: document.getElementById('mode'),
         autoloadCheckbox: document.getElementById('autoload_dvswitch'),
+        autoloadModeSelect: document.getElementById('autoload_dvswitch_mode'),
         connectButton: document.getElementById('connect-button'),
         disconnectButton: document.getElementById('disconnect-button'),
         helperText: document.getElementById('helper-text'),
@@ -32,6 +33,7 @@
             els.targetInput &&
             els.modeSelect &&
             els.autoloadCheckbox &&
+            els.autoloadModeSelect &&
             els.connectButton &&
             els.disconnectButton &&
             els.systemStatus
@@ -52,24 +54,102 @@
         return value === 'ALLSTAR' ? 'ASL' : value;
     }
 
+    function normalizeAutoloadMode(mode) {
+        const value = String(mode || '').trim().toLowerCase();
+        return value === 'local_monitor' ? 'local_monitor' : 'transceive';
+    }
+
+    function autoloadModeLabel(mode) {
+        return normalizeAutoloadMode(mode) === 'local_monitor'
+            ? 'Local Monitor'
+            : 'Transceive';
+    }
+
+    function normalizeStatusText(text) {
+        return String(text || 'IDLE - NO CONNECTIONS').trim();
+    }
+
     function isWaitingStatus(text) {
-        return String(text || '').trim().toUpperCase().startsWith('WAITING');
+        return normalizeStatusText(text).toUpperCase().startsWith('WAITING');
+    }
+
+    function isConnectedStatus(text) {
+        return normalizeStatusText(text).toUpperCase().startsWith('CONNECTED:');
+    }
+
+    function isDisconnectedStatus(text) {
+        const value = normalizeStatusText(text).toUpperCase();
+        return (
+            value === 'DISCONNECTED' ||
+            value === 'IDLE - NO CONNECTIONS'
+        );
+    }
+
+    function isErrorStatus(text) {
+        return normalizeStatusText(text).toUpperCase().startsWith('ERROR:');
+    }
+
+    function setButtonVisualState(button, enabled) {
+        if (!button) {
+            return;
+        }
+
+        button.disabled = !enabled;
+        button.style.opacity = enabled ? '1' : '0.55';
+        button.style.cursor = enabled ? 'pointer' : 'not-allowed';
+    }
+
+    function updateButtonsFromStatus(statusText) {
+        if (state.busy) {
+            return;
+        }
+
+        if (isConnectedStatus(statusText)) {
+            setButtonVisualState(els.connectButton, false);
+            setButtonVisualState(els.disconnectButton, true);
+            return;
+        }
+
+        if (isWaitingStatus(statusText)) {
+            setButtonVisualState(els.connectButton, true);
+            setButtonVisualState(els.disconnectButton, true);
+            return;
+        }
+
+        if (isDisconnectedStatus(statusText) || isErrorStatus(statusText)) {
+            setButtonVisualState(els.connectButton, true);
+            setButtonVisualState(els.disconnectButton, false);
+            return;
+        }
+
+        setButtonVisualState(els.connectButton, true);
+        setButtonVisualState(els.disconnectButton, true);
     }
 
     function setBusy(isBusy) {
         state.busy = !!isBusy;
 
-        if (els.connectButton) {
-            els.connectButton.disabled = state.busy;
-            els.connectButton.style.opacity = state.busy ? '0.7' : '1';
-            els.connectButton.style.cursor = state.busy ? 'wait' : 'pointer';
+        if (state.busy) {
+            if (els.connectButton) {
+                els.connectButton.disabled = true;
+                els.connectButton.style.opacity = '0.7';
+                els.connectButton.style.cursor = 'wait';
+            }
+
+            if (els.disconnectButton) {
+                els.disconnectButton.disabled = true;
+                els.disconnectButton.style.opacity = '0.7';
+                els.disconnectButton.style.cursor = 'wait';
+            }
+
+            return;
         }
 
-        if (els.disconnectButton) {
-            els.disconnectButton.disabled = state.busy;
-            els.disconnectButton.style.opacity = state.busy ? '0.7' : '1';
-            els.disconnectButton.style.cursor = state.busy ? 'wait' : 'pointer';
-        }
+        const currentStatus = els.systemStatus
+            ? els.systemStatus.textContent.replace(/^System Status:\s*/i, '').trim()
+            : 'IDLE - NO CONNECTIONS';
+
+        updateButtonsFromStatus(currentStatus);
     }
 
     function setSystemStatus(text) {
@@ -77,7 +157,7 @@
             return;
         }
 
-        const safeText = String(text || 'IDLE - NO CONNECTIONS');
+        const safeText = normalizeStatusText(text);
         els.systemStatus.textContent = 'System Status: ' + safeText;
 
         if (isWaitingStatus(safeText)) {
@@ -85,6 +165,8 @@
         } else {
             els.systemStatus.classList.remove('waiting');
         }
+
+        updateButtonsFromStatus(safeText);
     }
 
     function updateHelperText() {
@@ -96,7 +178,7 @@
 
         if (mode === 'BM' || mode === 'TGIF') {
             els.helperText.textContent =
-                'For BM and TGIF, press Connect once to prepare the network, then press Connect again when ready. AllStar and YSF are one-step connects.';
+                'For BM and TGIF, press Connect once to prepare the network. Wait for the status to show ready, then press Connect again for the final talkgroup connect. After a true connection, Connect will dim and Disconnect will become active.';
             return;
         }
 
@@ -108,7 +190,7 @@
 
         if (mode === 'ASL') {
             els.helperText.textContent =
-                'AllStar is a one-step connect. Enter a node number or load an AllStar favorite, then press Connect.';
+                'AllStar is a one-step connect. Enter a node number or load an AllStar favorite, then press Connect. If DVSwitch auto-load is enabled, it will use the selected mode when loaded.';
             return;
         }
 
@@ -224,6 +306,12 @@
             false
         );
 
+        const autoloadMode = normalizeAutoloadMode(
+            payload.autoload_dvswitch_mode ??
+            system.autoload_dvswitch_mode ??
+            'transceive'
+        );
+
         const dvsNode = String(config.dvswitch_node || '').trim();
 
         const autoLoadValue = autoload
@@ -238,6 +326,7 @@
             dmrNetwork ? `${dmrNetwork}${dmrReady ? ' (Ready)' : ' (Preparing)'}` : '-'
         );
         updateActivityValue('DVSwitch Auto-Load', autoLoadValue);
+        updateActivityValue('DVSwitch Auto-Load Mode', autoloadModeLabel(autoloadMode));
         updateActivityValue('Current Status', statusText);
     }
 
@@ -327,6 +416,14 @@
             els.autoloadCheckbox.checked = !!system.autoload_dvswitch;
         }
 
+        if (allowFieldSync && els.autoloadModeSelect && !state.busy) {
+            if (typeof payload.autoload_dvswitch_mode === 'string') {
+                els.autoloadModeSelect.value = normalizeAutoloadMode(payload.autoload_dvswitch_mode);
+            } else if (typeof system.autoload_dvswitch_mode === 'string') {
+                els.autoloadModeSelect.value = normalizeAutoloadMode(system.autoload_dvswitch_mode);
+            }
+        }
+
         if (Array.isArray(payload.favorites)) {
             renderFavorites(payload.favorites);
         }
@@ -367,7 +464,7 @@
     }
 
     async function sendAction(action) {
-        if (!els.targetInput || !els.modeSelect || !els.autoloadCheckbox) {
+        if (!els.targetInput || !els.modeSelect || !els.autoloadCheckbox || !els.autoloadModeSelect) {
             return;
         }
 
@@ -378,6 +475,7 @@
             tgNum: els.targetInput.value.trim(),
             mode: normalizeMode(els.modeSelect.value),
             autoload_dvswitch: els.autoloadCheckbox.checked ? 1 : 0,
+            autoload_dvswitch_mode: normalizeAutoloadMode(els.autoloadModeSelect.value),
         };
 
         setBusy(true);
@@ -402,7 +500,7 @@
     }
 
     async function rememberAutoloadPreference() {
-        if (!els.autoloadCheckbox) {
+        if (!els.autoloadCheckbox || !els.autoloadModeSelect) {
             return;
         }
 
@@ -416,6 +514,7 @@
                     action: 'remember_autoload',
                     action_type: 'remember_autoload',
                     autoload_dvswitch: els.autoloadCheckbox.checked ? 1 : 0,
+                    autoload_dvswitch_mode: normalizeAutoloadMode(els.autoloadModeSelect.value),
                 }),
             });
 
@@ -485,6 +584,10 @@
 
         if (els.autoloadCheckbox) {
             els.autoloadCheckbox.addEventListener('change', rememberAutoloadPreference);
+        }
+
+        if (els.autoloadModeSelect) {
+            els.autoloadModeSelect.addEventListener('change', rememberAutoloadPreference);
         }
 
         if (els.controlForm) {

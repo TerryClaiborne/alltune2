@@ -1,14 +1,16 @@
 # AllTune2
 
-Â© Terry Claiborne - KC3KMV - kc3kmv@yahoo.com
+© Terry Claiborne - KC3KMV - kc3kmv@yahoo.com
 
-A web-based control and status dashboard for radio network switching and favorites management.
+AllTune2 is a safer refactor of the original AllTune application for AllStarLink 3 / Debian Bookworm.
 
-## IMPORTANT
+The goal is to keep the simple old-AllTune workflow while moving risky connect/disconnect behavior out of fragile UI logic and into backend handling.
+
+## Important
 
 **AllTune2 will not work correctly until you edit `/var/www/html/alltune2/config.ini` and enter your real settings.**
 
-**The installer will create a starter `config.ini` with placeholder values. You must change them before using AllTune2.**
+**The installer will create a starter config.ini with placeholder values. You must change them before using AllTune2.**
 
 ## Features
 
@@ -22,16 +24,26 @@ A web-based control and status dashboard for radio network switching and favorit
 - Installer script for setup and permissions
 - Automatic Asterisk sudoers rule creation during install
 
-## Project Structure
+## Important paths
 
-- `public/index.php` â€” main dashboard
-- `public/favorites.php` â€” favorites manager
-- `api/connect.php` â€” connect/disconnect actions
-- `api/status.php` â€” status endpoint
-- `app/` â€” application classes and support code
-- `data/favorites.txt` â€” shared favorites file
-- `config.ini` â€” local app configuration file
-- `setup_alltune2.sh` â€” install/setup script
+- Original app left untouched:
+  - `/var/www/html/alltune`
+- AllTune2 app:
+  - `/var/www/html/alltune2`
+
+## Project structure
+
+- `public/index.php` — main dashboard
+- `public/favorites.php` — favorites manager
+- `api/connect.php` — connect/disconnect actions
+- `api/status.php` — status endpoint
+- `app/` — application classes and support code
+- `public/assets/js/app.js` — frontend logic
+- `public/assets/css/style.css` — frontend styling
+- `data/favorites.txt` — shared favorites file
+- `config.ini` — local app configuration file
+- `config.ini.example` — starter config example
+- `setup_alltune2.sh` — install/setup script
 
 ## Requirements
 
@@ -41,9 +53,16 @@ A web-based control and status dashboard for radio network switching and favorit
 - Asterisk installed at:
   `/usr/sbin/asterisk`
 
-## Install
+## Config file
 
-Run this from the terminal:
+AllTune2 uses its own config file:
 
-```bash
-git clone https://github.com/TerryClaiborne/alltune2.git && cd alltune2 && sudo ./setup_alltune2.sh
+- `/var/www/html/alltune2/config.ini`
+
+Expected keys:
+
+```ini
+MYNODE="YOUR NODE"
+DVSWITCH_NODE="YOUR DVSWITCH NODE"
+BM_SelfcarePassword="CHANGE_ME"
+TGIF_HotspotSecurityKey="CHANGE_ME"

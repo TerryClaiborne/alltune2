@@ -45,6 +45,28 @@ function asterisk_rpt_fun(string $node, string $digits): string
     return shell_run($command);
 }
 
+function asterisk_rpt_cmd(string $node, string $command): string
+{
+    $full = 'sudo /usr/sbin/asterisk -rx ' . escapeshellarg("rpt cmd {$node} {$command}");
+    return shell_run($full);
+}
+
+function asterisk_ilink_disconnect(string $node, string $remoteNode): string
+{
+    return asterisk_rpt_cmd($node, "ilink 1 {$remoteNode}");
+}
+
+function asterisk_ilink_connect(string $node, string $remoteNode, string $linkMode): string
+{
+    $ilink = $linkMode === 'local_monitor' ? '8' : '3';
+    return asterisk_rpt_cmd($node, "ilink {$ilink} {$remoteNode}");
+}
+
+function load_dvswitch_link(string $myNode, string $dvSwitchNode, string $autoloadMode): string
+{
+    return asterisk_ilink_connect($myNode, $dvSwitchNode, $autoloadMode);
+}
+
 function dvswitch_tune(string $value): string
 {
     $command = '/opt/MMDVM_Bridge/dvswitch.sh tune ' . escapeshellarg($value);
@@ -77,6 +99,12 @@ function normalize_mode(string $mode): string
     return $mode;
 }
 
+function normalize_autoload_dvswitch_mode(mixed $mode): string
+{
+    $value = strtolower(trim((string) $mode));
+    return $value === 'local_monitor' ? 'local_monitor' : 'transceive';
+}
+
 function session_payload(string $statusText, array $extra = []): array
 {
     return array_merge([
@@ -90,6 +118,7 @@ function session_payload(string $statusText, array $extra = []): array
         'pending_target' => (string) ($_SESSION['pending_target'] ?? ''),
         'pending_tg' => (string) ($_SESSION['pending_tg'] ?? ''),
         'autoload_dvswitch' => !empty($_SESSION['autoload_dvswitch']),
+        'autoload_dvswitch_mode' => (string) ($_SESSION['autoload_dvswitch_mode'] ?? 'transceive'),
         'dmr_network' => (string) ($_SESSION['dmr_network'] ?? ''),
         'dmr_ready' => !empty($_SESSION['dmr_ready']),
     ], $extra);
@@ -101,11 +130,18 @@ $action = strtolower(trim((string) ($request['action'] ?? $request['action_type'
 $rawTarget = trim((string) ($request['target'] ?? $request['tgNum'] ?? ''));
 $mode = normalize_mode((string) ($request['mode'] ?? ($_SESSION['selected_mode'] ?? 'BM')));
 $autoloadPosted = array_key_exists('autoload_dvswitch', $request);
+$autoloadModePosted = array_key_exists('autoload_dvswitch_mode', $request);
 
 if ($autoloadPosted) {
     $_SESSION['autoload_dvswitch'] = !empty($request['autoload_dvswitch']);
 } elseif (!isset($_SESSION['autoload_dvswitch'])) {
     $_SESSION['autoload_dvswitch'] = true;
+}
+
+if ($autoloadModePosted) {
+    $_SESSION['autoload_dvswitch_mode'] = normalize_autoload_dvswitch_mode($request['autoload_dvswitch_mode']);
+} elseif (!isset($_SESSION['autoload_dvswitch_mode'])) {
+    $_SESSION['autoload_dvswitch_mode'] = 'transceive';
 }
 
 $_SESSION['selected_mode'] = $mode;
@@ -114,6 +150,7 @@ $myNode = $config->getString('MYNODE', '');
 $dvSwitchNode = $config->getString('DVSWITCH_NODE', '');
 $bmPassword = $config->getString('BM_SelfcarePassword', '');
 $tgifPassword = $config->getString('TGIF_HotspotSecurityKey', '');
+$autoloadDvSwitchMode = normalize_autoload_dvswitch_mode($_SESSION['autoload_dvswitch_mode'] ?? 'transceive');
 
 if ($action === 'remember_autoload') {
     $status = (string) ($_SESSION['last_status'] ?? 'IDLE - NO CONNECTIONS');
@@ -157,11 +194,11 @@ if ($action === 'connect') {
         }
 
         if ($dvSwitchNode !== '') {
-            asterisk_rpt_fun($myNode, '*1' . $dvSwitchNode);
+            asterisk_ilink_disconnect($myNode, $dvSwitchNode);
             pause_seconds(0.5);
         }
 
-        asterisk_rpt_fun($myNode, '*3' . $digitsOnlyTarget);
+        asterisk_ilink_connect($myNode, $digitsOnlyTarget, $autoloadDvSwitchMode);
 
         $_SESSION['last_mode'] = 'ASL';
         $_SESSION['last_target'] = $digitsOnlyTarget;
@@ -183,7 +220,7 @@ if ($action === 'connect') {
             respond(session_payload($_SESSION['last_status']), 500);
         }
 
-        asterisk_rpt_fun($myNode, '*3' . $dvSwitchNode);
+        load_dvswitch_link($myNode, $dvSwitchNode, $autoloadDvSwitchMode);
         pause_seconds(0.5);
 
         dvswitch_mode('YSF');
@@ -197,9 +234,9 @@ if ($action === 'connect') {
         unset(
             $_SESSION['dmr_network'],
             $_SESSION['pending_tg'],
-            $_SESSION['dmr_ready'],
-            $_SESSION['dvswitch_autoloaded']
+            $_SESSION['dmr_ready']
         );
+        $_SESSION['dvswitch_autoloaded'] = true;
 
         $_SESSION['last_status'] = 'CONNECTED: YSF TARGET ' . $rawTarget;
         respond(session_payload($_SESSION['last_status']));
@@ -228,7 +265,7 @@ if ($action === 'connect') {
 
         if ($currentNetwork !== $mode || !$dmrReady) {
             if ($autoload && $dvSwitchNode !== '') {
-                asterisk_rpt_fun($myNode, '*3' . $dvSwitchNode);
+                load_dvswitch_link($myNode, $dvSwitchNode, $autoloadDvSwitchMode);
                 pause_seconds(1.0);
                 $_SESSION['dvswitch_autoloaded'] = true;
             } else {
@@ -277,11 +314,11 @@ $dvswitchAutoloaded = !empty($_SESSION['dvswitch_autoloaded']);
 
 if ($lastMode === 'ASL') {
     if ($lastTarget !== '') {
-        asterisk_rpt_fun($myNode, '*1' . $lastTarget);
+        asterisk_ilink_disconnect($myNode, $lastTarget);
     }
 } elseif ($lastMode === 'YSF') {
     if ($dvSwitchNode !== '') {
-        asterisk_rpt_fun($myNode, '*1' . $dvSwitchNode);
+        asterisk_ilink_disconnect($myNode, $dvSwitchNode);
     }
     dvswitch_tune('disconnect');
 } elseif ($lastMode === 'BM' || $lastMode === 'TGIF') {
@@ -289,11 +326,11 @@ if ($lastMode === 'ASL') {
     pause_seconds(1.0);
 
     if ($dvswitchAutoloaded && $dvSwitchNode !== '') {
-        asterisk_rpt_fun($myNode, '*1' . $dvSwitchNode);
+        asterisk_ilink_disconnect($myNode, $dvSwitchNode);
     }
 } else {
     if ($dvSwitchNode !== '') {
-        asterisk_rpt_fun($myNode, '*1' . $dvSwitchNode);
+        asterisk_ilink_disconnect($myNode, $dvSwitchNode);
     } else {
         asterisk_rpt_fun($myNode, '*76');
     }

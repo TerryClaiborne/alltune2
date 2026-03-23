@@ -21,7 +21,12 @@ $myNode = trim((string) $config->get('MYNODE', ''));
 
 $autoloadDvSwitch = isset($_SESSION['autoload_dvswitch'])
     ? (bool) $_SESSION['autoload_dvswitch']
-    : false;
+    : true;
+
+$autoloadDvSwitchMode = strtolower(trim((string) ($_SESSION['autoload_dvswitch_mode'] ?? 'transceive')));
+if ($autoloadDvSwitchMode !== 'local_monitor') {
+    $autoloadDvSwitchMode = 'transceive';
+}
 
 $selectedMode = strtoupper((string) ($_SESSION['selected_mode'] ?? 'BM'));
 $targetValue = (string) ($_SESSION['pending_target'] ?? $_SESSION['last_target'] ?? '');
@@ -81,6 +86,11 @@ $activityLines[] = [
     'value' => $autoloadDvSwitch
         ? 'Enabled' . ($dvswitchNode !== '' ? ' (' . $dvswitchNode . ')' : '')
         : 'Disabled',
+];
+
+$activityLines[] = [
+    'label' => 'DVSwitch Auto-Load Mode',
+    'value' => $autoloadDvSwitchMode === 'local_monitor' ? 'Local Monitor' : 'Transceive',
 ];
 
 $activityLines[] = [
@@ -158,7 +168,10 @@ $activityLines[] = [
                             </button>
                         </div>
 
-                        <div class="checkbox-row">
+                        <div
+                            class="checkbox-row"
+                            style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;"
+                        >
                             <input
                                 type="checkbox"
                                 id="autoload_dvswitch"
@@ -169,12 +182,28 @@ $activityLines[] = [
                             <label for="autoload_dvswitch">
                                 Auto-connect DVSwitch link<?= $dvswitchNode !== '' ? ' (' . e($dvswitchNode) . ')' : '' ?>
                             </label>
+
+                            <label class="sr-only" for="autoload_dvswitch_mode">DVSwitch Auto-Load Mode</label>
+                            <select
+                                id="autoload_dvswitch_mode"
+                                name="autoload_dvswitch_mode"
+                                class="control"
+                                aria-label="DVSwitch Auto-Load Mode"
+                                style="width:auto; min-width:170px;"
+                            >
+                                <option value="transceive" <?= $autoloadDvSwitchMode === 'transceive' ? 'selected' : '' ?>>
+                                    Transceive
+                                </option>
+                                <option value="local_monitor" <?= $autoloadDvSwitchMode === 'local_monitor' ? 'selected' : '' ?>>
+                                    Local Monitor
+                                </option>
+                            </select>
                         </div>
 
                         <div class="helper-panel" id="helper-panel">
                             <div class="helper-title">Network Flow</div>
                             <p class="helper-text" id="helper-text">
-                                For BM and TGIF, enter or load a talkgroup, press Connect, wait until the system is ready, then press Connect again. AllStar and YSF are one-step connects.
+                                For BM and TGIF, enter or load a talkgroup, press Connect, wait until the system is ready, then press Connect again. AllStar and YSF are one-step connects. When DVSwitch auto-load is enabled, the configured DVSwitch link will be loaded using the selected mode.
                             </p>
                         </div>
                     </form>

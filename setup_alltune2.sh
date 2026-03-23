@@ -10,6 +10,8 @@ JS_DIR="$ASSETS_DIR/js"
 API_DIR="$APP_DIR/api"
 APP_CODE_DIR="$APP_DIR/app"
 DATA_DIR="$APP_DIR/data"
+DOCS_DIR="$APP_DIR/docs"
+LOGS_DIR="$APP_DIR/logs"
 
 CONFIG_FILE="$APP_DIR/config.ini"
 CONFIG_EXAMPLE_FILE="$APP_DIR/config.ini.example"
@@ -73,16 +75,16 @@ make_dirs() {
     mkdir -p "$API_DIR"
     mkdir -p "$APP_CODE_DIR"
     mkdir -p "$DATA_DIR"
-    mkdir -p "$APP_DIR/docs"
-    mkdir -p "$APP_DIR/logs"
+    mkdir -p "$DOCS_DIR"
+    mkdir -p "$LOGS_DIR"
 }
 
 create_config_example() {
     if [[ ! -f "$CONFIG_EXAMPLE_FILE" ]]; then
         log "Creating config.ini.example..."
         cat > "$CONFIG_EXAMPLE_FILE" <<'EOF'
-MYNODE="CHANGE TO YOUR NODE"
-DVSWITCH_NODE="CHANGE TO YOUR DVSWITCH NODE"
+MYNODE="YOUR NODE"
+DVSWITCH_NODE="YOUR DVSWITCH NODE"
 BM_SelfcarePassword="CHANGE_ME"
 TGIF_HotspotSecurityKey="CHANGE_ME"
 EOF
@@ -98,8 +100,8 @@ create_config_if_missing() {
     if [[ ! -f "$CONFIG_FILE" ]]; then
         log "config.ini not found. Creating starter config.ini..."
         cat > "$CONFIG_FILE" <<'EOF'
-MYNODE="CHANGE TO YOUR NODE"
-DVSWITCH_NODE="CHANGE TO YOUR DVSWITCH NODE"
+MYNODE="YOUR NODE"
+DVSWITCH_NODE="YOUR DVSWITCH NODE"
 BM_SelfcarePassword="CHANGE_ME"
 TGIF_HotspotSecurityKey="CHANGE_ME"
 EOF
@@ -114,8 +116,17 @@ EOF
 
 create_favorites_if_missing() {
     if [[ ! -f "$FAVORITES_FILE" ]]; then
-        log "Creating empty shared favorites file..."
-        : > "$FAVORITES_FILE"
+        log "Creating shared favorites file..."
+        cat > "$FAVORITES_FILE" <<'EOF'
+9990|Parrot|TGIF Parrot|TGIF
+9050|East Coast Reflector|East Coast TGIF|TGIF
+23510|CQ-UK World Wide|CQ-World Wide TGIF|TGIF
+311630|AA9JR Repeater Link|Morning Net|TGIF
+19570|Example TGIF|Example Favorite|TGIF
+3220008|Example BM|Example Favorite|BM
+68064|Example AllStar|Example AllStar Node|ASL
+parrot.ysfreflector.de:42020|Fusion|Parrot For Fusion|YSF
+EOF
     else
         log "favorites.txt already exists."
     fi
@@ -162,9 +173,7 @@ create_or_update_sudoers_file() {
     log "Ensuring Asterisk sudoers file exists..."
 
     if [[ ! -x "$ASTERISK_BIN" ]]; then
-        warn "Asterisk binary not found at $ASTERISK_BIN"
-        warn "Skipping sudoers creation because the target command does not exist."
-        return
+        fail "Asterisk binary not found at $ASTERISK_BIN"
     fi
 
     cat > "$SUDOERS_FILE" <<EOF
@@ -333,14 +342,13 @@ show_summary() {
     echo "- Dashboard and Status are the same main screen."
     echo "- Favorites uses one shared file: data/favorites.txt"
     echo "- AllTune2 uses its own config.ini in the app root."
-    echo "- The installer creates an empty favorites file if missing."
-    echo "- The installer creates and validates the Asterisk sudoers rule."
     echo
 
     echo "Next steps:"
     echo "1. Edit $CONFIG_FILE and set real values."
-    echo "2. Open http://YOUR-IP/alltune2/public/index.php in the browser."
-    echo "3. Test BM, TGIF, YSF, AllStar, disconnects, and DVSwitch auto-load."
+    echo "2. Confirm $SUDOERS_FILE exists and is valid."
+    echo "3. Open /alltune2/public/ in the browser."
+    echo "4. Test BM, TGIF, YSF, AllStar, disconnects, and DVSwitch auto-load."
     echo
 }
 
