@@ -2,7 +2,7 @@
 
 © Terry Claiborne - KC3KMV - kc3kmv@yahoo.com
 
-AllTune2 is a web-based control and status dashboard for radio network switching and favorites management on AllStarLink 3 / Debian Bookworm.
+AllTune2 is a web-based control and status dashboard for radio network switching and favorites management on AllStarLink 3 / Linux/Debian
 
 It is designed to provide a cleaner, safer control flow for BrandMeister, TGIF, YSF, and AllStar.
 
