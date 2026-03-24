@@ -77,7 +77,6 @@ Run this from the terminal:
 
 ```bash
 git clone https://github.com/TerryClaiborne/alltune2.git && cd alltune2 && sudo bash setup_alltune2.sh
-
 ```
 
 ## Existing install update
