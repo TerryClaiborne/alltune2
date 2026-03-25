@@ -237,15 +237,15 @@ $modeOptions = [
 
         .favorites-form-grid {
             display: grid;
-            grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1.25fr) 180px 180px;
-            gap: 12px;
+            grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1.25fr) 168px 168px;
+            gap: 10px;
             align-items: stretch;
         }
 
         .message-banner {
-            padding: 12px 14px;
+            padding: 10px 12px;
             border-radius: 12px;
-            font-size: 0.9rem;
+            font-size: 0.86rem;
             font-weight: 600;
         }
 
@@ -264,7 +264,7 @@ $modeOptions = [
         .favorites-manage-table-wrap {
             overflow-x: auto;
             overflow-y: auto;
-            max-height: 460px;
+            max-height: 430px;
             border-radius: 12px;
         }
 
@@ -277,7 +277,7 @@ $modeOptions = [
 
         .favorites-manage-table th,
         .favorites-manage-table td {
-            padding: 12px 10px;
+            padding: 7px 10px;
             border-bottom: 1px solid #2b1d38;
             text-align: left;
             vertical-align: middle;
@@ -285,14 +285,15 @@ $modeOptions = [
 
         .favorites-manage-table th {
             color: var(--pink);
-            font-size: 0.8rem;
+            font-size: 0.74rem;
             text-transform: uppercase;
             letter-spacing: 0.04em;
         }
 
         .favorites-manage-table td {
             color: var(--text-main);
-            font-size: 0.9rem;
+            font-size: 0.82rem;
+            line-height: 1.14;
             white-space: nowrap;
             overflow: hidden;
             text-overflow: ellipsis;
@@ -335,14 +336,14 @@ $modeOptions = [
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            min-width: 72px;
-            height: 30px;
-            padding: 0 10px;
+            min-width: 62px;
+            height: 24px;
+            padding: 0 8px;
             background: #224d83;
             color: #d9edff;
             border: 1px solid var(--blue);
-            border-radius: 10px;
-            font-size: 0.76rem;
+            border-radius: 8px;
+            font-size: 0.68rem;
             font-weight: 700;
             text-transform: uppercase;
             letter-spacing: 0.03em;
@@ -351,7 +352,17 @@ $modeOptions = [
         .toolbar-row {
             display: flex;
             justify-content: flex-end;
-            margin-bottom: 10px;
+            margin-bottom: 8px;
+        }
+
+        .toolbar-row .btn {
+            height: 34px;
+            font-size: 0.76rem;
+            padding: 0 12px;
+        }
+
+        .favorites-page-stack .card-body {
+            padding: 10px 12px;
         }
 
         @media (max-width: 1080px) {
@@ -363,6 +374,10 @@ $modeOptions = [
         @media (max-width: 760px) {
             .favorites-form-grid {
                 grid-template-columns: 1fr;
+            }
+
+            .favorites-manage-table-wrap {
+                max-height: 360px;
             }
         }
     </style>

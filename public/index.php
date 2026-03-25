@@ -28,6 +28,10 @@ if ($autoloadDvSwitchMode !== 'local_monitor') {
     $autoloadDvSwitchMode = 'transceive';
 }
 
+$disconnectBeforeConnect = isset($_SESSION['disconnect_before_connect'])
+    ? (bool) $_SESSION['disconnect_before_connect']
+    : false;
+
 $selectedMode = strtoupper((string) ($_SESSION['selected_mode'] ?? 'BM'));
 $targetValue = (string) ($_SESSION['pending_target'] ?? $_SESSION['last_target'] ?? '');
 $lastStatus = (string) ($_SESSION['last_status'] ?? 'IDLE - NO CONNECTIONS');
@@ -36,6 +40,7 @@ $lastTarget = (string) ($_SESSION['last_target'] ?? '');
 $pendingTarget = (string) ($_SESSION['pending_target'] ?? $_SESSION['pending_tg'] ?? '');
 $dmrNetwork = strtoupper((string) ($_SESSION['dmr_network'] ?? ''));
 $dmrReady = !empty($_SESSION['dmr_ready']);
+$dvswitchLinkActive = !empty($_SESSION['dvswitch_autoloaded']) || $dmrReady || $lastMode === 'YSF';
 
 $navItems = [
     ['label' => 'Dashboard', 'href' => '/alltune2/public/index.php', 'active' => true],
@@ -84,13 +89,23 @@ if ($dmrNetwork !== '') {
 $activityLines[] = [
     'label' => 'DVSwitch Auto-Load',
     'value' => $autoloadDvSwitch
-        ? 'Enabled' . ($dvswitchNode !== '' ? ' (' . $dvswitchNode . ')' : '')
+        ? 'Enabled' . ($dvswitchNode !== '' ? ' (' . e($dvswitchNode) . ')' : '')
         : 'Disabled',
 ];
 
 $activityLines[] = [
     'label' => 'DVSwitch Auto-Load Mode',
     'value' => $autoloadDvSwitchMode === 'local_monitor' ? 'Local Monitor' : 'Transceive',
+];
+
+$activityLines[] = [
+    'label' => 'DVSwitch Link Active',
+    'value' => $dvswitchLinkActive ? 'Yes' : 'No',
+];
+
+$activityLines[] = [
+    'label' => 'Disconnect Before Connect',
+    'value' => $disconnectBeforeConnect ? 'Enabled' : 'Disabled',
 ];
 
 $activityLines[] = [
@@ -112,7 +127,7 @@ $activityLines[] = [
         <div class="branding">
             <h1 class="branding-title"><?= e($appName) ?></h1>
             <div class="branding-subtitle">
-                Modernized old-AllTune control flow with backend-first switching
+                Modernized control flow with backend-first switching
             </div>
         </div>
 
@@ -168,28 +183,62 @@ $activityLines[] = [
                             </button>
                         </div>
 
-                        <div
-                            class="checkbox-row"
-                            style="display:flex; align-items:center; gap:12px; flex-wrap:wrap;"
-                        >
-                            <input
-                                type="checkbox"
-                                id="autoload_dvswitch"
-                                name="autoload_dvswitch"
-                                value="1"
-                                <?= $autoloadDvSwitch ? 'checked' : '' ?>
-                            >
-                            <label for="autoload_dvswitch">
-                                Auto-connect DVSwitch link<?= $dvswitchNode !== '' ? ' (' . e($dvswitchNode) . ')' : '' ?>
+                        <div class="control-settings-grid">
+                            <div class="control-settings-left">
+                                <label class="checkbox-inline" for="autoload_dvswitch">
+                                    <input
+                                        type="checkbox"
+                                        id="autoload_dvswitch"
+                                        name="autoload_dvswitch"
+                                        value="1"
+                                        <?= $autoloadDvSwitch ? 'checked' : '' ?>
+                                    >
+                                    <span>
+                                        Auto-connect DVSwitch link<?= $dvswitchNode !== '' ? ' (' . e($dvswitchNode) . ')' : '' ?>
+                                    </span>
+                                </label>
+
+                                <label class="checkbox-inline" for="disconnect_before_connect">
+                                    <input
+                                        type="checkbox"
+                                        id="disconnect_before_connect"
+                                        name="disconnect_before_connect"
+                                        value="1"
+                                        <?= $disconnectBeforeConnect ? 'checked' : '' ?>
+                                    >
+                                    <span>Disconnect before Connect</span>
+                                </label>
+                            </div>
+
+                            <div class="control-settings-right">
+                                <button
+                                    type="button"
+                                    class="btn btn-warning"
+                                    id="disconnect-dvswitch-button"
+                                >
+                                    Disconnect DVSwitch
+                                </button>
+
+                                <button
+                                    type="button"
+                                    class="btn btn-danger"
+                                    id="disconnect-all-button"
+                                >
+                                    Disconnect All
+                                </button>
+                            </div>
+                        </div>
+
+                        <div class="control-mode-row">
+                            <label class="control-mode-label" for="autoload_dvswitch_mode">
+                                DVSwitch Link Mode
                             </label>
 
-                            <label class="sr-only" for="autoload_dvswitch_mode">DVSwitch Auto-Load Mode</label>
                             <select
                                 id="autoload_dvswitch_mode"
                                 name="autoload_dvswitch_mode"
-                                class="control"
+                                class="control control-compact"
                                 aria-label="DVSwitch Auto-Load Mode"
-                                style="width:auto; min-width:170px;"
                             >
                                 <option value="transceive" <?= $autoloadDvSwitchMode === 'transceive' ? 'selected' : '' ?>>
                                     Transceive
@@ -244,6 +293,9 @@ $activityLines[] = [
                         <div class="status-box">
                             <div class="status-box-label">AllStar</div>
                             <div class="status-box-value" id="status-allstar">No links</div>
+                            <div id="status-allstar-links">
+                                <div>No links</div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -274,7 +326,7 @@ $activityLines[] = [
                 <span>Saved Favorites</span>
                 <span class="meta-line">Shared BM / TGIF / YSF / AllStar</span>
             </div>
-            <div class="card-body">
+            <div class="card-body card-body-tight">
                 <div class="favorites-table-wrap">
                     <table class="favorites-table" id="favorites-table">
                         <thead>

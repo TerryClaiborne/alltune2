@@ -17,8 +17,11 @@
         modeSelect: document.getElementById('mode'),
         autoloadCheckbox: document.getElementById('autoload_dvswitch'),
         autoloadModeSelect: document.getElementById('autoload_dvswitch_mode'),
+        disconnectBeforeConnectCheckbox: document.getElementById('disconnect_before_connect'),
         connectButton: document.getElementById('connect-button'),
         disconnectButton: document.getElementById('disconnect-button'),
+        disconnectAllButton: document.getElementById('disconnect-all-button'),
+        disconnectDvSwitchButton: document.getElementById('disconnect-dvswitch-button'),
         helperText: document.getElementById('helper-text'),
         systemStatus: document.getElementById('system-status'),
         favoritesBody: document.getElementById('favorites-body'),
@@ -26,6 +29,7 @@
         statusTgif: document.getElementById('status-tgif'),
         statusYsf: document.getElementById('status-ysf'),
         statusAllstar: document.getElementById('status-allstar'),
+        statusAllstarLinks: document.getElementById('status-allstar-links'),
     };
 
     function hasCoreElements() {
@@ -34,8 +38,11 @@
             els.modeSelect &&
             els.autoloadCheckbox &&
             els.autoloadModeSelect &&
+            els.disconnectBeforeConnectCheckbox &&
             els.connectButton &&
             els.disconnectButton &&
+            els.disconnectAllButton &&
+            els.disconnectDvSwitchButton &&
             els.systemStatus
         );
     }
@@ -89,6 +96,239 @@
         return normalizeStatusText(text).toUpperCase().startsWith('ERROR:');
     }
 
+    function disconnectBeforeConnectEnabled() {
+        return !!(els.disconnectBeforeConnectCheckbox && els.disconnectBeforeConnectCheckbox.checked);
+    }
+
+    function currentSelectedMode() {
+        return normalizeMode(els.modeSelect?.value || '');
+    }
+
+    function currentStatusText() {
+        return els.systemStatus
+            ? els.systemStatus.textContent.replace(/^System Status:\s*/i, '').trim()
+            : 'IDLE - NO CONNECTIONS';
+    }
+
+    function currentAllstarCount() {
+        if (!els.statusAllstar) {
+            return 0;
+        }
+
+        const text = String(els.statusAllstar.textContent || '').trim();
+        const match = text.match(/Connected:\s*(\d+)/i);
+        return match ? Number(match[1]) || 0 : 0;
+    }
+
+    function textLooksActive(value) {
+        const text = String(value || '').trim().toUpperCase();
+        if (text === '') {
+            return false;
+        }
+
+        return !(
+            text === 'IDLE' ||
+            text === 'NO LINKS' ||
+            text === '-' ||
+            text === 'DISABLED' ||
+            text === 'NO' ||
+            text === 'UNKNOWN'
+        );
+    }
+
+    function inferDvSwitchActiveFromPayload(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return false;
+        }
+
+        const system = payload.system || {};
+        const bm = payload.networks?.brandmeister || payload.brandmeister || null;
+        const tgif = payload.networks?.tgif || payload.tgif || null;
+        const ysf = payload.networks?.ysf || payload.ysf || null;
+
+        const explicitFlag =
+            payload.dvswitch_link_active ??
+            system.dvswitch_link_active;
+
+        if (typeof explicitFlag !== 'undefined') {
+            return !!explicitFlag;
+        }
+
+        const dmrReady = !!(payload.dmr_ready ?? system.dmr_ready ?? false);
+        const dmrNetwork = String(payload.dmr_network ?? system.dmr_network ?? '').trim();
+        const lastMode = normalizeMode(payload.last_mode ?? system.last_mode ?? '');
+        const autoload = !!(payload.autoload_dvswitch ?? system.autoload_dvswitch ?? false);
+
+        if (dmrReady || dmrNetwork !== '' || lastMode === 'YSF') {
+            return true;
+        }
+
+        if (autoload && (
+            textLooksActive(bm?.label || bm?.state || bm?.status) ||
+            textLooksActive(tgif?.label || tgif?.state || tgif?.status) ||
+            textLooksActive(ysf?.label || ysf?.state || ysf?.status)
+        )) {
+            return true;
+        }
+
+        if (
+            textLooksActive(bm?.label || bm?.state || bm?.status) ||
+            textLooksActive(tgif?.label || tgif?.state || tgif?.status) ||
+            textLooksActive(ysf?.label || ysf?.state || ysf?.status)
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    function inferDvSwitchActiveFromDom() {
+        const activityRows = document.querySelectorAll('.activity-row');
+
+        for (const row of activityRows) {
+            const labelEl = row.querySelector('.activity-label');
+            const valueEl = row.querySelector('.activity-value');
+
+            if (!labelEl || !valueEl) {
+                continue;
+            }
+
+            const label = labelEl.textContent.trim().toUpperCase();
+            const value = valueEl.textContent.trim().toUpperCase();
+
+            if (label === 'DVSWITCH LINK ACTIVE') {
+                if (value === 'YES') {
+                    return true;
+                }
+                if (value === 'NO') {
+                    return false;
+                }
+            }
+
+            if (label === 'DMR NETWORK' && value !== '' && value !== '-') {
+                return true;
+            }
+
+            if (label === 'LAST MODE' && value === 'YSF') {
+                return true;
+            }
+        }
+
+        const bmText = String(els.statusBm?.textContent || '').trim();
+        const tgifText = String(els.statusTgif?.textContent || '').trim();
+        const ysfText = String(els.statusYsf?.textContent || '').trim();
+
+        if (
+            textLooksActive(bmText) ||
+            textLooksActive(tgifText) ||
+            textLooksActive(ysfText)
+        ) {
+            return true;
+        }
+
+        const statusText = currentStatusText().toUpperCase();
+        if (
+            statusText.includes('(BM)') ||
+            statusText.includes('(TGIF)') ||
+            statusText.includes('CONNECTED: YSF TARGET') ||
+            statusText.includes('WAITING: BM READY') ||
+            statusText.includes('WAITING: TGIF READY')
+        ) {
+            return true;
+        }
+
+        return false;
+    }
+
+    function currentDvSwitchActive(payload = null) {
+        if (payload && typeof payload === 'object') {
+            return inferDvSwitchActiveFromPayload(payload);
+        }
+
+        return inferDvSwitchActiveFromDom();
+    }
+
+    function shouldEnableConnectButton(statusText) {
+        const mode = currentSelectedMode();
+        const disconnectFirst = disconnectBeforeConnectEnabled();
+        const status = normalizeStatusText(statusText).toUpperCase();
+
+        if (isErrorStatus(statusText) || isDisconnectedStatus(statusText)) {
+            return true;
+        }
+
+        if (isWaitingStatus(statusText)) {
+            return true;
+        }
+
+        if (!isConnectedStatus(statusText)) {
+            return true;
+        }
+
+        if (mode === 'ASL') {
+            return true;
+        }
+
+        if (mode === 'BM' && status.includes('(BM)')) {
+            return false;
+        }
+
+        if (mode === 'TGIF' && status.includes('(TGIF)')) {
+            return false;
+        }
+
+        if (mode === 'YSF' && status.includes('CONNECTED: YSF TARGET')) {
+            return disconnectFirst ? false : true;
+        }
+
+        if (disconnectFirst) {
+            return false;
+        }
+
+        return true;
+    }
+
+    function shouldEnableDisconnectButton(statusText) {
+        if (isDisconnectedStatus(statusText) || isErrorStatus(statusText)) {
+            return currentAllstarCount() > 0;
+        }
+
+        if (isWaitingStatus(statusText) || isConnectedStatus(statusText)) {
+            return true;
+        }
+
+        return true;
+    }
+
+    function shouldEnableDisconnectAllButton(statusText) {
+        const hasAllstar = currentAllstarCount() > 0;
+        const hasDvSwitch = currentDvSwitchActive();
+
+        if (isDisconnectedStatus(statusText) || isErrorStatus(statusText)) {
+            return hasAllstar || hasDvSwitch;
+        }
+
+        if (isWaitingStatus(statusText) || isConnectedStatus(statusText)) {
+            return true;
+        }
+
+        return hasAllstar || hasDvSwitch;
+    }
+
+    function shouldEnableDisconnectDvSwitchButton(statusText) {
+        const hasDvSwitch = currentDvSwitchActive();
+
+        if (isWaitingStatus(statusText) || isConnectedStatus(statusText)) {
+            return hasDvSwitch;
+        }
+
+        if (isDisconnectedStatus(statusText) || isErrorStatus(statusText)) {
+            return hasDvSwitch;
+        }
+
+        return hasDvSwitch;
+    }
+
     function setButtonVisualState(button, enabled) {
         if (!button) {
             return;
@@ -104,26 +344,10 @@
             return;
         }
 
-        if (isConnectedStatus(statusText)) {
-            setButtonVisualState(els.connectButton, false);
-            setButtonVisualState(els.disconnectButton, true);
-            return;
-        }
-
-        if (isWaitingStatus(statusText)) {
-            setButtonVisualState(els.connectButton, true);
-            setButtonVisualState(els.disconnectButton, true);
-            return;
-        }
-
-        if (isDisconnectedStatus(statusText) || isErrorStatus(statusText)) {
-            setButtonVisualState(els.connectButton, true);
-            setButtonVisualState(els.disconnectButton, false);
-            return;
-        }
-
-        setButtonVisualState(els.connectButton, true);
-        setButtonVisualState(els.disconnectButton, true);
+        setButtonVisualState(els.connectButton, shouldEnableConnectButton(statusText));
+        setButtonVisualState(els.disconnectButton, shouldEnableDisconnectButton(statusText));
+        setButtonVisualState(els.disconnectAllButton, shouldEnableDisconnectAllButton(statusText));
+        setButtonVisualState(els.disconnectDvSwitchButton, shouldEnableDisconnectDvSwitchButton(statusText));
     }
 
     function setBusy(isBusy) {
@@ -142,14 +366,29 @@
                 els.disconnectButton.style.cursor = 'wait';
             }
 
+            if (els.disconnectAllButton) {
+                els.disconnectAllButton.disabled = true;
+                els.disconnectAllButton.style.opacity = '0.7';
+                els.disconnectAllButton.style.cursor = 'wait';
+            }
+
+            if (els.disconnectDvSwitchButton) {
+                els.disconnectDvSwitchButton.disabled = true;
+                els.disconnectDvSwitchButton.style.opacity = '0.7';
+                els.disconnectDvSwitchButton.style.cursor = 'wait';
+            }
+
+            const rowButtons = document.querySelectorAll('.allstar-disconnect-button');
+            rowButtons.forEach((button) => {
+                button.disabled = true;
+                button.style.opacity = '0.7';
+                button.style.cursor = 'wait';
+            });
+
             return;
         }
 
-        const currentStatus = els.systemStatus
-            ? els.systemStatus.textContent.replace(/^System Status:\s*/i, '').trim()
-            : 'IDLE - NO CONNECTIONS';
-
-        updateButtonsFromStatus(currentStatus);
+        updateButtonsFromStatus(currentStatusText());
     }
 
     function setSystemStatus(text) {
@@ -175,27 +414,38 @@
         }
 
         const mode = normalizeMode(els.modeSelect.value);
+        const disconnectFirst = disconnectBeforeConnectEnabled();
 
-        if (mode === 'BM' || mode === 'TGIF') {
-            els.helperText.textContent =
-                'For BM and TGIF, press Connect once to prepare the network. Wait for the status to show ready, then press Connect again for the final talkgroup connect. After a true connection, Connect will dim and Disconnect will become active.';
+        if (mode === 'BM') {
+            els.helperText.textContent = disconnectFirst
+                ? 'BrandMeister is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: BM READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because BM is already connected in this mode. DISCONNECT removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
+                : 'BrandMeister is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: BM READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because BM is already connected in this mode. With Disconnect before Connect off, BM can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
+            return;
+        }
+
+        if (mode === 'TGIF') {
+            els.helperText.textContent = disconnectFirst
+                ? 'TGIF is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: TGIF READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because TGIF is already connected in this mode. DISCONNECT removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
+                : 'TGIF is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: TGIF READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because TGIF is already connected in this mode. With Disconnect before Connect off, TGIF can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
             return;
         }
 
         if (mode === 'YSF') {
-            els.helperText.textContent =
-                'YSF is a one-step connect. Enter a YSF target or load a YSF favorite, then press Connect.';
+            els.helperText.textContent = disconnectFirst
+                ? 'YSF is a one-step connect. Enter or load the YSF target, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: YSF TARGET ... before doing anything else. When YSF is already active, CONNECT may stay dim in this mode. DISCONNECT removes the current managed YSF connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
+                : 'YSF is a one-step connect. Enter or load the YSF target, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: YSF TARGET ... before doing anything else. With Disconnect before Connect off, YSF can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed YSF connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
             return;
         }
 
         if (mode === 'ASL') {
-            els.helperText.textContent =
-                'AllStar is a one-step connect. Enter a node number or load an AllStar favorite, then press Connect. If DVSwitch auto-load is enabled, it will use the selected mode when loaded.';
+            els.helperText.textContent = disconnectFirst
+                ? 'AllStar is a one-step connect. Enter or load the AllStar node, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ALLSTAR NODE ... before doing anything else. When CONNECT becomes bright again, you may connect another node only if your current settings allow it. With Disconnect before Connect checked, the next CONNECT replaces the current managed links first instead of stacking them. DISCONNECT removes the last direct AllStar link first. The small Disconnect button beside a listed AllStar node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.'
+                : 'AllStar is a one-step connect. Enter or load the AllStar node, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ALLSTAR NODE ... before doing anything else. When CONNECT becomes bright again, you can press CONNECT again to add another direct AllStar node. DISCONNECT removes the last direct AllStar link first. The small Disconnect button beside a listed AllStar node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
             return;
         }
 
         els.helperText.textContent =
-            'Select a network, enter or load a target, then press Connect.';
+            'Select a network, enter or load a target, then press CONNECT. Watch the System Status line and wait for the buttons to become bright again before the next step.';
     }
 
     function setStatusCardText(element, value, fallback) {
@@ -254,6 +504,56 @@
         });
     }
 
+    function renderAllstarLinks(allstarPayload) {
+        if (!els.statusAllstarLinks) {
+            return;
+        }
+
+        const links = Array.isArray(allstarPayload?.connected_nodes)
+            ? allstarPayload.connected_nodes
+            : [];
+
+        if (links.length === 0) {
+            els.statusAllstarLinks.innerHTML = '<div>No links</div>';
+            return;
+        }
+
+        const rows = links.map((link) => {
+            const rawNode = String(link.node ?? link.target ?? '').trim();
+            const node = escapeHtml(rawNode);
+            const mode = escapeHtml(
+                String(link.mode_label ?? link.link_mode ?? link.mode ?? 'Connected').trim()
+            );
+
+            return `
+                <div class="allstar-link-row" style="display:flex; align-items:center; justify-content:space-between; gap:10px; margin-top:8px;">
+                    <span class="allstar-link-text">${node}${mode ? ' - ' + mode : ''}</span>
+                    <button
+                        type="button"
+                        class="allstar-disconnect-button"
+                        data-disconnect-node="${node}"
+                        style="
+                            background:#6b46c1;
+                            color:#ffffff;
+                            border:1px solid #8b5cf6;
+                            border-radius:6px;
+                            padding:4px 10px;
+                            font-size:0.82rem;
+                            font-weight:600;
+                            cursor:pointer;
+                            opacity:${state.busy ? '0.7' : '1'};
+                        "
+                        ${state.busy ? 'disabled' : ''}
+                    >
+                        Disconnect
+                    </button>
+                </div>
+            `;
+        });
+
+        els.statusAllstarLinks.innerHTML = rows.join('');
+    }
+
     function refreshActivityPanel(payload) {
         if (!payload || typeof payload !== 'object') {
             return;
@@ -300,6 +600,18 @@
             false
         );
 
+        const dmrActiveNetwork = normalizeMode(
+            payload.dmr_active_network ||
+            system.dmr_active_network ||
+            ''
+        );
+
+        const dmrActiveTarget = String(
+            payload.dmr_active_target ||
+            system.dmr_active_target ||
+            ''
+        ).trim();
+
         const autoload = !!(
             payload.autoload_dvswitch ??
             system.autoload_dvswitch ??
@@ -312,7 +624,14 @@
             'transceive'
         );
 
+        const disconnectBeforeConnect = !!(
+            payload.disconnect_before_connect ??
+            system.disconnect_before_connect ??
+            false
+        );
+
         const dvsNode = String(config.dvswitch_node || '').trim();
+        const dvswitchActive = currentDvSwitchActive(payload);
 
         const autoLoadValue = autoload
             ? `Enabled${dvsNode ? ` (${dvsNode})` : ''}`
@@ -323,10 +642,14 @@
         updateActivityValue('Pending Target', pendingTarget || '-');
         updateActivityValue(
             'DMR Network',
-            dmrNetwork ? `${dmrNetwork}${dmrReady ? ' (Ready)' : ' (Preparing)'}` : '-'
+            dmrActiveNetwork
+                ? `${dmrActiveNetwork}${dmrActiveTarget ? ` (TG ${dmrActiveTarget})` : ''}`
+                : (dmrNetwork ? `${dmrNetwork}${dmrReady ? ' (Ready)' : ' (Preparing)'}` : '-')
         );
         updateActivityValue('DVSwitch Auto-Load', autoLoadValue);
         updateActivityValue('DVSwitch Auto-Load Mode', autoloadModeLabel(autoloadMode));
+        updateActivityValue('DVSwitch Link Active', dvswitchActive ? 'Yes' : 'No');
+        updateActivityValue('Disconnect Before Connect', disconnectBeforeConnect ? 'Enabled' : 'Disabled');
         updateActivityValue('Current Status', statusText);
     }
 
@@ -392,6 +715,8 @@
             );
         }
 
+        renderAllstarLinks(allstar);
+
         if (allowFieldSync && els.modeSelect && !state.busy) {
             if (typeof payload.selected_mode === 'string') {
                 els.modeSelect.value = normalizeMode(payload.selected_mode);
@@ -424,12 +749,82 @@
             }
         }
 
+        if (allowFieldSync && els.disconnectBeforeConnectCheckbox && !state.busy) {
+            if (typeof payload.disconnect_before_connect !== 'undefined') {
+                els.disconnectBeforeConnectCheckbox.checked = !!payload.disconnect_before_connect;
+            } else if (typeof system.disconnect_before_connect !== 'undefined') {
+                els.disconnectBeforeConnectCheckbox.checked = !!system.disconnect_before_connect;
+            }
+        }
+
         if (Array.isArray(payload.favorites)) {
             renderFavorites(payload.favorites);
         }
 
         refreshActivityPanel(payload);
         updateHelperText();
+        updateButtonsFromStatus(statusText);
+    }
+
+    function applyActionStatus(payload, options = {}) {
+        if (!payload || typeof payload !== 'object') {
+            return;
+        }
+
+        const { preserveTarget = false, preserveMode = false } = options;
+        const system = payload.system || {};
+        const statusText =
+            payload.status_text ||
+            payload.status ||
+            payload.last_status ||
+            system.status_text ||
+            'IDLE - NO CONNECTIONS';
+
+        setSystemStatus(statusText);
+
+        if (!preserveMode && els.modeSelect) {
+            if (typeof payload.selected_mode === 'string') {
+                els.modeSelect.value = normalizeMode(payload.selected_mode);
+            } else if (typeof system.selected_mode === 'string') {
+                els.modeSelect.value = normalizeMode(system.selected_mode);
+            }
+        }
+
+        if (!preserveTarget && els.targetInput && !userIsEditingTarget()) {
+            if (typeof payload.pending_target === 'string' && payload.pending_target !== '') {
+                els.targetInput.value = payload.pending_target;
+            } else if (typeof system.pending_target === 'string' && system.pending_target !== '') {
+                els.targetInput.value = system.pending_target;
+            } else if (typeof payload.last_target === 'string' && payload.last_target !== '') {
+                els.targetInput.value = payload.last_target;
+            }
+        }
+
+        if (typeof payload.autoload_dvswitch !== 'undefined' && els.autoloadCheckbox) {
+            els.autoloadCheckbox.checked = !!payload.autoload_dvswitch;
+        } else if (typeof system.autoload_dvswitch !== 'undefined' && els.autoloadCheckbox) {
+            els.autoloadCheckbox.checked = !!system.autoload_dvswitch;
+        }
+
+        if (els.autoloadModeSelect) {
+            if (typeof payload.autoload_dvswitch_mode === 'string') {
+                els.autoloadModeSelect.value = normalizeAutoloadMode(payload.autoload_dvswitch_mode);
+            } else if (typeof system.autoload_dvswitch_mode === 'string') {
+                els.autoloadModeSelect.value = normalizeAutoloadMode(system.autoload_dvswitch_mode);
+            }
+        }
+
+        if (els.disconnectBeforeConnectCheckbox) {
+            if (typeof payload.disconnect_before_connect !== 'undefined') {
+                els.disconnectBeforeConnectCheckbox.checked = !!payload.disconnect_before_connect;
+            } else if (typeof system.disconnect_before_connect !== 'undefined') {
+                els.disconnectBeforeConnectCheckbox.checked = !!system.disconnect_before_connect;
+            }
+        }
+
+        refreshActivityPanel(payload);
+        updateHelperText();
+        updateButtonsFromStatus(statusText);
     }
 
     async function requestJson(url, options = {}) {
@@ -450,21 +845,22 @@
     }
 
     async function loadStatus() {
-        try {
-            const payload = await requestJson(state.endpoints.status, {
-                method: 'GET',
-            });
+        const payload = await requestJson(state.endpoints.status, {
+            method: 'GET',
+        });
 
-            applyLiveStatus(payload, { allowFieldSync: false });
-        } catch (error) {
-            console.error(error);
-            setSystemStatus('ERROR: STATUS UNAVAILABLE');
-            updateActivityValue('Current Status', 'ERROR: STATUS UNAVAILABLE');
-        }
+        applyLiveStatus(payload, { allowFieldSync: false });
+        return payload;
     }
 
-    async function sendAction(action) {
-        if (!els.targetInput || !els.modeSelect || !els.autoloadCheckbox || !els.autoloadModeSelect) {
+    async function sendAction(action, extraPayload = {}) {
+        if (
+            !els.targetInput ||
+            !els.modeSelect ||
+            !els.autoloadCheckbox ||
+            !els.autoloadModeSelect ||
+            !els.disconnectBeforeConnectCheckbox
+        ) {
             return;
         }
 
@@ -476,6 +872,8 @@
             mode: normalizeMode(els.modeSelect.value),
             autoload_dvswitch: els.autoloadCheckbox.checked ? 1 : 0,
             autoload_dvswitch_mode: normalizeAutoloadMode(els.autoloadModeSelect.value),
+            disconnect_before_connect: els.disconnectBeforeConnectCheckbox.checked ? 1 : 0,
+            ...extraPayload,
         };
 
         setBusy(true);
@@ -489,7 +887,13 @@
                 body: JSON.stringify(payload),
             });
 
-            applyLiveStatus(responsePayload, { allowFieldSync: true });
+            applyActionStatus(responsePayload);
+
+            try {
+                await loadStatus();
+            } catch (statusError) {
+                console.error(statusError);
+            }
         } catch (error) {
             console.error(error);
             setSystemStatus('ERROR: REQUEST FAILED');
@@ -499,8 +903,12 @@
         }
     }
 
-    async function rememberAutoloadPreference() {
-        if (!els.autoloadCheckbox || !els.autoloadModeSelect) {
+    async function rememberPreferences() {
+        if (
+            !els.autoloadCheckbox ||
+            !els.autoloadModeSelect ||
+            !els.disconnectBeforeConnectCheckbox
+        ) {
             return;
         }
 
@@ -515,13 +923,60 @@
                     action_type: 'remember_autoload',
                     autoload_dvswitch: els.autoloadCheckbox.checked ? 1 : 0,
                     autoload_dvswitch_mode: normalizeAutoloadMode(els.autoloadModeSelect.value),
+                    disconnect_before_connect: els.disconnectBeforeConnectCheckbox.checked ? 1 : 0,
                 }),
             });
 
-            applyLiveStatus(payload, { allowFieldSync: false });
+            applyActionStatus(payload, { preserveTarget: true, preserveMode: true });
         } catch (error) {
             console.error(error);
         }
+    }
+
+    function wireAllstarDisconnectButtons() {
+        if (!els.statusAllstarLinks) {
+            return;
+        }
+
+        els.statusAllstarLinks.addEventListener('click', (event) => {
+            const button = event.target.closest('[data-disconnect-node]');
+            if (!button || state.busy) {
+                return;
+            }
+
+            const selectedNode = String(button.getAttribute('data-disconnect-node') || '').trim();
+            if (!selectedNode) {
+                return;
+            }
+
+            sendAction('disconnect_selected', {
+                selected_node: selectedNode,
+                target: selectedNode,
+                tgNum: selectedNode,
+            });
+        });
+
+        els.statusAllstarLinks.addEventListener('mouseover', (event) => {
+            const button = event.target.closest('.allstar-disconnect-button');
+            if (!button || button.disabled) {
+                return;
+            }
+
+            button.style.background = '#7c3aed';
+            button.style.borderColor = '#a78bfa';
+            button.style.cursor = 'pointer';
+        });
+
+        els.statusAllstarLinks.addEventListener('mouseout', (event) => {
+            const button = event.target.closest('.allstar-disconnect-button');
+            if (!button) {
+                return;
+            }
+
+            button.style.background = '#6b46c1';
+            button.style.borderColor = '#8b5cf6';
+            button.style.cursor = button.disabled ? 'not-allowed' : 'pointer';
+        });
     }
 
     function wireFavoritesLoad() {
@@ -554,9 +1009,15 @@
             window.clearInterval(state.pollTimer);
         }
 
-        state.pollTimer = window.setInterval(() => {
+        state.pollTimer = window.setInterval(async () => {
             if (!state.busy) {
-                loadStatus();
+                try {
+                    await loadStatus();
+                } catch (error) {
+                    console.error(error);
+                    setSystemStatus('ERROR: STATUS UNAVAILABLE');
+                    updateActivityValue('Current Status', 'ERROR: STATUS UNAVAILABLE');
+                }
             }
         }, state.pollIntervalMs);
     }
@@ -567,7 +1028,10 @@
         }
 
         if (els.modeSelect) {
-            els.modeSelect.addEventListener('change', updateHelperText);
+            els.modeSelect.addEventListener('change', () => {
+                updateHelperText();
+                updateButtonsFromStatus(currentStatusText());
+            });
         }
 
         if (els.connectButton) {
@@ -582,12 +1046,32 @@
             });
         }
 
+        if (els.disconnectAllButton) {
+            els.disconnectAllButton.addEventListener('click', () => {
+                sendAction('disconnect_all');
+            });
+        }
+
+        if (els.disconnectDvSwitchButton) {
+            els.disconnectDvSwitchButton.addEventListener('click', () => {
+                sendAction('disconnect_dvswitch');
+            });
+        }
+
         if (els.autoloadCheckbox) {
-            els.autoloadCheckbox.addEventListener('change', rememberAutoloadPreference);
+            els.autoloadCheckbox.addEventListener('change', rememberPreferences);
         }
 
         if (els.autoloadModeSelect) {
-            els.autoloadModeSelect.addEventListener('change', rememberAutoloadPreference);
+            els.autoloadModeSelect.addEventListener('change', rememberPreferences);
+        }
+
+        if (els.disconnectBeforeConnectCheckbox) {
+            els.disconnectBeforeConnectCheckbox.addEventListener('change', () => {
+                rememberPreferences();
+                updateHelperText();
+                updateButtonsFromStatus(currentStatusText());
+            });
         }
 
         if (els.controlForm) {
@@ -596,9 +1080,16 @@
             });
         }
 
+        wireAllstarDisconnectButtons();
         wireFavoritesLoad();
         updateHelperText();
-        loadStatus();
+
+        loadStatus().catch((error) => {
+            console.error(error);
+            setSystemStatus('ERROR: STATUS UNAVAILABLE');
+            updateActivityValue('Current Status', 'ERROR: STATUS UNAVAILABLE');
+        });
+
         startPolling();
     }
 

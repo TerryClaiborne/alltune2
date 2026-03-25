@@ -105,6 +105,181 @@ function normalize_autoload_dvswitch_mode(mixed $mode): string
     return $value === 'local_monitor' ? 'local_monitor' : 'transceive';
 }
 
+function ensure_allstar_tracking_structures(): void
+{
+    if (!isset($_SESSION['allstar_link_modes']) || !is_array($_SESSION['allstar_link_modes'])) {
+        $_SESSION['allstar_link_modes'] = [];
+    }
+
+    if (!isset($_SESSION['allstar_link_order']) || !is_array($_SESSION['allstar_link_order'])) {
+        $_SESSION['allstar_link_order'] = [];
+    }
+}
+
+function track_allstar_link(string $node, string $mode): void
+{
+    ensure_allstar_tracking_structures();
+
+    $_SESSION['allstar_link_modes'][$node] = normalize_autoload_dvswitch_mode($mode);
+
+    $order = array_values(array_filter(
+        $_SESSION['allstar_link_order'],
+        static fn ($value) => trim((string) $value) !== '' && trim((string) $value) !== $node
+    ));
+
+    $order[] = $node;
+    $_SESSION['allstar_link_order'] = $order;
+}
+
+function untrack_allstar_link(string $node): void
+{
+    ensure_allstar_tracking_structures();
+
+    unset($_SESSION['allstar_link_modes'][$node]);
+
+    $_SESSION['allstar_link_order'] = array_values(array_filter(
+        $_SESSION['allstar_link_order'],
+        static fn ($value) => trim((string) $value) !== '' && trim((string) $value) !== $node
+    ));
+}
+
+function clear_allstar_tracking(): void
+{
+    $_SESSION['allstar_link_modes'] = [];
+    $_SESSION['allstar_link_order'] = [];
+}
+
+function last_tracked_allstar_node(): string
+{
+    ensure_allstar_tracking_structures();
+
+    $order = $_SESSION['allstar_link_order'];
+    if ($order === []) {
+        return '';
+    }
+
+    $last = end($order);
+    return is_string($last) ? trim($last) : '';
+}
+
+function clear_dmr_session_state(): void
+{
+    unset(
+        $_SESSION['pending_tg']
+    );
+}
+
+function clear_dmr_active_state(): void
+{
+    unset(
+        $_SESSION['dmr_active_network'],
+        $_SESSION['dmr_active_target']
+    );
+}
+
+function clear_runtime_targets(): void
+{
+    unset(
+        $_SESSION['last_mode'],
+        $_SESSION['last_target'],
+        $_SESSION['pending_target'],
+        $_SESSION['pending_tg'],
+        $_SESSION['dmr_network'],
+        $_SESSION['dmr_ready'],
+        $_SESSION['dvswitch_autoloaded']
+    );
+
+    clear_dmr_active_state();
+}
+
+function disconnect_dvswitch_runtime(string $myNode, string $dvSwitchNode): void
+{
+    $lastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
+    $dvswitchAutoloaded = !empty($_SESSION['dvswitch_autoloaded']);
+    $dmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
+
+    $hasDmrRuntime = $dmrNetwork === 'BM' || $dmrNetwork === 'TGIF';
+    $hasYsfRuntime = $lastMode === 'YSF';
+    $shouldDisconnectDvSwitchNode = $dvSwitchNode !== '' && (
+        $dvswitchAutoloaded ||
+        $hasDmrRuntime ||
+        $hasYsfRuntime
+    );
+
+    if ($hasDmrRuntime || $hasYsfRuntime) {
+        dvswitch_tune('disconnect');
+        pause_seconds(1.0);
+    }
+
+    if ($shouldDisconnectDvSwitchNode) {
+        asterisk_ilink_disconnect($myNode, $dvSwitchNode);
+        pause_seconds(0.5);
+    }
+}
+
+function disconnect_only_dvswitch_link(string $myNode, string $dvSwitchNode): void
+{
+    if ($dvSwitchNode === '') {
+        return;
+    }
+
+    $lastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
+    $dmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
+    $dvswitchAutoloaded = !empty($_SESSION['dvswitch_autoloaded']);
+
+    $hasDmrRuntime = $dmrNetwork === 'BM' || $dmrNetwork === 'TGIF';
+    $hasYsfRuntime = $lastMode === 'YSF';
+
+    if ($hasDmrRuntime || $hasYsfRuntime) {
+        dvswitch_tune('disconnect');
+        pause_seconds(1.0);
+    }
+
+    if ($dvswitchAutoloaded || $hasDmrRuntime || $hasYsfRuntime) {
+        asterisk_ilink_disconnect($myNode, $dvSwitchNode);
+        pause_seconds(0.5);
+    }
+
+    unset(
+        $_SESSION['dvswitch_autoloaded'],
+        $_SESSION['dmr_network'],
+        $_SESSION['dmr_ready'],
+        $_SESSION['pending_tg']
+    );
+
+    clear_dmr_active_state();
+
+    if ($hasYsfRuntime || $hasDmrRuntime) {
+        unset($_SESSION['last_mode'], $_SESSION['last_target'], $_SESSION['pending_target']);
+    }
+}
+
+function disconnect_all_managed_links(string $myNode, string $dvSwitchNode): void
+{
+    ensure_allstar_tracking_structures();
+
+    $trackedOrder = array_reverse($_SESSION['allstar_link_order']);
+    foreach ($trackedOrder as $trackedNode) {
+        $trackedNode = trim((string) $trackedNode);
+        if ($trackedNode === '') {
+            continue;
+        }
+
+        asterisk_ilink_disconnect($myNode, $trackedNode);
+        pause_seconds(0.5);
+        untrack_allstar_link($trackedNode);
+    }
+
+    disconnect_dvswitch_runtime($myNode, $dvSwitchNode);
+    clear_allstar_tracking();
+    clear_runtime_targets();
+}
+
+function disconnect_managed_links_before_connect(string $myNode, string $dvSwitchNode): void
+{
+    disconnect_all_managed_links($myNode, $dvSwitchNode);
+}
+
 function session_payload(string $statusText, array $extra = []): array
 {
     return array_merge([
@@ -119,8 +294,12 @@ function session_payload(string $statusText, array $extra = []): array
         'pending_tg' => (string) ($_SESSION['pending_tg'] ?? ''),
         'autoload_dvswitch' => !empty($_SESSION['autoload_dvswitch']),
         'autoload_dvswitch_mode' => (string) ($_SESSION['autoload_dvswitch_mode'] ?? 'transceive'),
+        'disconnect_before_connect' => !empty($_SESSION['disconnect_before_connect']),
         'dmr_network' => (string) ($_SESSION['dmr_network'] ?? ''),
         'dmr_ready' => !empty($_SESSION['dmr_ready']),
+        'dmr_active_network' => (string) ($_SESSION['dmr_active_network'] ?? ''),
+        'dmr_active_target' => (string) ($_SESSION['dmr_active_target'] ?? ''),
+        'dvswitch_link_active' => !empty($_SESSION['dvswitch_autoloaded']) || !empty($_SESSION['dmr_ready']) || normalize_mode((string) ($_SESSION['last_mode'] ?? '')) === 'YSF',
     ], $extra);
 }
 
@@ -128,9 +307,11 @@ $request = request_data();
 
 $action = strtolower(trim((string) ($request['action'] ?? $request['action_type'] ?? '')));
 $rawTarget = trim((string) ($request['target'] ?? $request['tgNum'] ?? ''));
+$selectedNode = preg_replace('/[^0-9]/', '', (string) ($request['selected_node'] ?? '')) ?? '';
 $mode = normalize_mode((string) ($request['mode'] ?? ($_SESSION['selected_mode'] ?? 'BM')));
 $autoloadPosted = array_key_exists('autoload_dvswitch', $request);
 $autoloadModePosted = array_key_exists('autoload_dvswitch_mode', $request);
+$disconnectBeforeConnectPosted = array_key_exists('disconnect_before_connect', $request);
 
 if ($autoloadPosted) {
     $_SESSION['autoload_dvswitch'] = !empty($request['autoload_dvswitch']);
@@ -144,6 +325,13 @@ if ($autoloadModePosted) {
     $_SESSION['autoload_dvswitch_mode'] = 'transceive';
 }
 
+if ($disconnectBeforeConnectPosted) {
+    $_SESSION['disconnect_before_connect'] = !empty($request['disconnect_before_connect']);
+} elseif (!isset($_SESSION['disconnect_before_connect'])) {
+    $_SESSION['disconnect_before_connect'] = false;
+}
+
+ensure_allstar_tracking_structures();
 $_SESSION['selected_mode'] = $mode;
 
 $myNode = $config->getString('MYNODE', '');
@@ -151,6 +339,7 @@ $dvSwitchNode = $config->getString('DVSWITCH_NODE', '');
 $bmPassword = $config->getString('BM_SelfcarePassword', '');
 $tgifPassword = $config->getString('TGIF_HotspotSecurityKey', '');
 $autoloadDvSwitchMode = normalize_autoload_dvswitch_mode($_SESSION['autoload_dvswitch_mode'] ?? 'transceive');
+$disconnectBeforeConnect = !empty($_SESSION['disconnect_before_connect']);
 
 if ($action === 'remember_autoload') {
     $status = (string) ($_SESSION['last_status'] ?? 'IDLE - NO CONNECTIONS');
@@ -161,13 +350,79 @@ if ($action === '') {
     respond(session_payload((string) ($_SESSION['last_status'] ?? 'IDLE - NO CONNECTIONS')));
 }
 
-if ($action !== 'connect' && $action !== 'disconnect') {
+if (
+    $action !== 'connect' &&
+    $action !== 'disconnect' &&
+    $action !== 'disconnect_all' &&
+    $action !== 'disconnect_selected' &&
+    $action !== 'disconnect_dvswitch'
+) {
     respond(session_payload('ERROR: INVALID ACTION'), 400);
 }
 
 if ($myNode === '') {
     $_SESSION['last_status'] = 'ERROR: MYNODE MISSING IN CONFIG';
     respond(session_payload($_SESSION['last_status']), 500);
+}
+
+if ($action === 'disconnect_all') {
+    shell_run('sudo systemctl restart asterisk');
+    pause_seconds(2.0);
+
+    clear_allstar_tracking();
+    clear_runtime_targets();
+
+    $_SESSION['last_status'] = 'IDLE - NO CONNECTIONS';
+    respond(session_payload($_SESSION['last_status']));
+}
+
+if ($action === 'disconnect_dvswitch') {
+    if ($dvSwitchNode === '') {
+        $_SESSION['last_status'] = 'ERROR: DVSWITCH_NODE MISSING IN CONFIG';
+        respond(session_payload($_SESSION['last_status']), 500);
+    }
+
+    disconnect_only_dvswitch_link($myNode, $dvSwitchNode);
+
+    $_SESSION['last_status'] = 'DISCONNECTED: DVSWITCH LINK ' . $dvSwitchNode;
+    respond(session_payload($_SESSION['last_status']));
+}
+
+if ($action === 'disconnect_selected') {
+    if ($selectedNode === '') {
+        $_SESSION['last_status'] = 'ERROR: INVALID ALLSTAR NODE';
+        respond(session_payload($_SESSION['last_status']), 422);
+    }
+
+    ensure_allstar_tracking_structures();
+
+    $trackedModes = $_SESSION['allstar_link_modes'];
+    $trackedOrder = $_SESSION['allstar_link_order'];
+
+    $isTrackedDirectNode =
+        array_key_exists($selectedNode, $trackedModes) ||
+        in_array($selectedNode, $trackedOrder, true);
+
+    if (!$isTrackedDirectNode) {
+        $_SESSION['last_status'] = 'ERROR: ALLSTAR NODE NOT TRACKED';
+        respond(session_payload($_SESSION['last_status']), 404);
+    }
+
+    asterisk_ilink_disconnect($myNode, $selectedNode);
+    pause_seconds(0.5);
+    untrack_allstar_link($selectedNode);
+
+    $remainingTracked = last_tracked_allstar_node();
+    if ($remainingTracked !== '') {
+        $_SESSION['last_mode'] = 'ASL';
+        $_SESSION['last_target'] = $remainingTracked;
+        $_SESSION['pending_target'] = $remainingTracked;
+    } else {
+        unset($_SESSION['last_mode'], $_SESSION['last_target'], $_SESSION['pending_target']);
+    }
+
+    $_SESSION['last_status'] = 'DISCONNECTED: ALLSTAR NODE ' . $selectedNode;
+    respond(session_payload($_SESSION['last_status']));
 }
 
 if ($action === 'connect') {
@@ -193,22 +448,16 @@ if ($action === 'connect') {
             respond(session_payload($_SESSION['last_status']), 422);
         }
 
-        if ($dvSwitchNode !== '') {
-            asterisk_ilink_disconnect($myNode, $dvSwitchNode);
-            pause_seconds(0.5);
+        if ($disconnectBeforeConnect) {
+            disconnect_managed_links_before_connect($myNode, $dvSwitchNode);
         }
 
         asterisk_ilink_connect($myNode, $digitsOnlyTarget, $autoloadDvSwitchMode);
+        track_allstar_link($digitsOnlyTarget, $autoloadDvSwitchMode);
 
         $_SESSION['last_mode'] = 'ASL';
         $_SESSION['last_target'] = $digitsOnlyTarget;
         $_SESSION['pending_target'] = $digitsOnlyTarget;
-        unset(
-            $_SESSION['dmr_network'],
-            $_SESSION['pending_tg'],
-            $_SESSION['dmr_ready'],
-            $_SESSION['dvswitch_autoloaded']
-        );
 
         $_SESSION['last_status'] = 'CONNECTED: ALLSTAR NODE ' . $digitsOnlyTarget;
         respond(session_payload($_SESSION['last_status']));
@@ -218,6 +467,10 @@ if ($action === 'connect') {
         if ($dvSwitchNode === '') {
             $_SESSION['last_status'] = 'ERROR: DVSWITCH_NODE MISSING IN CONFIG';
             respond(session_payload($_SESSION['last_status']), 500);
+        }
+
+        if ($disconnectBeforeConnect) {
+            disconnect_managed_links_before_connect($myNode, $dvSwitchNode);
         }
 
         load_dvswitch_link($myNode, $dvSwitchNode, $autoloadDvSwitchMode);
@@ -231,11 +484,8 @@ if ($action === 'connect') {
         $_SESSION['last_mode'] = 'YSF';
         $_SESSION['last_target'] = $rawTarget;
         $_SESSION['pending_target'] = $rawTarget;
-        unset(
-            $_SESSION['dmr_network'],
-            $_SESSION['pending_tg'],
-            $_SESSION['dmr_ready']
-        );
+        clear_dmr_session_state();
+        clear_dmr_active_state();
         $_SESSION['dvswitch_autoloaded'] = true;
 
         $_SESSION['last_status'] = 'CONNECTED: YSF TARGET ' . $rawTarget;
@@ -264,6 +514,10 @@ if ($action === 'connect') {
         $autoload = !empty($_SESSION['autoload_dvswitch']);
 
         if ($currentNetwork !== $mode || !$dmrReady) {
+            if ($disconnectBeforeConnect) {
+                disconnect_managed_links_before_connect($myNode, $dvSwitchNode);
+            }
+
             if ($autoload && $dvSwitchNode !== '') {
                 load_dvswitch_link($myNode, $dvSwitchNode, $autoloadDvSwitchMode);
                 pause_seconds(1.0);
@@ -288,6 +542,8 @@ if ($action === 'connect') {
             $_SESSION['last_mode'] = $mode;
             $_SESSION['last_target'] = '';
 
+            clear_dmr_active_state();
+
             $_SESSION['last_status'] = 'WAITING: ' . $mode . ' READY - CLICK CONNECT AGAIN FOR TG ' . $digitsOnlyTarget;
             respond(session_payload($_SESSION['last_status']));
         }
@@ -299,6 +555,8 @@ if ($action === 'connect') {
         $_SESSION['last_target'] = $digitsOnlyTarget;
         $_SESSION['pending_target'] = $digitsOnlyTarget;
         $_SESSION['pending_tg'] = $digitsOnlyTarget;
+        $_SESSION['dmr_active_network'] = $mode;
+        $_SESSION['dmr_active_target'] = $digitsOnlyTarget;
         $_SESSION['last_status'] = 'CONNECTED: TG ' . $digitsOnlyTarget . ' (' . $mode . ')';
 
         respond(session_payload($_SESSION['last_status']));
@@ -308,45 +566,71 @@ if ($action === 'connect') {
     respond(session_payload($_SESSION['last_status']), 422);
 }
 
+/*
+ * Deterministic disconnect order:
+ * 1. Last tracked AllStar direct link
+ * 2. Active DVSwitch-managed state
+ * 3. Final stale-state cleanup to IDLE
+ */
+
+$trackedAllstarNode = last_tracked_allstar_node();
+if ($trackedAllstarNode !== '') {
+    asterisk_ilink_disconnect($myNode, $trackedAllstarNode);
+    pause_seconds(0.5);
+    untrack_allstar_link($trackedAllstarNode);
+
+    $remainingTracked = last_tracked_allstar_node();
+    if ($remainingTracked !== '') {
+        $_SESSION['last_mode'] = 'ASL';
+        $_SESSION['last_target'] = $remainingTracked;
+        $_SESSION['pending_target'] = $remainingTracked;
+    } else {
+        unset($_SESSION['last_mode'], $_SESSION['last_target'], $_SESSION['pending_target']);
+    }
+
+    $_SESSION['last_status'] = 'DISCONNECTED: ALLSTAR NODE ' . $trackedAllstarNode;
+    respond(session_payload($_SESSION['last_status']));
+}
+
 $lastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
-$lastTarget = trim((string) ($_SESSION['last_target'] ?? ''));
 $dvswitchAutoloaded = !empty($_SESSION['dvswitch_autoloaded']);
 
-if ($lastMode === 'ASL') {
-    if ($lastTarget !== '') {
-        asterisk_ilink_disconnect($myNode, $lastTarget);
-    }
-} elseif ($lastMode === 'YSF') {
+if ($lastMode === 'YSF') {
     if ($dvSwitchNode !== '') {
         asterisk_ilink_disconnect($myNode, $dvSwitchNode);
+        pause_seconds(0.5);
     }
     dvswitch_tune('disconnect');
-} elseif ($lastMode === 'BM' || $lastMode === 'TGIF') {
+    clear_runtime_targets();
+    $_SESSION['last_status'] = 'DISCONNECTED: YSF';
+    respond(session_payload($_SESSION['last_status']));
+}
+
+if ($lastMode === 'BM' || $lastMode === 'TGIF') {
     dvswitch_tune('disconnect');
     pause_seconds(1.0);
 
     if ($dvswitchAutoloaded && $dvSwitchNode !== '') {
         asterisk_ilink_disconnect($myNode, $dvSwitchNode);
+        pause_seconds(0.5);
     }
-} else {
-    if ($dvSwitchNode !== '') {
-        asterisk_ilink_disconnect($myNode, $dvSwitchNode);
-    } else {
-        asterisk_rpt_fun($myNode, '*76');
-    }
-    dvswitch_tune('disconnect');
+
+    clear_runtime_targets();
+    $_SESSION['last_status'] = 'DISCONNECTED: ' . $lastMode;
+    respond(session_payload($_SESSION['last_status']));
 }
 
-unset(
-    $_SESSION['last_mode'],
-    $_SESSION['last_target'],
-    $_SESSION['pending_target'],
-    $_SESSION['pending_tg'],
-    $_SESSION['dmr_network'],
-    $_SESSION['dmr_ready'],
-    $_SESSION['dvswitch_autoloaded']
-);
+if ($dvswitchAutoloaded && $dvSwitchNode !== '') {
+    asterisk_ilink_disconnect($myNode, $dvSwitchNode);
+    pause_seconds(0.5);
+    unset($_SESSION['dvswitch_autoloaded']);
+    clear_dmr_active_state();
+    $_SESSION['last_status'] = 'DISCONNECTED: DVSWITCH LINK';
+    respond(session_payload($_SESSION['last_status']));
+}
 
+clear_runtime_targets();
+clear_allstar_tracking();
 $_SESSION['last_status'] = 'DISCONNECTED';
 
 respond(session_payload($_SESSION['last_status']));

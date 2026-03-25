@@ -33,6 +33,18 @@ function respond(array $payload, int $statusCode = 200): never
     exit;
 }
 
+function shell_run(string $command): string
+{
+    $output = shell_exec($command . ' 2>&1');
+    return is_string($output) ? trim($output) : '';
+}
+
+function asterisk_cli(string $command): string
+{
+    $full = 'sudo /usr/sbin/asterisk -rx ' . escapeshellarg($command);
+    return shell_run($full);
+}
+
 function normalize_mode(?string $mode): string
 {
     $value = strtoupper(trim((string) $mode));
@@ -55,6 +67,12 @@ function autoload_dvswitch_mode_label(string $mode): string
     return normalize_autoload_dvswitch_mode($mode) === 'local_monitor'
         ? 'Local Monitor'
         : 'Transceive';
+}
+
+function normalize_link_mode_label(mixed $mode): string
+{
+    $value = strtolower(trim((string) $mode));
+    return $value === 'local_monitor' ? 'Local Monitor' : 'Transceive';
 }
 
 function mask_value(string $value): string
@@ -113,6 +131,127 @@ function load_favorites_file(string $path): array
     return $favorites;
 }
 
+function fetch_live_allstar_nodes(string $myNode, string $dvSwitchNode): array
+{
+    if ($myNode === '') {
+        return [];
+    }
+
+    $output = asterisk_cli("rpt nodes {$myNode}");
+    if ($output === '') {
+        return [];
+    }
+
+    if (stripos($output, '<NONE>') !== false) {
+        return [];
+    }
+
+    $nodes = [];
+
+    if (preg_match_all('/\b(\d{3,})\b/', $output, $matches)) {
+        foreach ($matches[1] as $node) {
+            $node = trim((string) $node);
+
+            if ($node === '' || $node === $myNode || $node === $dvSwitchNode) {
+                continue;
+            }
+
+            $nodes[$node] = $node;
+        }
+    }
+
+    return array_values($nodes);
+}
+
+function allstar_tracked_nodes_in_order(): array
+{
+    $ordered = [];
+    $seen = [];
+
+    $storedOrder = $_SESSION['allstar_link_order'] ?? [];
+    if (is_array($storedOrder)) {
+        foreach ($storedOrder as $node) {
+            $node = trim((string) $node);
+            if ($node === '' || isset($seen[$node])) {
+                continue;
+            }
+
+            $ordered[] = $node;
+            $seen[$node] = true;
+        }
+    }
+
+    $storedModes = $_SESSION['allstar_link_modes'] ?? [];
+    if (is_array($storedModes)) {
+        foreach ($storedModes as $node => $mode) {
+            $node = trim((string) $node);
+            if ($node === '' || isset($seen[$node])) {
+                continue;
+            }
+
+            $ordered[] = $node;
+            $seen[$node] = true;
+        }
+    }
+
+    $lastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
+    $lastTarget = trim((string) ($_SESSION['last_target'] ?? ''));
+    if ($lastMode === 'ASL' && $lastTarget !== '' && !isset($seen[$lastTarget])) {
+        $ordered[] = $lastTarget;
+    }
+
+    return $ordered;
+}
+
+function build_allstar_connected_nodes(
+    string $myNode,
+    string $dvSwitchNode,
+    string $lastMode,
+    string $lastTarget,
+    string $autoloadDvSwitchMode
+): array {
+    $storedModes = $_SESSION['allstar_link_modes'] ?? [];
+    if (!is_array($storedModes)) {
+        $storedModes = [];
+    }
+
+    $trackedNodes = allstar_tracked_nodes_in_order();
+    $liveNodes = fetch_live_allstar_nodes($myNode, $dvSwitchNode);
+    $liveLookup = array_fill_keys($liveNodes, true);
+
+    $connectedNodes = [];
+
+    foreach ($trackedNodes as $node) {
+        $mode = null;
+
+        if (isset($storedModes[$node])) {
+            $mode = normalize_autoload_dvswitch_mode($storedModes[$node]);
+        } elseif ($lastMode === 'ASL' && $lastTarget === $node) {
+            $mode = normalize_autoload_dvswitch_mode($autoloadDvSwitchMode);
+        }
+
+        $connectedNodes[] = [
+            'node' => $node,
+            'label' => 'Connected Node',
+            'link_mode' => $mode ?? '',
+            'mode_label' => $mode !== null ? normalize_link_mode_label($mode) : 'Connected',
+            'is_live' => isset($liveLookup[$node]),
+        ];
+    }
+
+    if ($connectedNodes === [] && $lastMode === 'ASL' && $lastTarget !== '') {
+        $connectedNodes[] = [
+            'node' => $lastTarget,
+            'label' => 'Connected Node',
+            'link_mode' => $autoloadDvSwitchMode,
+            'mode_label' => normalize_link_mode_label($autoloadDvSwitchMode),
+            'is_live' => isset($liveLookup[$lastTarget]),
+        ];
+    }
+
+    return $connectedNodes;
+}
+
 $favorites = load_favorites_file(dirname(__DIR__) . '/data/favorites.txt');
 
 $selectedMode = normalize_mode((string) ($_SESSION['selected_mode'] ?? 'BM'));
@@ -122,36 +261,50 @@ $pendingTarget = trim((string) ($_SESSION['pending_target'] ?? $_SESSION['pendin
 $lastStatus = trim((string) ($_SESSION['last_status'] ?? 'IDLE - NO CONNECTIONS'));
 $autoloadDvSwitch = !empty($_SESSION['autoload_dvswitch']);
 $autoloadDvSwitchMode = normalize_autoload_dvswitch_mode($_SESSION['autoload_dvswitch_mode'] ?? 'transceive');
+$disconnectBeforeConnect = !empty($_SESSION['disconnect_before_connect']);
 $dmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
 $dmrReady = !empty($_SESSION['dmr_ready']);
+$dmrActiveNetwork = normalize_mode((string) ($_SESSION['dmr_active_network'] ?? ''));
+$dmrActiveTarget = trim((string) ($_SESSION['dmr_active_target'] ?? ''));
+$myNode = $config->getString('MYNODE', '');
+$dvSwitchNode = $config->getString('DVSWITCH_NODE', '');
+$dvswitchLinkActive = !empty($_SESSION['dvswitch_autoloaded']) || $dmrReady || $lastMode === 'YSF';
 
 $bmState = 'Idle';
 $tgifState = 'Idle';
 $ysfState = 'Idle';
 $allstarState = 'No links';
 
-if ($dmrNetwork === 'BM') {
-    $bmState = $dmrReady ? 'Ready' : 'Preparing';
+if ($dmrActiveNetwork === 'BM' && $dmrActiveTarget !== '') {
+    $bmState = 'Connected: TG ' . $dmrActiveTarget;
+} elseif ($dmrNetwork === 'BM' && $dmrReady && str_starts_with(strtoupper($lastStatus), 'WAITING: BM READY')) {
+    $bmState = 'Ready';
+} elseif ($dmrNetwork === 'BM' && !$dmrReady) {
+    $bmState = 'Preparing';
 }
 
-if ($dmrNetwork === 'TGIF') {
-    $tgifState = $dmrReady ? 'Ready' : 'Preparing';
-}
-
-if ($lastMode === 'BM' && $lastTarget !== '') {
-    $bmState = 'Connected: TG ' . $lastTarget;
-}
-
-if ($lastMode === 'TGIF' && $lastTarget !== '') {
-    $tgifState = 'Connected: TG ' . $lastTarget;
+if ($dmrActiveNetwork === 'TGIF' && $dmrActiveTarget !== '') {
+    $tgifState = 'Connected: TG ' . $dmrActiveTarget;
+} elseif ($dmrNetwork === 'TGIF' && $dmrReady && str_starts_with(strtoupper($lastStatus), 'WAITING: TGIF READY')) {
+    $tgifState = 'Ready';
+} elseif ($dmrNetwork === 'TGIF' && !$dmrReady) {
+    $tgifState = 'Preparing';
 }
 
 if ($lastMode === 'YSF' && $lastTarget !== '') {
     $ysfState = 'Connected: ' . $lastTarget;
 }
 
-if ($lastMode === 'ASL' && $lastTarget !== '') {
-    $allstarState = 'Connected: ' . $lastTarget;
+$allstarConnectedNodes = build_allstar_connected_nodes(
+    $myNode,
+    $dvSwitchNode,
+    $lastMode,
+    $lastTarget,
+    $autoloadDvSwitchMode
+);
+
+if ($allstarConnectedNodes !== []) {
+    $allstarState = 'Connected: ' . count($allstarConnectedNodes);
 }
 
 $payload = [
@@ -168,8 +321,12 @@ $payload = [
         'pending_target' => $pendingTarget,
         'autoload_dvswitch' => $autoloadDvSwitch,
         'autoload_dvswitch_mode' => $autoloadDvSwitchMode,
+        'disconnect_before_connect' => $disconnectBeforeConnect,
         'dmr_network' => $dmrNetwork,
         'dmr_ready' => $dmrReady,
+        'dmr_active_network' => $dmrActiveNetwork,
+        'dmr_active_target' => $dmrActiveTarget,
+        'dvswitch_link_active' => $dvswitchLinkActive,
     ],
 
     'selected_mode' => $selectedMode,
@@ -178,14 +335,18 @@ $payload = [
     'pending_target' => $pendingTarget,
     'autoload_dvswitch' => $autoloadDvSwitch,
     'autoload_dvswitch_mode' => $autoloadDvSwitchMode,
+    'disconnect_before_connect' => $disconnectBeforeConnect,
     'dmr_network' => $dmrNetwork,
     'dmr_ready' => $dmrReady,
+    'dmr_active_network' => $dmrActiveNetwork,
+    'dmr_active_target' => $dmrActiveTarget,
+    'dvswitch_link_active' => $dvswitchLinkActive,
 
     'config' => [
         'path' => $config->path(),
         'exists' => $config->exists(),
-        'mynode' => $config->getString('MYNODE', ''),
-        'dvswitch_node' => $config->getString('DVSWITCH_NODE', ''),
+        'mynode' => $myNode,
+        'dvswitch_node' => $dvSwitchNode,
         'has_bm_password' => $config->has('BM_SelfcarePassword'),
         'has_tgif_key' => $config->has('TGIF_HotspotSecurityKey'),
         'bm_password_masked' => mask_value($config->getString('BM_SelfcarePassword', '')),
@@ -200,13 +361,13 @@ $payload = [
             'state' => $bmState,
             'label' => $bmState,
             'status' => $bmState,
-            'active' => $lastMode === 'BM' || $dmrNetwork === 'BM',
+            'active' => $dmrActiveNetwork === 'BM' || ($dmrNetwork === 'BM' && $dmrReady),
         ],
         'tgif' => [
             'state' => $tgifState,
             'label' => $tgifState,
             'status' => $tgifState,
-            'active' => $lastMode === 'TGIF' || $dmrNetwork === 'TGIF',
+            'active' => $dmrActiveNetwork === 'TGIF' || ($dmrNetwork === 'TGIF' && $dmrReady),
         ],
         'ysf' => [
             'state' => $ysfState,
@@ -214,19 +375,26 @@ $payload = [
             'status' => $ysfState,
             'active' => $lastMode === 'YSF',
         ],
+        'allstar' => [
+            'state' => $allstarState,
+            'label' => $allstarState,
+            'status' => $allstarState,
+            'connected_nodes_count' => count($allstarConnectedNodes),
+            'connected_nodes' => $allstarConnectedNodes,
+        ],
     ],
 
     'brandmeister' => [
         'state' => $bmState,
         'label' => $bmState,
         'status' => $bmState,
-        'active' => $lastMode === 'BM' || $dmrNetwork === 'BM',
+        'active' => $dmrActiveNetwork === 'BM' || ($dmrNetwork === 'BM' && $dmrReady),
     ],
     'tgif' => [
         'state' => $tgifState,
         'label' => $tgifState,
         'status' => $tgifState,
-        'active' => $lastMode === 'TGIF' || $dmrNetwork === 'TGIF',
+        'active' => $dmrActiveNetwork === 'TGIF' || ($dmrNetwork === 'TGIF' && $dmrReady),
     ],
     'ysf' => [
         'state' => $ysfState,
@@ -239,16 +407,11 @@ $payload = [
         'state' => $allstarState,
         'label' => $allstarState,
         'status' => $allstarState,
-        'connected_nodes_count' => ($lastMode === 'ASL' && $lastTarget !== '') ? 1 : 0,
-        'connected_nodes' => ($lastMode === 'ASL' && $lastTarget !== '')
-            ? [[
-                'node' => $lastTarget,
-                'label' => 'Connected Node',
-            ]]
-            : [],
+        'connected_nodes_count' => count($allstarConnectedNodes),
+        'connected_nodes' => $allstarConnectedNodes,
         'local_nodes' => array_values(array_filter([
-            $config->getString('MYNODE', ''),
-            $config->getString('DVSWITCH_NODE', ''),
+            $myNode,
+            $dvSwitchNode,
         ])),
     ],
 
@@ -267,19 +430,29 @@ $payload = [
         ],
         [
             'label' => 'DMR Network',
-            'value' => $dmrNetwork !== ''
-                ? $dmrNetwork . ($dmrReady ? ' (Ready)' : ' (Preparing)')
-                : '-',
+            'value' => $dmrActiveNetwork !== ''
+                ? $dmrActiveNetwork . ($dmrActiveTarget !== '' ? ' (TG ' . $dmrActiveTarget . ')' : '')
+                : ($dmrNetwork !== ''
+                    ? $dmrNetwork . ($dmrReady ? ' (Ready)' : ' (Preparing)')
+                    : '-'),
         ],
         [
             'label' => 'DVSwitch Auto-Load',
             'value' => $autoloadDvSwitch
-                ? 'Enabled' . ($config->getString('DVSWITCH_NODE', '') !== '' ? ' (' . $config->getString('DVSWITCH_NODE', '') . ')' : '')
+                ? 'Enabled' . ($dvSwitchNode !== '' ? ' (' . $dvSwitchNode . ')' : '')
                 : 'Disabled',
         ],
         [
             'label' => 'DVSwitch Auto-Load Mode',
             'value' => autoload_dvswitch_mode_label($autoloadDvSwitchMode),
+        ],
+        [
+            'label' => 'DVSwitch Link Active',
+            'value' => $dvswitchLinkActive ? 'Yes' : 'No',
+        ],
+        [
+            'label' => 'Disconnect Before Connect',
+            'value' => $disconnectBeforeConnect ? 'Enabled' : 'Disabled',
         ],
         [
             'label' => 'Current Status',
