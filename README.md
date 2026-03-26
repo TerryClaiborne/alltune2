@@ -303,6 +303,12 @@ The Favorites page can:
 - Some users may use Allmon3 instead of Allscan, so AllTune2 should not depend on Allscan existing.
 - UI helper text explains the current selected network workflow.
 - Button state is part of the workflow and users should wait for the status line and button state to update before the next action.
+- UPDATE
+- AllTune2 uses its own `config.ini` in the app root.
+- The installer creates a starter `config.ini` with placeholder values.
+- You must edit `/var/www/html/alltune2/config.ini` and enter your real settings before using BM, TGIF, YSF, or AllStar.
+- Placeholder values such as `YOUR NODE`, `YOUR DVSWITCH NODE`, and `CHANGE_ME` are treated as not configured.
+- If a mode is not configured, the helper text explains what is missing and Connect is disabled for that mode.
 
 ## Git / safety
 
