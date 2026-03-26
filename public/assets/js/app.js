@@ -136,6 +136,73 @@
         );
     }
 
+    function isPlaceholderConfigValue(value) {
+        const normalized = String(value || '').trim().toUpperCase();
+
+        if (normalized === '') {
+            return true;
+        }
+
+        return [
+            'CHANGE_ME',
+            'YOUR NODE',
+            'YOUR DVSWITCH NODE',
+            'YOUR_REAL_PASSWORD',
+            'YOUR_REAL_KEY',
+            'YOUR PASSWORD',
+            'YOUR KEY',
+        ].includes(normalized);
+    }
+
+    function readConfigAvailability() {
+        const form = els.controlForm;
+        const dataset = form?.dataset || {};
+
+        return {
+            configPath: dataset.configPath || '/var/www/html/alltune2/config.ini',
+            hasRealMyNode: dataset.hasRealMynode === '1',
+            hasRealDvSwitchNode: dataset.hasRealDvswitchNode === '1',
+            hasRealBmPassword: dataset.hasRealBmPassword === '1',
+            hasRealTgifKey: dataset.hasRealTgifKey === '1',
+            modes: {
+                ASL: dataset.aslConfigured === '1',
+                BM: dataset.bmConfigured === '1',
+                TGIF: dataset.tgifConfigured === '1',
+                YSF: dataset.ysfConfigured === '1',
+            },
+        };
+    }
+
+    function modeIsConfigured(mode) {
+        const config = readConfigAvailability();
+        const normalized = normalizeMode(mode);
+        return !!config.modes[normalized];
+    }
+
+    function unavailableModeMessage(mode) {
+        const normalized = normalizeMode(mode);
+        const config = readConfigAvailability();
+        const configPath = config.configPath;
+
+        if (normalized === 'ASL') {
+            return `AllStar is not configured on this system. A real MYNODE value is required in ${configPath}. Connect is disabled until that value is set.`;
+        }
+
+        if (normalized === 'YSF') {
+            return `YSF is not configured on this system. Real MYNODE and DVSWITCH_NODE values are required in ${configPath}. Connect is disabled until those values are set.`;
+        }
+
+        if (normalized === 'BM') {
+            return `BrandMeister is not configured on this system. Real MYNODE, DVSWITCH_NODE, and BM_SelfcarePassword values are required in ${configPath}. Connect is disabled until those values are set.`;
+        }
+
+        if (normalized === 'TGIF') {
+            return `TGIF is not configured on this system. Real MYNODE, DVSWITCH_NODE, and TGIF_HotspotSecurityKey values are required in ${configPath}. Connect is disabled until those values are set.`;
+        }
+
+        return `This mode is not configured on this system. Update ${configPath} with real values before using it. Connect is disabled until configuration is complete.`;
+    }
+
     function inferDvSwitchActiveFromPayload(payload) {
         if (!payload || typeof payload !== 'object') {
             return false;
@@ -252,6 +319,10 @@
         const mode = currentSelectedMode();
         const disconnectFirst = disconnectBeforeConnectEnabled();
         const status = normalizeStatusText(statusText).toUpperCase();
+
+        if (!modeIsConfigured(mode)) {
+            return false;
+        }
 
         if (isErrorStatus(statusText) || isDisconnectedStatus(statusText)) {
             return true;
@@ -408,6 +479,34 @@
         updateButtonsFromStatus(safeText);
     }
 
+    function configuredModeHelperText(mode, disconnectFirst) {
+        if (mode === 'BM') {
+            return disconnectFirst
+                ? 'BrandMeister is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: BM READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because BM is already connected in this mode. DISCONNECT removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
+                : 'BrandMeister is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: BM READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because BM is already connected in this mode. With Disconnect before Connect off, BM can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
+        }
+
+        if (mode === 'TGIF') {
+            return disconnectFirst
+                ? 'TGIF is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: TGIF READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because TGIF is already connected in this mode. DISCONNECT removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
+                : 'TGIF is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: TGIF READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because TGIF is already connected in this mode. With Disconnect before Connect off, TGIF can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
+        }
+
+        if (mode === 'YSF') {
+            return disconnectFirst
+                ? 'YSF is a one-step connect. Enter or load the YSF target, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: YSF TARGET ... before doing anything else. When YSF is already active, CONNECT may stay dim in this mode. DISCONNECT removes the current managed YSF connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
+                : 'YSF is a one-step connect. Enter or load the YSF target, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: YSF TARGET ... before doing anything else. With Disconnect before Connect off, YSF can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed YSF connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
+        }
+
+        if (mode === 'ASL') {
+            return disconnectFirst
+                ? 'AllStar is a one-step connect. Enter or load the AllStar node, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ALLSTAR NODE ... before doing anything else. When CONNECT becomes bright again, you may connect another node only if your current settings allow it. With Disconnect before Connect checked, the next CONNECT replaces the current managed links first instead of stacking them. DISCONNECT removes the last direct AllStar link first. The small Disconnect button beside a listed AllStar node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.'
+                : 'AllStar is a one-step connect. Enter or load the AllStar node, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ALLSTAR NODE ... before doing anything else. When CONNECT becomes bright again, you can press CONNECT again to add another direct AllStar node. DISCONNECT removes the last direct AllStar link first. The small Disconnect button beside a listed AllStar node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
+        }
+
+        return 'Select a network, enter or load a target, then press CONNECT. Watch the System Status line and wait for the buttons to become bright again before the next step.';
+    }
+
     function updateHelperText() {
         if (!els.helperText || !els.modeSelect) {
             return;
@@ -416,36 +515,12 @@
         const mode = normalizeMode(els.modeSelect.value);
         const disconnectFirst = disconnectBeforeConnectEnabled();
 
-        if (mode === 'BM') {
-            els.helperText.textContent = disconnectFirst
-                ? 'BrandMeister is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: BM READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because BM is already connected in this mode. DISCONNECT removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
-                : 'BrandMeister is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: BM READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because BM is already connected in this mode. With Disconnect before Connect off, BM can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
+        if (!modeIsConfigured(mode)) {
+            els.helperText.textContent = unavailableModeMessage(mode);
             return;
         }
 
-        if (mode === 'TGIF') {
-            els.helperText.textContent = disconnectFirst
-                ? 'TGIF is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: TGIF READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because TGIF is already connected in this mode. DISCONNECT removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
-                : 'TGIF is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: TGIF READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because TGIF is already connected in this mode. With Disconnect before Connect off, TGIF can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
-            return;
-        }
-
-        if (mode === 'YSF') {
-            els.helperText.textContent = disconnectFirst
-                ? 'YSF is a one-step connect. Enter or load the YSF target, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: YSF TARGET ... before doing anything else. When YSF is already active, CONNECT may stay dim in this mode. DISCONNECT removes the current managed YSF connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
-                : 'YSF is a one-step connect. Enter or load the YSF target, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: YSF TARGET ... before doing anything else. With Disconnect before Connect off, YSF can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed YSF connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
-            return;
-        }
-
-        if (mode === 'ASL') {
-            els.helperText.textContent = disconnectFirst
-                ? 'AllStar is a one-step connect. Enter or load the AllStar node, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ALLSTAR NODE ... before doing anything else. When CONNECT becomes bright again, you may connect another node only if your current settings allow it. With Disconnect before Connect checked, the next CONNECT replaces the current managed links first instead of stacking them. DISCONNECT removes the last direct AllStar link first. The small Disconnect button beside a listed AllStar node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.'
-                : 'AllStar is a one-step connect. Enter or load the AllStar node, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ALLSTAR NODE ... before doing anything else. When CONNECT becomes bright again, you can press CONNECT again to add another direct AllStar node. DISCONNECT removes the last direct AllStar link first. The small Disconnect button beside a listed AllStar node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
-            return;
-        }
-
-        els.helperText.textContent =
-            'Select a network, enter or load a target, then press CONNECT. Watch the System Status line and wait for the buttons to become bright again before the next step.';
+        els.helperText.textContent = configuredModeHelperText(mode, disconnectFirst);
     }
 
     function setStatusCardText(element, value, fallback) {
@@ -630,7 +705,8 @@
             false
         );
 
-        const dvsNode = String(config.dvswitch_node || '').trim();
+        const rawDvsNode = String(config.dvswitch_node || '').trim();
+        const dvsNode = isPlaceholderConfigValue(rawDvsNode) ? '' : rawDvsNode;
         const dvswitchActive = currentDvSwitchActive(payload);
 
         const autoLoadValue = autoload
@@ -861,6 +937,12 @@
             !els.autoloadModeSelect ||
             !els.disconnectBeforeConnectCheckbox
         ) {
+            return;
+        }
+
+        if (action === 'connect' && !modeIsConfigured(els.modeSelect.value)) {
+            updateHelperText();
+            updateButtonsFromStatus(currentStatusText());
             return;
         }
 

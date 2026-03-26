@@ -14,10 +14,46 @@ function e(mixed $value): string
     return htmlspecialchars((string) $value, ENT_QUOTES, 'UTF-8');
 }
 
+function is_placeholder_config_value(mixed $value): bool
+{
+    $normalized = strtoupper(trim((string) $value));
+
+    if ($normalized === '') {
+        return true;
+    }
+
+    return in_array($normalized, [
+        'CHANGE_ME',
+        'YOUR NODE',
+        'YOUR DVSWITCH NODE',
+        'YOUR_REAL_PASSWORD',
+        'YOUR_REAL_KEY',
+        'YOUR PASSWORD',
+        'YOUR KEY',
+    ], true);
+}
+
 $appName = 'AllTune2';
 
 $dvswitchNode = trim((string) $config->get('DVSWITCH_NODE', ''));
 $myNode = trim((string) $config->get('MYNODE', ''));
+$bmPassword = trim((string) $config->get('BM_SelfcarePassword', ''));
+$tgifKey = trim((string) $config->get('TGIF_HotspotSecurityKey', ''));
+
+$hasRealMyNode = !is_placeholder_config_value($myNode);
+$hasRealDvSwitchNode = !is_placeholder_config_value($dvswitchNode);
+$hasRealBmPassword = !is_placeholder_config_value($bmPassword);
+$hasRealTgifKey = !is_placeholder_config_value($tgifKey);
+
+$displayMyNode = $hasRealMyNode ? $myNode : 'Not Set';
+$displayDvSwitchNode = $hasRealDvSwitchNode ? $dvswitchNode : '';
+
+$modeAvailability = [
+    'ASL' => $hasRealMyNode,
+    'BM' => $hasRealMyNode && $hasRealDvSwitchNode && $hasRealBmPassword,
+    'TGIF' => $hasRealMyNode && $hasRealDvSwitchNode && $hasRealTgifKey,
+    'YSF' => $hasRealMyNode && $hasRealDvSwitchNode,
+];
 
 $autoloadDvSwitch = isset($_SESSION['autoload_dvswitch'])
     ? (bool) $_SESSION['autoload_dvswitch']
@@ -89,10 +125,9 @@ if ($dmrNetwork !== '') {
 $activityLines[] = [
     'label' => 'DVSwitch Auto-Load',
     'value' => $autoloadDvSwitch
-        ? 'Enabled' . ($dvswitchNode !== '' ? ' (' . e($dvswitchNode) . ')' : '')
+        ? 'Enabled' . ($displayDvSwitchNode !== '' ? ' (' . e($displayDvSwitchNode) . ')' : '')
         : 'Disabled',
 ];
-
 $activityLines[] = [
     'label' => 'DVSwitch Auto-Load Mode',
     'value' => $autoloadDvSwitchMode === 'local_monitor' ? 'Local Monitor' : 'Transceive',
@@ -149,11 +184,23 @@ $activityLines[] = [
             <article class="card">
                 <div class="card-header">
                     <span>Control Center</span>
-                    <span class="badge">Node <?= e($myNode !== '' ? $myNode : 'Not Set') ?></span>
+                    <span class="badge">Node <?= e($displayMyNode) ?></span>
                 </div>
 
                 <div class="card-body">
-                    <form id="control-form" autocomplete="off">
+                    <form
+                        id="control-form"
+                        autocomplete="off"
+                        data-config-path="/var/www/html/alltune2/config.ini"
+                        data-has-real-mynode="<?= $hasRealMyNode ? '1' : '0' ?>"
+                        data-has-real-dvswitch-node="<?= $hasRealDvSwitchNode ? '1' : '0' ?>"
+                        data-has-real-bm-password="<?= $hasRealBmPassword ? '1' : '0' ?>"
+                        data-has-real-tgif-key="<?= $hasRealTgifKey ? '1' : '0' ?>"
+                        data-asl-configured="<?= $modeAvailability['ASL'] ? '1' : '0' ?>"
+                        data-bm-configured="<?= $modeAvailability['BM'] ? '1' : '0' ?>"
+                        data-tgif-configured="<?= $modeAvailability['TGIF'] ? '1' : '0' ?>"
+                        data-ysf-configured="<?= $modeAvailability['YSF'] ? '1' : '0' ?>"
+                    >
                         <div class="control-grid">
                             <label class="sr-only" for="target">TG / Node / YSF #</label>
                             <input
@@ -194,8 +241,9 @@ $activityLines[] = [
                                         <?= $autoloadDvSwitch ? 'checked' : '' ?>
                                     >
                                     <span>
-                                        Auto-connect DVSwitch link<?= $dvswitchNode !== '' ? ' (' . e($dvswitchNode) . ')' : '' ?>
-                                    </span>
+                                        <span>
+                                            Auto-connect DVSwitch link<?= $displayDvSwitchNode !== '' ? ' (' . e($displayDvSwitchNode) . ')' : '' ?>
+                                        </span>
                                 </label>
 
                                 <label class="checkbox-inline" for="disconnect_before_connect">

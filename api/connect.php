@@ -105,6 +105,30 @@ function normalize_autoload_dvswitch_mode(mixed $mode): string
     return $value === 'local_monitor' ? 'local_monitor' : 'transceive';
 }
 
+function is_placeholder_config_value(mixed $value): bool
+{
+    $normalized = strtoupper(trim((string) $value));
+
+    if ($normalized === '') {
+        return true;
+    }
+
+    return in_array($normalized, [
+        'CHANGE_ME',
+        'YOUR NODE',
+        'YOUR DVSWITCH NODE',
+        'YOUR_REAL_PASSWORD',
+        'YOUR_REAL_KEY',
+        'YOUR PASSWORD',
+        'YOUR KEY',
+    ], true);
+}
+
+function has_real_config_value(mixed $value): bool
+{
+    return !is_placeholder_config_value($value);
+}
+
 function ensure_allstar_tracking_structures(): void
 {
     if (!isset($_SESSION['allstar_link_modes']) || !is_array($_SESSION['allstar_link_modes'])) {
@@ -164,9 +188,7 @@ function last_tracked_allstar_node(): string
 
 function clear_dmr_session_state(): void
 {
-    unset(
-        $_SESSION['pending_tg']
-    );
+    unset($_SESSION['pending_tg']);
 }
 
 function clear_dmr_active_state(): void
@@ -341,6 +363,11 @@ $tgifPassword = $config->getString('TGIF_HotspotSecurityKey', '');
 $autoloadDvSwitchMode = normalize_autoload_dvswitch_mode($_SESSION['autoload_dvswitch_mode'] ?? 'transceive');
 $disconnectBeforeConnect = !empty($_SESSION['disconnect_before_connect']);
 
+$hasRealMyNode = has_real_config_value($myNode);
+$hasRealDvSwitchNode = has_real_config_value($dvSwitchNode);
+$hasRealBmPassword = has_real_config_value($bmPassword);
+$hasRealTgifPassword = has_real_config_value($tgifPassword);
+
 if ($action === 'remember_autoload') {
     $status = (string) ($_SESSION['last_status'] ?? 'IDLE - NO CONNECTIONS');
     respond(session_payload($status));
@@ -360,11 +387,6 @@ if (
     respond(session_payload('ERROR: INVALID ACTION'), 400);
 }
 
-if ($myNode === '') {
-    $_SESSION['last_status'] = 'ERROR: MYNODE MISSING IN CONFIG';
-    respond(session_payload($_SESSION['last_status']), 500);
-}
-
 if ($action === 'disconnect_all') {
     shell_run('sudo systemctl restart asterisk');
     pause_seconds(2.0);
@@ -377,8 +399,13 @@ if ($action === 'disconnect_all') {
 }
 
 if ($action === 'disconnect_dvswitch') {
-    if ($dvSwitchNode === '') {
-        $_SESSION['last_status'] = 'ERROR: DVSWITCH_NODE MISSING IN CONFIG';
+    if (!$hasRealMyNode) {
+        $_SESSION['last_status'] = 'ERROR: MYNODE NOT CONFIGURED';
+        respond(session_payload($_SESSION['last_status']), 500);
+    }
+
+    if (!$hasRealDvSwitchNode) {
+        $_SESSION['last_status'] = 'ERROR: DVSWITCH NOT CONFIGURED';
         respond(session_payload($_SESSION['last_status']), 500);
     }
 
@@ -389,6 +416,11 @@ if ($action === 'disconnect_dvswitch') {
 }
 
 if ($action === 'disconnect_selected') {
+    if (!$hasRealMyNode) {
+        $_SESSION['last_status'] = 'ERROR: MYNODE NOT CONFIGURED';
+        respond(session_payload($_SESSION['last_status']), 500);
+    }
+
     if ($selectedNode === '') {
         $_SESSION['last_status'] = 'ERROR: INVALID ALLSTAR NODE';
         respond(session_payload($_SESSION['last_status']), 422);
@@ -443,6 +475,11 @@ if ($action === 'connect') {
     }
 
     if ($mode === 'ASL') {
+        if (!$hasRealMyNode) {
+            $_SESSION['last_status'] = 'ERROR: ALLSTAR NOT CONFIGURED';
+            respond(session_payload($_SESSION['last_status']), 500);
+        }
+
         if ($digitsOnlyTarget === '') {
             $_SESSION['last_status'] = 'ERROR: INVALID ALLSTAR NODE';
             respond(session_payload($_SESSION['last_status']), 422);
@@ -464,8 +501,8 @@ if ($action === 'connect') {
     }
 
     if ($mode === 'YSF') {
-        if ($dvSwitchNode === '') {
-            $_SESSION['last_status'] = 'ERROR: DVSWITCH_NODE MISSING IN CONFIG';
+        if (!$hasRealMyNode || !$hasRealDvSwitchNode) {
+            $_SESSION['last_status'] = 'ERROR: YSF NOT CONFIGURED';
             respond(session_payload($_SESSION['last_status']), 500);
         }
 
@@ -493,6 +530,11 @@ if ($action === 'connect') {
     }
 
     if ($mode === 'BM' || $mode === 'TGIF') {
+        if (!$hasRealMyNode || !$hasRealDvSwitchNode) {
+            $_SESSION['last_status'] = 'ERROR: ' . $mode . ' NOT CONFIGURED';
+            respond(session_payload($_SESSION['last_status']), 500);
+        }
+
         if ($digitsOnlyTarget === '') {
             $_SESSION['last_status'] = 'ERROR: INVALID TG';
             respond(session_payload($_SESSION['last_status']), 422);
@@ -503,9 +545,10 @@ if ($action === 'connect') {
             : '3103.master.brandmeister.network:62031';
 
         $key = $mode === 'TGIF' ? $tgifPassword : $bmPassword;
+        $hasRealKey = $mode === 'TGIF' ? $hasRealTgifPassword : $hasRealBmPassword;
 
-        if ($key === '') {
-            $_SESSION['last_status'] = 'ERROR: MISSING ' . $mode . ' CONFIG KEY';
+        if (!$hasRealKey) {
+            $_SESSION['last_status'] = 'ERROR: ' . $mode . ' NOT CONFIGURED';
             respond(session_payload($_SESSION['last_status']), 500);
         }
 
@@ -518,7 +561,7 @@ if ($action === 'connect') {
                 disconnect_managed_links_before_connect($myNode, $dvSwitchNode);
             }
 
-            if ($autoload && $dvSwitchNode !== '') {
+            if ($autoload && $hasRealDvSwitchNode) {
                 load_dvswitch_link($myNode, $dvSwitchNode, $autoloadDvSwitchMode);
                 pause_seconds(1.0);
                 $_SESSION['dvswitch_autoloaded'] = true;
@@ -566,6 +609,11 @@ if ($action === 'connect') {
     respond(session_payload($_SESSION['last_status']), 422);
 }
 
+if (!$hasRealMyNode) {
+    $_SESSION['last_status'] = 'ERROR: MYNODE NOT CONFIGURED';
+    respond(session_payload($_SESSION['last_status']), 500);
+}
+
 /*
  * Deterministic disconnect order:
  * 1. Last tracked AllStar direct link
@@ -596,7 +644,7 @@ $lastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
 $dvswitchAutoloaded = !empty($_SESSION['dvswitch_autoloaded']);
 
 if ($lastMode === 'YSF') {
-    if ($dvSwitchNode !== '') {
+    if ($hasRealDvSwitchNode) {
         asterisk_ilink_disconnect($myNode, $dvSwitchNode);
         pause_seconds(0.5);
     }
@@ -610,7 +658,7 @@ if ($lastMode === 'BM' || $lastMode === 'TGIF') {
     dvswitch_tune('disconnect');
     pause_seconds(1.0);
 
-    if ($dvswitchAutoloaded && $dvSwitchNode !== '') {
+    if ($dvswitchAutoloaded && $hasRealDvSwitchNode) {
         asterisk_ilink_disconnect($myNode, $dvSwitchNode);
         pause_seconds(0.5);
     }
@@ -620,7 +668,7 @@ if ($lastMode === 'BM' || $lastMode === 'TGIF') {
     respond(session_payload($_SESSION['last_status']));
 }
 
-if ($dvswitchAutoloaded && $dvSwitchNode !== '') {
+if ($dvswitchAutoloaded && $hasRealDvSwitchNode) {
     asterisk_ilink_disconnect($myNode, $dvSwitchNode);
     pause_seconds(0.5);
     unset($_SESSION['dvswitch_autoloaded']);
