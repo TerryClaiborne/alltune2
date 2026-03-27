@@ -28,6 +28,8 @@ AllTune2 currently supports:
 - Shared favorites management
 - Direct AllStar node tracking
 - Disconnect of a specific selected direct AllStar node
+- Direct Echolink node tracking
+- Disconnect of a specific selected direct Echolink node
 - Disconnect of the DVSwitch link only
 - Full Disconnect All cleanup via Asterisk restart
 - Config-aware mode availability
@@ -58,7 +60,7 @@ Active AllTune2 project:
 - DVSwitch link mode selection:
   - Transceive
   - Local Monitor
-- Direct AllStar node list with per-node Disconnect buttons
+- Direct AllStar - Echolink node list with per-node Disconnect buttons
 - Separate Disconnect DVSwitch action
 - Separate Disconnect All action
 - Config-aware mode availability
