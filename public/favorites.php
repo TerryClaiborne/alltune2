@@ -30,13 +30,28 @@ function normalize_mode(string $mode): string
 {
     $value = strtoupper(trim($mode));
 
-    if ($value === 'ALLSTAR') {
+    if (in_array($value, ['ALLSTAR', 'ALLSTAR LINK', 'ALLSTARLINK'], true)) {
         return 'ASL';
     }
 
+    if (in_array($value, ['ECHO', 'ECHO LINK', 'ECHOLINK', 'EL', 'E/L'], true)) {
+        return 'ECHO';
+    }
+
     return match ($value) {
-        'BM', 'TGIF', 'ASL', 'YSF' => $value,
+        'BM', 'TGIF', 'ASL', 'ECHO', 'YSF' => $value,
         default => 'BM',
+    };
+}
+
+function mode_display_label(string $mode): string
+{
+    $normalized = normalize_mode($mode);
+
+    return match ($normalized) {
+        'ASL' => 'ASL',
+        'ECHO' => 'E/L',
+        default => $normalized,
     };
 }
 
@@ -218,7 +233,8 @@ $navItems = [
 $modeOptions = [
     'BM' => 'BrandMeister',
     'TGIF' => 'TGIF',
-    'ASL' => 'AllStar',
+    'ASL' => 'AllStarLink',
+    'ECHO' => 'EchoLink',
     'YSF' => 'YSF',
 ];
 ?>
@@ -501,7 +517,7 @@ $modeOptions = [
                                         <td class="favorite-target"><?= e($favorite['target']) ?></td>
                                         <td><?= e($favorite['name']) ?></td>
                                         <td><?= e($favorite['description'] !== '' ? $favorite['description'] : '-') ?></td>
-                                        <td class="favorite-mode"><?= e($favorite['mode']) ?></td>
+                                        <td class="favorite-mode"><?= e(mode_display_label((string) $favorite['mode'])) ?></td>
                                         <td>
                                             <a class="edit-link" href="/alltune2/public/favorites.php?edit=<?= e($favorite['id']) ?>">
                                                 Edit

@@ -49,8 +49,12 @@ function normalize_mode(?string $mode): string
 {
     $value = strtoupper(trim((string) $mode));
 
-    if ($value === 'ALLSTAR') {
+    if (in_array($value, ['ALLSTAR', 'ALLSTAR LINK', 'ALLSTARLINK'], true)) {
         return 'ASL';
+    }
+
+    if (in_array($value, ['ECHO', 'ECHO LINK', 'ECHOLINK', 'EL', 'E/L'], true)) {
+        return 'ECHO';
     }
 
     return $value;
@@ -196,7 +200,7 @@ function allstar_tracked_nodes_in_order(): array
 
     $lastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
     $lastTarget = trim((string) ($_SESSION['last_target'] ?? ''));
-    if ($lastMode === 'ASL' && $lastTarget !== '' && !isset($seen[$lastTarget])) {
+    if (($lastMode === 'ASL' || $lastMode === 'ECHO') && $lastTarget !== '' && !isset($seen[$lastTarget])) {
         $ordered[] = $lastTarget;
     }
 
@@ -226,7 +230,7 @@ function build_allstar_connected_nodes(
 
         if (isset($storedModes[$node])) {
             $mode = normalize_autoload_dvswitch_mode($storedModes[$node]);
-        } elseif ($lastMode === 'ASL' && $lastTarget === $node) {
+        } elseif (($lastMode === 'ASL' || $lastMode === 'ECHO') && $lastTarget === $node) {
             $mode = normalize_autoload_dvswitch_mode($autoloadDvSwitchMode);
         }
 
@@ -239,7 +243,7 @@ function build_allstar_connected_nodes(
         ];
     }
 
-    if ($connectedNodes === [] && $lastMode === 'ASL' && $lastTarget !== '') {
+    if ($connectedNodes === [] && ($lastMode === 'ASL' || $lastMode === 'ECHO') && $lastTarget !== '') {
         $connectedNodes[] = [
             'node' => $lastTarget,
             'label' => 'Connected Node',

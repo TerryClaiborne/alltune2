@@ -5,6 +5,8 @@
         busy: false,
         pollTimer: null,
         pollIntervalMs: 10000,
+        lastRequestedUiMode: '',
+        preferredAslUiMode: 'ASL',
         endpoints: {
             status: '/alltune2/api/status.php',
             connect: '/alltune2/api/connect.php',
@@ -58,7 +60,109 @@
 
     function normalizeMode(mode) {
         const value = String(mode || '').trim().toUpperCase();
-        return value === 'ALLSTAR' ? 'ASL' : value;
+
+        if ([
+            'ALLSTAR',
+            'ALLSTAR LINK',
+            'ALLSTARLINK',
+        ].includes(value)) {
+            return 'ASL';
+        }
+
+        if ([
+            'ECHO',
+            'ECHO LINK',
+            'ECHOLINK',
+            'EL',
+            'E/L',
+        ].includes(value)) {
+            return 'ECHO';
+        }
+
+        return value;
+    }
+
+    function modeRequestValue(mode) {
+        const normalized = normalizeMode(mode);
+        return normalized === 'ECHO' ? 'ASL' : normalized;
+    }
+
+    function modeConfigKey(mode) {
+        const normalized = normalizeMode(mode);
+        return normalized === 'ECHO' ? 'ECHO' : normalized;
+    }
+
+    function favoriteModeLabel(mode) {
+        const normalized = normalizeMode(mode);
+
+        if (normalized === 'ASL') {
+            return 'ASL';
+        }
+
+        if (normalized === 'ECHO') {
+            return 'E/L';
+        }
+
+        return normalized;
+    }
+
+    function rememberPreferredAslUiMode(mode) {
+        const normalized = normalizeMode(mode);
+
+        if (normalized === 'ASL' || normalized === 'ECHO') {
+            state.preferredAslUiMode = normalized;
+        }
+    }
+
+    function findModeSelectValue(mode) {
+        if (!els.modeSelect) {
+            return '';
+        }
+
+        const desired = normalizeMode(mode);
+        const options = Array.from(els.modeSelect.options || []);
+
+        if (desired === 'ASL') {
+            const preferred = state.preferredAslUiMode === 'ECHO' ? 'ECHO' : 'ASL';
+            const preferredMatch = options.find((option) => normalizeMode(option.value) === preferred);
+            if (preferredMatch) {
+                return preferredMatch.value;
+            }
+        }
+
+        const exactMatch = options.find((option) => normalizeMode(option.value) === desired);
+        if (exactMatch) {
+            return exactMatch.value;
+        }
+
+        if (desired === 'ECHO') {
+            const fallbackAsl = options.find((option) => normalizeMode(option.value) === 'ASL');
+            if (fallbackAsl) {
+                return fallbackAsl.value;
+            }
+        }
+
+        if (desired === 'ASL') {
+            const fallbackAsl = options.find((option) => normalizeMode(option.value) === 'ASL');
+            if (fallbackAsl) {
+                return fallbackAsl.value;
+            }
+        }
+
+        return '';
+    }
+
+    function setSelectedModeValue(mode) {
+        if (!els.modeSelect) {
+            return;
+        }
+
+        rememberPreferredAslUiMode(mode);
+
+        const value = findModeSelectValue(mode);
+        if (value !== '') {
+            els.modeSelect.value = value;
+        }
     }
 
     function normalizeAutoloadMode(mode) {
@@ -157,6 +261,10 @@
     function readConfigAvailability() {
         const form = els.controlForm;
         const dataset = form?.dataset || {};
+        const aslConfigured = dataset.aslConfigured === '1';
+        const echoConfigured = Object.prototype.hasOwnProperty.call(dataset, 'echoConfigured')
+            ? dataset.echoConfigured === '1'
+            : aslConfigured;
 
         return {
             configPath: dataset.configPath || '/var/www/html/alltune2/config.ini',
@@ -165,7 +273,8 @@
             hasRealBmPassword: dataset.hasRealBmPassword === '1',
             hasRealTgifKey: dataset.hasRealTgifKey === '1',
             modes: {
-                ASL: dataset.aslConfigured === '1',
+                ASL: aslConfigured,
+                ECHO: echoConfigured,
                 BM: dataset.bmConfigured === '1',
                 TGIF: dataset.tgifConfigured === '1',
                 YSF: dataset.ysfConfigured === '1',
@@ -175,7 +284,7 @@
 
     function modeIsConfigured(mode) {
         const config = readConfigAvailability();
-        const normalized = normalizeMode(mode);
+        const normalized = modeConfigKey(mode);
         return !!config.modes[normalized];
     }
 
@@ -185,7 +294,11 @@
         const configPath = config.configPath;
 
         if (normalized === 'ASL') {
-            return `AllStar is not configured on this system. A real MYNODE value is required in ${configPath}. Connect is disabled until that value is set.`;
+            return `AllStarLink is not configured on this system. A real MYNODE value is required in ${configPath}. Connect is disabled until that value is set.`;
+        }
+
+        if (normalized === 'ECHO') {
+            return `EchoLink is not configured on this system. EchoLink requires a real MYNODE value and a working EchoLink setup on this ASL3 system. Connect is disabled until that is configured.`;
         }
 
         if (normalized === 'YSF') {
@@ -336,7 +449,7 @@
             return true;
         }
 
-        if (mode === 'ASL') {
+        if (mode === 'ASL' || mode === 'ECHO') {
             return true;
         }
 
@@ -483,25 +596,31 @@
         if (mode === 'BM') {
             return disconnectFirst
                 ? 'BrandMeister is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: BM READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because BM is already connected in this mode. DISCONNECT removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
-                : 'BrandMeister is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: BM READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because BM is already connected in this mode. With Disconnect before Connect off, BM can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
+                : 'BrandMeister is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: BM READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because BM is already connected in this mode. With Disconnect before Connect off, BM can stay up while you add direct AllStarLink or EchoLink connections. DISCONNECT removes the last direct AllStarLink node first when one is present, otherwise it removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
         }
 
         if (mode === 'TGIF') {
             return disconnectFirst
                 ? 'TGIF is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: TGIF READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because TGIF is already connected in this mode. DISCONNECT removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
-                : 'TGIF is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: TGIF READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because TGIF is already connected in this mode. With Disconnect before Connect off, TGIF can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
+                : 'TGIF is a two-step connect. Step 1: enter or load the talkgroup, then press CONNECT one time. The CONNECT button will dim while the request is working. Wait for the System Status line to change to WAITING: TGIF READY - CLICK CONNECT AGAIN. When CONNECT becomes bright again, press CONNECT a second time for the final talkgroup connect. After the final connect, CONNECT will usually dim because TGIF is already connected in this mode. With Disconnect before Connect off, TGIF can stay up while you add direct AllStarLink or EchoLink connections. DISCONNECT removes the last direct AllStarLink node first when one is present, otherwise it removes the current managed connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
         }
 
         if (mode === 'YSF') {
             return disconnectFirst
                 ? 'YSF is a one-step connect. Enter or load the YSF target, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: YSF TARGET ... before doing anything else. When YSF is already active, CONNECT may stay dim in this mode. DISCONNECT removes the current managed YSF connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk. With Disconnect before Connect checked, the next managed connect clears earlier managed links first.'
-                : 'YSF is a one-step connect. Enter or load the YSF target, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: YSF TARGET ... before doing anything else. With Disconnect before Connect off, YSF can stay up while you add direct AllStar links. DISCONNECT removes the last direct AllStar link first when one is present, otherwise it removes the current managed YSF connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
+                : 'YSF is a one-step connect. Enter or load the YSF target, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: YSF TARGET ... before doing anything else. With Disconnect before Connect off, YSF can stay up while you add direct AllStarLink or EchoLink connections. DISCONNECT removes the last direct AllStarLink node first when one is present, otherwise it removes the current managed YSF connection. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
         }
 
         if (mode === 'ASL') {
             return disconnectFirst
-                ? 'AllStar is a one-step connect. Enter or load the AllStar node, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ALLSTAR NODE ... before doing anything else. When CONNECT becomes bright again, you may connect another node only if your current settings allow it. With Disconnect before Connect checked, the next CONNECT replaces the current managed links first instead of stacking them. DISCONNECT removes the last direct AllStar link first. The small Disconnect button beside a listed AllStar node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.'
-                : 'AllStar is a one-step connect. Enter or load the AllStar node, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ALLSTAR NODE ... before doing anything else. When CONNECT becomes bright again, you can press CONNECT again to add another direct AllStar node. DISCONNECT removes the last direct AllStar link first. The small Disconnect button beside a listed AllStar node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
+                ? 'AllStarLink is a one-step connect. Enter or load the AllStarLink node, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ALLSTAR NODE ... before doing anything else. When CONNECT becomes bright again, you may connect another node only if your current settings allow it. With Disconnect before Connect checked, the next CONNECT replaces the current managed links first instead of stacking them. DISCONNECT removes the last direct AllStarLink node first. The small Disconnect button beside a listed AllStarLink node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.'
+                : 'AllStarLink is a one-step connect. Enter or load the AllStarLink node, then press CONNECT once. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ALLSTAR NODE ... before doing anything else. When CONNECT becomes bright again, you can press CONNECT again to add another direct AllStarLink node. DISCONNECT removes the last direct AllStarLink node first. The small Disconnect button beside a listed AllStarLink node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
+        }
+
+        if (mode === 'ECHO') {
+            return disconnectFirst
+                ? 'EchoLink uses the same working AllStarLink connect path. Enter the EchoLink target as 3 plus the zero-padded 6-digit EchoLink node, then press CONNECT once. Example: EchoLink 1234 becomes 3001234. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ECHOLINK NODE ... before doing anything else. With Disconnect before Connect checked, the next CONNECT replaces the current managed links first instead of stacking them. DISCONNECT removes the last direct node first. The small Disconnect button beside a listed node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.'
+                : 'EchoLink uses the same working AllStarLink connect path. Enter the EchoLink target as 3 plus the zero-padded 6-digit EchoLink node, then press CONNECT once. Example: EchoLink 1234 becomes 3001234. The CONNECT button will dim while the request is working. Wait for the System Status line to show CONNECTED: ECHOLINK NODE ... before doing anything else. When CONNECT becomes bright again, you can press CONNECT again to add another direct node. DISCONNECT removes the last direct node first. The small Disconnect button beside a listed node removes that specific direct node only. DISCONNECT DVSWITCH removes only the 1957 DVSwitch link. DISCONNECT ALL is the hard reset and restarts Asterisk.';
         }
 
         return 'Select a network, enter or load a target, then press CONNECT. Watch the System Status line and wait for the buttons to become bright again before the next step.';
@@ -546,14 +665,15 @@
             const target = escapeHtml(item.target ?? item.tg ?? '');
             const name = escapeHtml(item.name ?? '');
             const description = escapeHtml(item.description ?? item.desc ?? '-');
-            const mode = escapeHtml(normalizeMode(item.mode ?? 'BM'));
+            const mode = normalizeMode(item.mode ?? 'BM');
+            const modeDisplay = escapeHtml(favoriteModeLabel(mode));
 
             return `
-                <tr data-target="${target}" data-mode="${mode}">
+                <tr data-target="${target}" data-mode="${escapeHtml(mode)}">
                     <td class="favorite-target">${target}</td>
                     <td>${name}</td>
                     <td>${description}</td>
-                    <td class="favorite-mode">${mode}</td>
+                    <td class="favorite-mode">${modeDisplay}</td>
                     <td><span class="load-button">Load</span></td>
                 </tr>
             `;
@@ -795,9 +915,9 @@
 
         if (allowFieldSync && els.modeSelect && !state.busy) {
             if (typeof payload.selected_mode === 'string') {
-                els.modeSelect.value = normalizeMode(payload.selected_mode);
+                setSelectedModeValue(payload.selected_mode);
             } else if (typeof system.selected_mode === 'string') {
-                els.modeSelect.value = normalizeMode(system.selected_mode);
+                setSelectedModeValue(system.selected_mode);
             }
         }
 
@@ -860,9 +980,9 @@
 
         if (!preserveMode && els.modeSelect) {
             if (typeof payload.selected_mode === 'string') {
-                els.modeSelect.value = normalizeMode(payload.selected_mode);
+                setSelectedModeValue(payload.selected_mode);
             } else if (typeof system.selected_mode === 'string') {
-                els.modeSelect.value = normalizeMode(system.selected_mode);
+                setSelectedModeValue(system.selected_mode);
             }
         }
 
@@ -946,12 +1066,16 @@
             return;
         }
 
+        state.lastRequestedUiMode = currentSelectedMode();
+        rememberPreferredAslUiMode(state.lastRequestedUiMode);
+
         const payload = {
             action,
             action_type: action,
             target: els.targetInput.value.trim(),
             tgNum: els.targetInput.value.trim(),
-            mode: normalizeMode(els.modeSelect.value),
+            mode: modeRequestValue(els.modeSelect.value),
+            ui_mode: currentSelectedMode(),
             autoload_dvswitch: els.autoloadCheckbox.checked ? 1 : 0,
             autoload_dvswitch_mode: normalizeAutoloadMode(els.autoloadModeSelect.value),
             disconnect_before_connect: els.disconnectBeforeConnectCheckbox.checked ? 1 : 0,
@@ -969,6 +1093,13 @@
                 body: JSON.stringify(payload),
             });
 
+            if (
+                state.lastRequestedUiMode === 'ECHO' &&
+                normalizeMode(responsePayload.selected_mode) === 'ASL'
+            ) {
+                responsePayload.selected_mode = 'ECHO';
+            }
+
             applyActionStatus(responsePayload);
 
             try {
@@ -982,6 +1113,7 @@
             updateActivityValue('Current Status', 'ERROR: REQUEST FAILED');
         } finally {
             setBusy(false);
+            state.lastRequestedUiMode = '';
         }
     }
 
@@ -1076,7 +1208,7 @@
             const mode = normalizeMode(row.getAttribute('data-mode') || 'BM');
 
             els.targetInput.value = target;
-            els.modeSelect.value = mode;
+            setSelectedModeValue(mode);
             updateHelperText();
 
             window.scrollTo({
@@ -1109,8 +1241,11 @@
             return;
         }
 
+        rememberPreferredAslUiMode(currentSelectedMode());
+
         if (els.modeSelect) {
             els.modeSelect.addEventListener('change', () => {
+                rememberPreferredAslUiMode(els.modeSelect.value);
                 updateHelperText();
                 updateButtonsFromStatus(currentStatusText());
             });
