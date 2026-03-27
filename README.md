@@ -53,6 +53,7 @@ Active AllTune2 project:
 - TGIF two-step connect workflow
 - YSF one-step connect workflow
 - AllStar one-step connect workflow
+- Echolink one-step connect workflow
 - DVSwitch auto-load option
 - DVSwitch link mode selection:
   - Transceive
