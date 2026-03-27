@@ -204,7 +204,7 @@ The dashboard and status are the same main screen.
 The main control actions are:
 
 - **Connect** — starts the selected network / node workflow
-- **Disconnect** — removes the current managed connection, or removes the last tracked direct AllStar node first when one is present
+- **Disconnect** — removes the current managed connection, or removes the last tracked direct AllStar/Echolink node first when one is present
 - **Disconnect DVSwitch** — removes only the configured DVSwitch link
 - **Disconnect All** — full cleanup by restarting Asterisk
 
@@ -242,7 +242,7 @@ AllStar / Echolink uses a one-step connect flow:
 1. Enter or load the AllStar/Echolink node.
 2. Press **Connect** once.
 
-If **Disconnect before Connect** is off, additional direct AllStar nodes can be added and tracked.
+If **Disconnect before Connect** is off, additional direct AllStar/Echolink nodes can be added and tracked.
 
 If **Disconnect before Connect** is on, the next managed connect clears earlier managed links first.
 
@@ -253,6 +253,7 @@ AllTune2 now reads `config.ini` and checks whether a mode is truly configured be
 Configuration rules:
 
 - **AllStar** requires a real `MYNODE`
+- **Echolink** requires a real `MYNODE`
 - **YSF** requires real `MYNODE` and `DVSWITCH_NODE`
 - **BrandMeister** requires real `MYNODE`, `DVSWITCH_NODE`, and `BM_SelfcarePassword`
 - **TGIF** requires real `MYNODE`, `DVSWITCH_NODE`, and `TGIF_HotspotSecurityKey`
