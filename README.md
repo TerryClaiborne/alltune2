@@ -127,7 +127,7 @@ Placeholder or default values such as these are treated as **not configured**:
 
 This allows safer behavior for systems that may have:
 
-- AllStar only
+- AllStar/Echolink only
 - BrandMeister only
 - TGIF only
 - BrandMeister + TGIF
@@ -234,9 +234,9 @@ YSF uses a one-step connect flow:
 1. Enter or load the YSF target.
 2. Press **Connect** once.
 
-### AllStar
+### AllStar / Echolink
 
-AllStar uses a one-step connect flow:
+AllStar / Echolink uses a one-step connect flow:
 
 1. Enter or load the AllStar node.
 2. Press **Connect** once.
@@ -275,9 +275,9 @@ Confirmed working behavior includes:
 
 This is one of the main design goals of AllTune2.
 
-## AllStar live status
+## AllStar / Echolink live status
 
-The AllStar Live Status box shows tracked direct AllStar nodes connected by AllTune2.
+The AllStar / Echolink Live Status box shows tracked direct AllStar nodes connected by AllTune2.
 
 It includes:
 
