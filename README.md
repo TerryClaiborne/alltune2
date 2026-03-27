@@ -127,7 +127,8 @@ Placeholder or default values such as these are treated as **not configured**:
 
 This allows safer behavior for systems that may have:
 
-- AllStar/Echolink only
+- AllStar only
+- Echolink only
 - BrandMeister only
 - TGIF only
 - BrandMeister + TGIF
@@ -238,7 +239,7 @@ YSF uses a one-step connect flow:
 
 AllStar / Echolink uses a one-step connect flow:
 
-1. Enter or load the AllStar node.
+1. Enter or load the AllStar/Echolink node.
 2. Press **Connect** once.
 
 If **Disconnect before Connect** is off, additional direct AllStar nodes can be added and tracked.
@@ -268,16 +269,16 @@ AllTune2 supports mixed operation where DVSwitch can stay up while direct AllSta
 
 Confirmed working behavior includes:
 
-- BrandMeister + AllStar
-- TGIF + AllStar
-- YSF + AllStar
-- DVSwitch local node in Local Monitor + AllStar in Transceive
+- BrandMeister + AllStar + Echolink
+- TGIF + AllStar + Echolink
+- YSF + AllStar + Echolink
+- DVSwitch local node in Local Monitor + AllStar + Echolink in Transceive
 
 This is one of the main design goals of AllTune2.
 
-## AllStar / Echolink live status
+## AllStar/Echolink live status
 
-The AllStar / Echolink Live Status box shows tracked direct AllStar nodes connected by AllTune2.
+The AllStar/Echolink Live Status box shows tracked direct AllStar/Echolink nodes connected by AllTune2.
 
 It includes:
 
@@ -298,19 +299,19 @@ Important:
 
 Normal **Disconnect** uses managed disconnect behavior.
 
-When direct AllStar nodes are present, it removes the most recently tracked direct AllStar node first.
+When direct AllStar/Echolink nodes are present, it removes the most recently tracked direct AllStar/Echolink node first.
 
-If no tracked direct AllStar node is present, it disconnects the current managed mode as appropriate.
+If no tracked direct AllStar/Echolink node is present, it disconnects the current managed mode as appropriate.
 
 ### Disconnect DVSwitch
 
-**Disconnect DVSwitch** removes only the configured DVSwitch link and should not disturb direct AllStar nodes unless a different action is chosen.
+**Disconnect DVSwitch** removes only the configured DVSwitch link and should not disturb direct AllStar/Echolink nodes unless a different action is chosen.
 
-### Disconnect Selected AllStar Node
+### Disconnect Selected AllStar/Echolink Node
 
-The AllStar Live Status area includes a Disconnect button beside each tracked direct AllStar node.
+The AllStar/Echolink Live Status area includes a Disconnect button beside each tracked direct AllStar node.
 
-This allows disconnect of one specific direct AllStar node without removing the others.
+This allows disconnect of one specific direct AllStar/Echolink node without removing the others.
 
 ### Disconnect All
 
