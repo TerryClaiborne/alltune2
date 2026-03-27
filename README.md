@@ -20,6 +20,7 @@ AllTune2 currently supports:
 - TGIF
 - YSF
 - AllStar
+- Echolink
 - DVSwitch auto-load
 - DVSwitch link mode selection:
   - Transceive
@@ -328,6 +329,7 @@ Favorites support:
 - TGIF
 - YSF
 - AllStar
+- Echolink
 
 The dashboard can load saved favorites into the control form.
 
@@ -360,7 +362,7 @@ The project `.gitignore` should prevent uploading local runtime files such as:
 
 1. Edit `/var/www/html/alltune2/config.ini` and set real values.
 2. Open `/alltune2/public/` in the browser.
-3. Test BM, TGIF, YSF, AllStar, DVSwitch auto-load, and disconnect actions.
+3. Test BM, TGIF, YSF, AllStar, Echolink, DVSwitch auto-load, and disconnect actions.
 4. Confirm favorites save correctly.
 5. Confirm direct AllStar nodes show correctly in Live Status.
 6. Confirm Disconnect DVSwitch and Disconnect All behave as expected.
