@@ -359,13 +359,12 @@ The project `.gitignore` should prevent uploading local runtime files such as:
 ## Next steps after install
 
 1. Edit `/var/www/html/alltune2/config.ini` and set real values.
-2. Confirm the sudoers file exists and is valid.
-3. Open `/alltune2/public/` in the browser.
-4. Test BM, TGIF, YSF, AllStar, DVSwitch auto-load, and disconnect actions.
-5. Confirm favorites save correctly.
-6. Confirm direct AllStar nodes show correctly in Live Status.
-7. Confirm Disconnect DVSwitch and Disconnect All behave as expected.
-8. Confirm unconfigured modes show warnings and disable Connect as expected.
+2. Open `/alltune2/public/` in the browser.
+3. Test BM, TGIF, YSF, AllStar, DVSwitch auto-load, and disconnect actions.
+4. Confirm favorites save correctly.
+5. Confirm direct AllStar nodes show correctly in Live Status.
+6. Confirm Disconnect DVSwitch and Disconnect All behave as expected.
+7. Confirm unconfigured modes show warnings and disable Connect as expected.
 
 ## License / sharing
 
