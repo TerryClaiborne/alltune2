@@ -29,6 +29,10 @@ AllTune2 currently supports:
 - Disconnect of a specific selected direct AllStar node
 - Disconnect of the DVSwitch link only
 - Full Disconnect All cleanup via Asterisk restart
+- Config-aware mode availability
+- Helper warnings for unconfigured modes
+- Connect disabled for modes that are not truly configured
+- Backend validation that rejects placeholder/default config values
 
 ## Important paths
 
@@ -55,6 +59,10 @@ Active AllTune2 project:
 - Direct AllStar node list with per-node Disconnect buttons
 - Separate Disconnect DVSwitch action
 - Separate Disconnect All action
+- Config-aware mode availability
+- Unconfigured modes show helper warnings
+- Connect is disabled for modes that are not truly configured
+- Backend validation prevents placeholder/default config values from pretending to connect
 - Separate app config file
 - Installer script for setup and permissions
 - Automatic Asterisk sudoers rule creation during install
@@ -104,6 +112,22 @@ DVSWITCH_NODE="1957"
 BM_SelfcarePassword="YOUR_REAL_PASSWORD"
 TGIF_HotspotSecurityKey="YOUR_REAL_KEY"
 ```
+
+Placeholder or default values such as these are treated as **not configured**:
+
+- `CHANGE_ME`
+- `YOUR NODE`
+- `YOUR DVSWITCH NODE`
+- `YOUR_REAL_PASSWORD`
+- `YOUR_REAL_KEY`
+
+This allows safer behavior for systems that may have:
+
+- AllStar only
+- BrandMeister only
+- TGIF only
+- BrandMeister + TGIF
+- full DVSwitch support
 
 ## Fresh install
 
@@ -217,6 +241,23 @@ If **Disconnect before Connect** is off, additional direct AllStar nodes can be 
 
 If **Disconnect before Connect** is on, the next managed connect clears earlier managed links first.
 
+## Config-aware mode availability
+
+AllTune2 now reads `config.ini` and checks whether a mode is truly configured before allowing Connect.
+
+Configuration rules:
+
+- **AllStar** requires a real `MYNODE`
+- **YSF** requires real `MYNODE` and `DVSWITCH_NODE`
+- **BrandMeister** requires real `MYNODE`, `DVSWITCH_NODE`, and `BM_SelfcarePassword`
+- **TGIF** requires real `MYNODE`, `DVSWITCH_NODE`, and `TGIF_HotspotSecurityKey`
+
+If a mode is not configured:
+
+- the helper text explains what is missing
+- the Connect button is disabled for that mode
+- backend validation also rejects fake/default config values
+
 ## Mixed-link behavior
 
 AllTune2 supports mixed operation where DVSwitch can stay up while direct AllStar nodes are also connected.
@@ -303,12 +344,6 @@ The Favorites page can:
 - Some users may use Allmon3 instead of Allscan, so AllTune2 should not depend on Allscan existing.
 - UI helper text explains the current selected network workflow.
 - Button state is part of the workflow and users should wait for the status line and button state to update before the next action.
-- UPDATE
-- AllTune2 uses its own `config.ini` in the app root.
-- The installer creates a starter `config.ini` with placeholder values.
-- You must edit `/var/www/html/alltune2/config.ini` and enter your real settings before using BM, TGIF, YSF, or AllStar.
-- Placeholder values such as `YOUR NODE`, `YOUR DVSWITCH NODE`, and `CHANGE_ME` are treated as not configured.
-- If a mode is not configured, the helper text explains what is missing and Connect is disabled for that mode.
 
 ## Git / safety
 
@@ -330,6 +365,7 @@ The project `.gitignore` should prevent uploading local runtime files such as:
 5. Confirm favorites save correctly.
 6. Confirm direct AllStar nodes show correctly in Live Status.
 7. Confirm Disconnect DVSwitch and Disconnect All behave as expected.
+8. Confirm unconfigured modes show warnings and disable Connect as expected.
 
 ## License / sharing
 
