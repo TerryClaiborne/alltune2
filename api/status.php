@@ -263,9 +263,21 @@ $lastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
 $lastTarget = trim((string) ($_SESSION['last_target'] ?? ''));
 $pendingTarget = trim((string) ($_SESSION['pending_target'] ?? $_SESSION['pending_tg'] ?? ''));
 $lastStatus = trim((string) ($_SESSION['last_status'] ?? 'IDLE - NO CONNECTIONS'));
-$autoloadDvSwitch = !empty($_SESSION['autoload_dvswitch']);
-$autoloadDvSwitchMode = normalize_autoload_dvswitch_mode($_SESSION['autoload_dvswitch_mode'] ?? 'transceive');
-$disconnectBeforeConnect = !empty($_SESSION['disconnect_before_connect']);
+if (!isset($_SESSION['autoload_dvswitch'])) {
+    $_SESSION['autoload_dvswitch'] = true;
+}
+
+if (!isset($_SESSION['autoload_dvswitch_mode'])) {
+    $_SESSION['autoload_dvswitch_mode'] = 'transceive';
+}
+
+if (!isset($_SESSION['disconnect_before_connect'])) {
+    $_SESSION['disconnect_before_connect'] = false;
+}
+
+$autoloadDvSwitch = (bool) $_SESSION['autoload_dvswitch'];
+$autoloadDvSwitchMode = normalize_autoload_dvswitch_mode($_SESSION['autoload_dvswitch_mode']);
+$disconnectBeforeConnect = (bool) $_SESSION['disconnect_before_connect'];
 $dmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
 $dmrReady = !empty($_SESSION['dmr_ready']);
 $dmrActiveNetwork = normalize_mode((string) ($_SESSION['dmr_active_network'] ?? ''));
@@ -447,7 +459,7 @@ $payload = [
                 : 'Disabled',
         ],
         [
-            'label' => 'DVSwitch Auto-Load Mode',
+            'label' => 'Link Mode',
             'value' => autoload_dvswitch_mode_label($autoloadDvSwitchMode),
         ],
         [
