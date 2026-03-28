@@ -139,7 +139,7 @@ This allows safer behavior for systems that may have:
 Run this from the terminal:
 
 ```bash
-git clone https://github.com/TerryClaiborne/alltune2.git && cd alltune2 && sudo bash setup_alltune2.sh
+sudo git clone https://github.com/TerryClaiborne/alltune2.git /var/www/html/alltune2 && cd /var/www/html/alltune2 && sudo bash setup_alltune2.sh
 ```
 
 ## Existing install update
