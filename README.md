@@ -338,6 +338,13 @@ Favorites support:
 
 The dashboard can load saved favorites into the control form.
 
+The dashboard saved favorites table supports click-to-sort for:
+
+- TG / Node / YSF
+- Station Name
+- Description
+- Mode
+
 The Favorites page can:
 
 - add favorites
