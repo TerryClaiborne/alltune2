@@ -504,14 +504,55 @@ $activityLines[] = [
                 <div class="favorites-table-wrap">
                     <table class="favorites-table" id="favorites-table">
                         <thead>
-                        <tr>
-                            <th>TG / Node / YSF</th>
-                            <th>Station Name</th>
-                            <th>Description</th>
-                            <th>Mode</th>
-                            <th>Action</th>
-                        </tr>
-                        </thead>
+                        <thead>
+<tr>
+    <th>
+        <button
+            type="button"
+            class="favorites-sort-button"
+            data-sort-key="target"
+            data-sort-type="mixed"
+            aria-sort="none"
+        >
+            TG / Node / YSF
+        </button>
+    </th>
+    <th>
+        <button
+            type="button"
+            class="favorites-sort-button"
+            data-sort-key="name"
+            data-sort-type="text"
+            aria-sort="none"
+        >
+            Station Name
+        </button>
+    </th>
+    <th>
+        <button
+            type="button"
+            class="favorites-sort-button"
+            data-sort-key="description"
+            data-sort-type="text"
+            aria-sort="none"
+        >
+            Description
+        </button>
+    </th>
+    <th>
+        <button
+            type="button"
+            class="favorites-sort-button"
+            data-sort-key="mode"
+            data-sort-type="text"
+            aria-sort="none"
+        >
+            Mode
+        </button>
+    </th>
+    <th>Action</th>
+</tr>
+</thead>
                         <tbody id="favorites-body">
                         <tr>
                             <td colspan="5">Loading favorites...</td>

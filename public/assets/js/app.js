@@ -7,6 +7,10 @@
         pollIntervalMs: 10000,
         lastRequestedUiMode: '',
         preferredAslUiMode: 'ASL',
+        favoriteSortKey: '',
+        favoriteSortDirection: 'asc',
+        favoriteSortType: 'text',
+        favoritesRaw: [],
         endpoints: {
             status: '/alltune2/api/status.php',
             connect: '/alltune2/api/connect.php',
@@ -104,6 +108,166 @@
         }
 
         return normalized;
+    }
+
+    function favoriteFieldValue(item, key) {
+        if (key === 'target') {
+            return String(item.target ?? item.tg ?? '').trim();
+        }
+
+        if (key === 'name') {
+            return String(item.name ?? '').trim();
+        }
+
+        if (key === 'description') {
+            return String(item.description ?? item.desc ?? '-').trim();
+        }
+
+        if (key === 'mode') {
+            return favoriteModeLabel(item.mode ?? 'BM');
+        }
+
+        return '';
+    }
+
+    function compareFavoriteValues(left, right, type, direction) {
+        const leftText = String(left ?? '').trim();
+        const rightText = String(right ?? '').trim();
+
+        if (type === 'mixed') {
+            const leftIsNumber = /^[0-9]+$/.test(leftText);
+            const rightIsNumber = /^[0-9]+$/.test(rightText);
+
+            if (leftIsNumber && rightIsNumber) {
+                return direction === 'desc'
+                    ? Number(rightText) - Number(leftText)
+                    : Number(leftText) - Number(rightText);
+            }
+        }
+
+        const collator = new Intl.Collator(undefined, {
+            numeric: true,
+            sensitivity: 'base',
+        });
+
+        return direction === 'desc'
+            ? collator.compare(rightText, leftText)
+            : collator.compare(leftText, rightText);
+    }
+
+    function compareFavoriteModes(left, right, direction) {
+        const order = {
+            ASL: 1,
+            BM: 2,
+            'E/L': 3,
+            TGIF: 4,
+            YSF: 5,
+        };
+
+        const multiplier = direction === 'desc' ? -1 : 1;
+        const leftMode = favoriteModeLabel(left);
+        const rightMode = favoriteModeLabel(right);
+        const leftRank = order[leftMode] ?? 999;
+        const rightRank = order[rightMode] ?? 999;
+
+        if (leftRank !== rightRank) {
+            return (leftRank - rightRank) * multiplier;
+        }
+
+        return 0;
+    }
+
+    function getSortedFavorites(items) {
+        if (!Array.isArray(items)) {
+            return [];
+        }
+
+        if (state.favoriteSortKey === '') {
+            return items.slice();
+        }
+
+        return items.slice().sort((leftItem, rightItem) => {
+            let primaryCompare = 0;
+
+            if (state.favoriteSortKey === 'mode') {
+                primaryCompare = compareFavoriteModes(
+                    leftItem.mode ?? 'BM',
+                    rightItem.mode ?? 'BM',
+                    state.favoriteSortDirection
+                );
+            } else {
+                const leftValue = favoriteFieldValue(leftItem, state.favoriteSortKey);
+                const rightValue = favoriteFieldValue(rightItem, state.favoriteSortKey);
+
+                primaryCompare = compareFavoriteValues(
+                    leftValue,
+                    rightValue,
+                    state.favoriteSortType,
+                    state.favoriteSortDirection
+                );
+            }
+
+            if (primaryCompare !== 0) {
+                return primaryCompare;
+            }
+
+            if (state.favoriteSortKey !== 'target') {
+                const secondaryCompare = compareFavoriteValues(
+                    favoriteFieldValue(leftItem, 'target'),
+                    favoriteFieldValue(rightItem, 'target'),
+                    'mixed',
+                    'asc'
+                );
+
+                if (secondaryCompare !== 0) {
+                    return secondaryCompare;
+                }
+            }
+
+            const tertiaryCompare = compareFavoriteValues(
+                favoriteFieldValue(leftItem, 'name'),
+                favoriteFieldValue(rightItem, 'name'),
+                'text',
+                'asc'
+            );
+
+            if (tertiaryCompare !== 0) {
+                return tertiaryCompare;
+            }
+
+            return compareFavoriteValues(
+                favoriteFieldValue(leftItem, 'description'),
+                favoriteFieldValue(rightItem, 'description'),
+                'text',
+                'asc'
+            );
+        });
+    }
+
+    function updateFavoritesSortButtons() {
+        const buttons = document.querySelectorAll('.favorites-sort-button');
+
+        buttons.forEach((button) => {
+            const key = String(button.getAttribute('data-sort-key') || '').trim();
+            const indicator = button.querySelector('.favorites-sort-indicator');
+
+            if (key !== '' && key === state.favoriteSortKey) {
+                button.setAttribute(
+                    'aria-sort',
+                    state.favoriteSortDirection === 'desc' ? 'descending' : 'ascending'
+                );
+
+                if (indicator) {
+                    indicator.textContent = state.favoriteSortDirection === 'desc' ? '?' : '?';
+                }
+            } else {
+                button.setAttribute('aria-sort', 'none');
+
+                if (indicator) {
+                    indicator.textContent = '';
+                }
+            }
+        });
     }
 
     function rememberPreferredAslUiMode(mode) {
@@ -656,12 +820,17 @@
             return;
         }
 
-        if (!Array.isArray(items) || items.length === 0) {
+        state.favoritesRaw = Array.isArray(items) ? items.slice() : [];
+
+        const renderItems = getSortedFavorites(state.favoritesRaw);
+
+        if (renderItems.length === 0) {
             els.favoritesBody.innerHTML = '<tr><td colspan="5">No favorites saved yet.</td></tr>';
+            updateFavoritesSortButtons();
             return;
         }
 
-        const rows = items.map((item) => {
+        const rows = renderItems.map((item) => {
             const target = escapeHtml(item.target ?? item.tg ?? '');
             const name = escapeHtml(item.name ?? '');
             const description = escapeHtml(item.description ?? item.desc ?? '-');
@@ -680,6 +849,7 @@
         });
 
         els.favoritesBody.innerHTML = rows.join('');
+        updateFavoritesSortButtons();
     }
 
     function updateActivityValue(label, value) {
@@ -1193,6 +1363,37 @@
         });
     }
 
+    function wireFavoritesSort() {
+        const table = document.getElementById('favorites-table');
+        if (!table) {
+            return;
+        }
+
+        table.addEventListener('click', (event) => {
+            const button = event.target.closest('.favorites-sort-button');
+            if (!button) {
+                return;
+            }
+
+            const sortKey = String(button.getAttribute('data-sort-key') || '').trim();
+            const sortType = String(button.getAttribute('data-sort-type') || 'text').trim().toLowerCase();
+
+            if (sortKey === '') {
+                return;
+            }
+
+            if (state.favoriteSortKey === sortKey) {
+                state.favoriteSortDirection = state.favoriteSortDirection === 'asc' ? 'desc' : 'asc';
+            } else {
+                state.favoriteSortKey = sortKey;
+                state.favoriteSortDirection = 'asc';
+                state.favoriteSortType = sortType === 'mixed' ? 'mixed' : 'text';
+            }
+
+            renderFavorites(state.favoritesRaw);
+        });
+    }
+
     function wireFavoritesLoad() {
         if (!els.favoritesBody || !els.targetInput || !els.modeSelect) {
             return;
@@ -1298,6 +1499,7 @@
         }
 
         wireAllstarDisconnectButtons();
+        wireFavoritesSort();
         wireFavoritesLoad();
         updateHelperText();
 

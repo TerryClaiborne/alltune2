@@ -744,3 +744,36 @@ select.control {
         font-size: 0.88rem;
     }
 }
+
+.favorites-sort-button {
+    background: transparent;
+    border: 0;
+    padding: 0;
+    margin: 0;
+    color: var(--pink);
+    font: inherit;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+}
+
+.favorites-sort-button:hover {
+    color: #ffd6ff;
+}
+
+.favorites-sort-button:focus-visible {
+    outline: 1px solid #8b5cf6;
+    outline-offset: 2px;
+    border-radius: 4px;
+}
+
+.favorites-sort-indicator {
+    font-size: 0.72rem;
+    color: #cbb6e6;
+    min-width: 18px;
+    text-align: center;
+}
