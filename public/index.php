@@ -254,7 +254,7 @@ $activityLines[] = [
         : 'Disabled',
 ];
 $activityLines[] = [
-    'label' => 'DVSwitch Auto-Load Mode',
+    'label' => 'Link Mode',
     'value' => $autoloadDvSwitchMode === 'local_monitor' ? 'Local Monitor' : 'Transceive',
 ];
 
@@ -406,7 +406,7 @@ $activityLines[] = [
 
                         <div class="control-mode-row">
                             <label class="control-mode-label" for="autoload_dvswitch_mode">
-                                DVSwitch Link Mode
+                                Link Mode
                             </label>
 
                             <select
@@ -427,8 +427,7 @@ $activityLines[] = [
                         <div class="helper-panel" id="helper-panel">
                             <div class="helper-title">Network Flow</div>
                             <p class="helper-text" id="helper-text">
-                                For BM and TGIF, enter or load a talkgroup, press Connect, wait until the system is ready, then press Connect again. AllStar Link and YSF are one-step connects. EchoLink appears only when it is actually configured on this ASL3 system. When DVSwitch auto-load is enabled, the configured DVSwitch link will be loaded using the selected mode.
-                            </p>
+                                For BM and TGIF, enter or load a talkgroup, press Connect, wait until the system is ready, then press Connect again. AllStar Link and YSF are one-step connects. EchoLink appears only when it is actually configured on this ASL3 system. Link Mode controls how the AllStarLink, EchoLink, and DVSwitch auto-load link are connected.                            </p>
                         </div>
                     </form>
                 </div>

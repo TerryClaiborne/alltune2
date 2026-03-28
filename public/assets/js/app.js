@@ -843,7 +843,7 @@
                 : (dmrNetwork ? `${dmrNetwork}${dmrReady ? ' (Ready)' : ' (Preparing)'}` : '-')
         );
         updateActivityValue('DVSwitch Auto-Load', autoLoadValue);
-        updateActivityValue('DVSwitch Auto-Load Mode', autoloadModeLabel(autoloadMode));
+        updateActivityValue('Link Mode', autoloadModeLabel(autoloadMode));
         updateActivityValue('DVSwitch Link Active', dvswitchActive ? 'Yes' : 'No');
         updateActivityValue('Disconnect Before Connect', disconnectBeforeConnect ? 'Enabled' : 'Disabled');
         updateActivityValue('Current Status', statusText);
