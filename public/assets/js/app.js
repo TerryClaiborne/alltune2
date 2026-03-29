@@ -1422,7 +1422,8 @@
             els.targetInput.value = target;
             setSelectedModeValue(mode);
             updateHelperText();
-
+            updateButtonsFromStatus(currentStatusText());
+            
             window.scrollTo({
                 top: 0,
                 behavior: 'smooth',
