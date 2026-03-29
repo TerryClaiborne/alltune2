@@ -1219,6 +1219,16 @@
         return payload;
     }
 
+    function refreshStatusInBackground() {
+        window.setTimeout(() => {
+            loadStatus().catch((error) => {
+                console.error(error);
+                setSystemStatus('ERROR: STATUS UNAVAILABLE');
+                updateActivityValue('Current Status', 'ERROR: STATUS UNAVAILABLE');
+            });
+        }, 0);
+    }
+
     async function sendAction(action, extraPayload = {}) {
         if (
             !els.targetInput ||
@@ -1252,6 +1262,7 @@
             ...extraPayload,
         };
 
+        let busyReleasedEarly = false;
         setBusy(true);
 
         try {
@@ -1272,17 +1283,17 @@
 
             applyActionStatus(responsePayload);
 
-            try {
-                await loadStatus();
-            } catch (statusError) {
-                console.error(statusError);
-            }
+            setBusy(false);
+            busyReleasedEarly = true;
+            refreshStatusInBackground();
         } catch (error) {
             console.error(error);
             setSystemStatus('ERROR: REQUEST FAILED');
             updateActivityValue('Current Status', 'ERROR: REQUEST FAILED');
         } finally {
-            setBusy(false);
+            if (!busyReleasedEarly) {
+                setBusy(false);
+            }
             state.lastRequestedUiMode = '';
         }
     }
