@@ -1,10 +1,10 @@
 # AllTune2
 
-© Terry Claiborne - KC3KMV - kc3kmv@yahoo.com
+Copyright Terry Claiborne - KC3KMV - kc3kmv@yahoo.com
 
 AllTune2 is a web-based control and status dashboard for radio network switching and favorites management on AllStarLink 3 / Debian Linux.
 
-It is designed to provide a cleaner, safer control flow for BrandMeister, TGIF, YSF, AllStar, Echolink.
+It is designed to provide a cleaner, safer control flow for BrandMeister, TGIF, YSF, AllStarLink, EchoLink.
 
 ## Important
 
@@ -17,19 +17,21 @@ It is designed to provide a cleaner, safer control flow for BrandMeister, TGIF, 
 AllTune2 currently supports:
 
 - BrandMeister
+- BrandMeister private calls with a trailing `#`
 - TGIF
 - YSF
-- AllStar
-- Echolink
+- AllStarLink
+- EchoLink
 - DVSwitch auto-load
-- DVSwitch link mode selection:
+- Link Mode selection:
   - Transceive
   - Local Monitor
 - Shared favorites management
-- Direct AllStar node tracking
-- Disconnect of a specific selected direct AllStar node
-- Direct Echolink node tracking
-- Disconnect of a specific selected direct Echolink node
+- Dashboard favorites sorting
+- Direct AllStarLink node tracking
+- Disconnect of a specific selected direct AllStarLink node
+- Direct EchoLink node tracking
+- Disconnect of a specific selected direct EchoLink node
 - Disconnect of the DVSwitch link only
 - Full Disconnect All cleanup via Asterisk restart
 - Config-aware mode availability
@@ -52,15 +54,16 @@ Active AllTune2 project:
 - Safer web dashboard for connect / disconnect control
 - Shared favorites management
 - BrandMeister two-step connect workflow
+- BrandMeister private call support with a trailing `#`
 - TGIF two-step connect workflow
 - YSF one-step connect workflow
-- AllStar one-step connect workflow
-- Echolink one-step connect workflow
+- AllStarLink one-step connect workflow
+- EchoLink one-step connect workflow
 - DVSwitch auto-load option
-- DVSwitch link mode selection:
+- Link Mode selection:
   - Transceive
   - Local Monitor
-- Direct AllStar - Echolink node list with per-node Disconnect buttons
+- Direct AllStarLink / EchoLink node list with per-node Disconnect buttons
 - Separate Disconnect DVSwitch action
 - Separate Disconnect All action
 - Config-aware mode availability
@@ -70,20 +73,21 @@ Active AllTune2 project:
 - Separate app config file
 - Installer script for setup and permissions
 - Automatic Asterisk sudoers rule creation during install
+- Improved dashboard action responsiveness
 
 ## Project structure
 
-- `public/index.php` — main dashboard
-- `public/favorites.php` — favorites manager
-- `api/connect.php` — connect / disconnect actions
-- `api/status.php` — live status endpoint
-- `app/` — application classes and support code
-- `public/assets/js/app.js` — frontend logic
-- `public/assets/css/style.css` — frontend styling
-- `data/favorites.txt` — shared favorites file
-- `config.ini` — local app configuration file
-- `config.ini.example` — starter config example
-- `setup_alltune2.sh` — install / setup script
+- `public/index.php` - main dashboard
+- `public/favorites.php` - favorites manager
+- `api/connect.php` - connect / disconnect actions
+- `api/status.php` - live status endpoint
+- `app/` - application classes and support code
+- `public/assets/js/app.js` - frontend logic
+- `public/assets/css/style.css` - frontend styling
+- `data/favorites.txt` - shared favorites file
+- `config.ini` - local app configuration file
+- `config.ini.example` - starter config example
+- `setup_alltune2.sh` - install / setup script
 
 ## Requirements
 
@@ -127,8 +131,8 @@ Placeholder or default values such as these are treated as **not configured**:
 
 This allows safer behavior for systems that may have:
 
-- AllStar only
-- Echolink only
+- AllStarLink only
+- EchoLink only
 - BrandMeister only
 - TGIF only
 - BrandMeister + TGIF
@@ -203,10 +207,10 @@ The dashboard and status are the same main screen.
 
 The main control actions are:
 
-- **Connect** — starts the selected network / node workflow
-- **Disconnect** — removes the current managed connection, or removes the last tracked direct AllStar/Echolink node first when one is present
-- **Disconnect DVSwitch** — removes only the configured DVSwitch link
-- **Disconnect All** — full cleanup by restarting Asterisk
+- **Connect** - starts the selected network / node workflow
+- **Disconnect** - removes the current managed connection, or removes the last tracked direct AllStarLink / EchoLink node first when one is present
+- **Disconnect DVSwitch** - removes only the configured DVSwitch link
+- **Disconnect All** - full cleanup by restarting Asterisk
 
 ## Network behavior
 
@@ -218,6 +222,21 @@ BrandMeister uses a two-step connect flow:
 2. Press **Connect** once.
 3. Wait for the system to show that BrandMeister is ready.
 4. Press **Connect** again for the final talkgroup connect.
+
+BrandMeister private calls are also supported.
+
+To place a BM private call, enter the destination DMR ID with `#` at the end.
+
+Examples:
+
+- `310997#` = BrandMeister Parrot private call
+- `1234567#` = private call to DMR ID `1234567`
+
+Notes:
+
+- BM private call support is BrandMeister-only
+- TGIF, YSF, AllStarLink, and EchoLink do not use the trailing `#`
+- Only digits with an optional single trailing `#` are valid
 
 ### TGIF
 
@@ -235,25 +254,25 @@ YSF uses a one-step connect flow:
 1. Enter or load the YSF target.
 2. Press **Connect** once.
 
-### AllStar / Echolink
+### AllStarLink / EchoLink
 
-AllStar / Echolink uses a one-step connect flow:
+AllStarLink / EchoLink uses a one-step connect flow:
 
-1. Enter or load the AllStar/Echolink node.
+1. Enter or load the AllStarLink / EchoLink node.
 2. Press **Connect** once.
 
-If **Disconnect before Connect** is off, additional direct AllStar/Echolink nodes can be added and tracked.
+If **Disconnect before Connect** is off, additional direct AllStarLink / EchoLink nodes can be added and tracked.
 
 If **Disconnect before Connect** is on, the next managed connect clears earlier managed links first.
 
 ## Config-aware mode availability
 
-AllTune2 now reads `config.ini` and checks whether a mode is truly configured before allowing Connect.
+AllTune2 reads `config.ini` and checks whether a mode is truly configured before allowing Connect.
 
 Configuration rules:
 
-- **AllStar** requires a real `MYNODE`
-- **Echolink** requires a real `MYNODE`
+- **AllStarLink** requires a real `MYNODE`
+- **EchoLink** requires a real `MYNODE` and a working EchoLink configuration on the ASL3 system
 - **YSF** requires real `MYNODE` and `DVSWITCH_NODE`
 - **BrandMeister** requires real `MYNODE`, `DVSWITCH_NODE`, and `BM_SelfcarePassword`
 - **TGIF** requires real `MYNODE`, `DVSWITCH_NODE`, and `TGIF_HotspotSecurityKey`
@@ -266,20 +285,20 @@ If a mode is not configured:
 
 ## Mixed-link behavior
 
-AllTune2 supports mixed operation where DVSwitch can stay up while direct AllStar nodes are also connected.
+AllTune2 supports mixed operation where DVSwitch can stay up while direct AllStarLink nodes are also connected.
 
 Confirmed working behavior includes:
 
-- BrandMeister + AllStar + Echolink
-- TGIF + AllStar + Echolink
-- YSF + AllStar + Echolink
-- DVSwitch local node in Local Monitor + AllStar + Echolink in Transceive
+- BrandMeister + AllStarLink + EchoLink
+- TGIF + AllStarLink + EchoLink
+- YSF + AllStarLink + EchoLink
+- DVSwitch local node in Local Monitor + AllStarLink + EchoLink in Transceive
 
 This is one of the main design goals of AllTune2.
 
-## AllStar/Echolink live status
+## AllStarLink / EchoLink live status
 
-The AllStar/Echolink Live Status box shows tracked direct AllStar/Echolink nodes connected by AllTune2.
+The AllStarLink / EchoLink Live Status box shows tracked direct AllStarLink / EchoLink nodes connected by AllTune2.
 
 It includes:
 
@@ -300,19 +319,19 @@ Important:
 
 Normal **Disconnect** uses managed disconnect behavior.
 
-When direct AllStar/Echolink nodes are present, it removes the most recently tracked direct AllStar/Echolink node first.
+When direct AllStarLink / EchoLink nodes are present, it removes the most recently tracked direct AllStarLink / EchoLink node first.
 
-If no tracked direct AllStar/Echolink node is present, it disconnects the current managed mode as appropriate.
+If no tracked direct AllStarLink / EchoLink node is present, it disconnects the current managed mode as appropriate.
 
 ### Disconnect DVSwitch
 
-**Disconnect DVSwitch** removes only the configured DVSwitch link and should not disturb direct AllStar/Echolink nodes unless a different action is chosen.
+**Disconnect DVSwitch** removes only the configured DVSwitch link and should not disturb direct AllStarLink / EchoLink nodes unless a different action is chosen.
 
-### Disconnect Selected AllStar/Echolink Node
+### Disconnect Selected AllStarLink / EchoLink Node
 
-The AllStar/Echolink Live Status area includes a Disconnect button beside each tracked direct AllStar node.
+The AllStarLink / EchoLink Live Status area includes a Disconnect button beside each tracked direct AllStarLink / EchoLink node.
 
-This allows disconnect of one specific direct AllStar/Echolink node without removing the others.
+This allows disconnect of one specific direct AllStarLink / EchoLink node without removing the others.
 
 ### Disconnect All
 
@@ -333,8 +352,8 @@ Favorites support:
 - BM
 - TGIF
 - YSF
-- AllStar
-- Echolink
+- AllStarLink
+- EchoLink
 
 The dashboard can load saved favorites into the control form.
 
@@ -374,9 +393,9 @@ The project `.gitignore` should prevent uploading local runtime files such as:
 
 1. Edit `/var/www/html/alltune2/config.ini` and set real values.
 2. Open `/alltune2/public/` in the browser.
-3. Test BM, TGIF, YSF, AllStar, Echolink, DVSwitch auto-load, and disconnect actions.
+3. Test BM, TGIF, YSF, AllStarLink, EchoLink, DVSwitch auto-load, and disconnect actions.
 4. Confirm favorites save correctly.
-5. Confirm direct AllStar nodes show correctly in Live Status.
+5. Confirm direct AllStarLink nodes show correctly in Live Status.
 6. Confirm Disconnect DVSwitch and Disconnect All behave as expected.
 7. Confirm unconfigured modes show warnings and disable Connect as expected.
 
