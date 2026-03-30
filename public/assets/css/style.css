@@ -221,12 +221,12 @@ select {
 }
 
 .control-mode-row {
-    display: flex;
+    display: grid;
+    grid-template-columns: auto 170px minmax(260px, 1fr);
     align-items: center;
     gap: 12px;
     margin-top: 10px;
     padding-left: 2px;
-    flex-wrap: wrap;
 }
 
 .control-mode-label {
@@ -235,6 +235,52 @@ select {
     font-weight: 700;
     letter-spacing: 0.02em;
     text-transform: uppercase;
+}
+
+.inline-status-wrap {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 10px;
+    min-height: 38px;
+    padding: 0 12px;
+    border-radius: 12px;
+    background: linear-gradient(180deg, rgba(32, 20, 48, 0.96) 0%, rgba(24, 15, 35, 0.96) 100%);
+    border: 1px solid var(--border-soft);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.03);
+}
+
+.inline-status-label {
+    color: var(--text-soft);
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.inline-status-value {
+    min-width: 0;
+    color: var(--green);
+    font-size: 0.83rem;
+    font-weight: 700;
+    line-height: 1.1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.inline-status-value.waiting {
+    color: var(--gold);
+}
+
+.inline-status-value.error {
+    color: #ff9a9a;
+}
+
+.inline-status-value.disconnected {
+    color: #cbb6e6;
 }
 
 .control {
@@ -369,6 +415,11 @@ select.control {
     border-radius: 14px;
     color: var(--text-main);
     line-height: 1.42;
+}
+
+.helper-panel-standalone {
+    margin-top: 0;
+    min-height: 96px;
 }
 
 .helper-title {
@@ -766,6 +817,20 @@ select.control {
     .control-settings-right {
         justify-content: flex-start;
     }
+
+    .control-mode-row {
+        grid-template-columns: 1fr;
+        align-items: stretch;
+    }
+
+    .control-mode-label {
+        margin-bottom: -4px;
+    }
+
+    .control-compact {
+        width: 100%;
+        min-width: 0;
+    }
 }
 
 @media (max-width: 760px) {
@@ -805,13 +870,7 @@ select.control {
 
     .control-settings-right,
     .control-mode-row {
-        flex-direction: column;
         align-items: stretch;
-    }
-
-    .control-compact {
-        width: 100%;
-        min-width: 0;
     }
 
     .status-grid {
@@ -832,7 +891,17 @@ select.control {
         min-width: 860px;
     }
 
-    .status-line {
-        font-size: 0.88rem;
+    .inline-status-wrap {
+        grid-template-columns: 1fr;
+        gap: 4px;
+        align-items: start;
+        padding-top: 8px;
+        padding-bottom: 8px;
+    }
+
+    .inline-status-value {
+        white-space: normal;
+        overflow: visible;
+        text-overflow: clip;
     }
 }

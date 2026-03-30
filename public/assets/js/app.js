@@ -374,7 +374,7 @@
 
     function currentStatusText() {
         return els.systemStatus
-            ? els.systemStatus.textContent.replace(/^System Status:\s*/i, '').trim()
+            ? String(els.systemStatus.textContent || '').trim()
             : 'IDLE - NO CONNECTIONS';
     }
 
@@ -745,12 +745,15 @@
         }
 
         const safeText = normalizeStatusText(text);
-        els.systemStatus.textContent = 'System Status: ' + safeText;
+        els.systemStatus.textContent = safeText;
+        els.systemStatus.classList.remove('waiting', 'error', 'disconnected');
 
         if (isWaitingStatus(safeText)) {
             els.systemStatus.classList.add('waiting');
-        } else {
-            els.systemStatus.classList.remove('waiting');
+        } else if (isErrorStatus(safeText)) {
+            els.systemStatus.classList.add('error');
+        } else if (isDisconnectedStatus(safeText)) {
+            els.systemStatus.classList.add('disconnected');
         }
 
         updateButtonsFromStatus(safeText);
@@ -775,7 +778,7 @@
                 : 'YSF is a one-step connect. Enter or load the YSF target and press CONNECT once. The button dims while the request runs. Wait for the status to confirm the connection. DISCONNECT removes the current YSF connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect off, YSF can stay up while you add direct AllStarLink or EchoLink connections.';
         }
 
-                if (mode === 'ASL') {
+        if (mode === 'ASL') {
             return disconnectFirst
                 ? 'AllStarLink is a one-step connect. Enter or load a node and press CONNECT once. The button dims while the request runs. Wait for the status to confirm the connection, then you can connect another direct node if your settings allow it. DISCONNECT removes the most recent direct AllStarLink node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect on, the next CONNECT replaces earlier managed links first.'
                 : 'AllStarLink is a one-step connect. Enter or load a node and press CONNECT once. The button dims while the request runs. Wait for the status to confirm the connection, then you can add another direct AllStarLink node. DISCONNECT removes the most recent direct AllStarLink node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.';

@@ -314,25 +314,33 @@ $activityLines[] = [
                                     Local Monitor
                                 </option>
                             </select>
-                        </div>
 
-                        <div class="helper-panel" id="helper-panel">
-                            <div class="helper-title">Network Flow</div>
-                            <p class="helper-text" id="helper-text">
-                                For BM and TGIF, enter or load a talkgroup, press Connect, wait until the system is ready, then press Connect again. AllStar Link, EchoLink, and YSF are one-step connects. When DVSwitch auto-load is enabled, the configured DVSwitch link will be loaded using the selected mode.
-                            </p>
+                            <div class="inline-status-wrap" aria-live="polite">
+                                <span class="inline-status-label">Status</span>
+                                <span
+                                    class="inline-status-value<?= str_starts_with(strtoupper($lastStatus), 'WAITING') ? ' waiting' : '' ?>"
+                                    id="system-status"
+                                >
+                                    <?= e($lastStatus) ?>
+                                </span>
+                            </div>
                         </div>
                     </form>
                 </div>
             </article>
 
-            <article class="card" id="status-section">
+            <article class="card" id="network-center-section">
                 <div class="card-header">
-                    <span>System Status</span>
-                    <span class="meta-line">Config-driven DVSwitch auto-load</span>
+                    <span>Network Center</span>
+                    <span class="meta-line">Flow and guidance</span>
                 </div>
-                <div class="status-line<?= str_starts_with(strtoupper($lastStatus), 'WAITING') ? ' waiting' : '' ?>" id="system-status">
-                    System Status: <?= e($lastStatus) ?>
+                <div class="card-body">
+                    <div class="helper-panel helper-panel-standalone" id="helper-panel">
+                        <div class="helper-title">Network Flow</div>
+                        <p class="helper-text" id="helper-text">
+                            For BM and TGIF, enter or load a talkgroup, press Connect, wait until the system is ready, then press Connect again. AllStar Link, EchoLink, and YSF are one-step connects. When DVSwitch auto-load is enabled, the configured DVSwitch link will be loaded using the selected mode.
+                        </p>
+                    </div>
                 </div>
             </article>
         </section>
