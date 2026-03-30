@@ -282,6 +282,8 @@ $modeOptions = [
             overflow-y: auto;
             max-height: 430px;
             border-radius: 12px;
+            border: 1px solid #2b1d38;
+            background: rgba(15, 10, 20, 0.55);
         }
 
         .favorites-manage-table {
@@ -300,10 +302,15 @@ $modeOptions = [
         }
 
         .favorites-manage-table th {
+            position: sticky;
+            top: 0;
+            z-index: 3;
             color: var(--pink);
             font-size: 0.74rem;
             text-transform: uppercase;
             letter-spacing: 0.04em;
+            background: linear-gradient(180deg, #56306d 0%, #45255a 100%);
+            box-shadow: inset 0 -1px 0 #6d4392;
         }
 
         .favorites-manage-table td {
@@ -346,6 +353,18 @@ $modeOptions = [
         .favorites-manage-table td:nth-child(6) {
             width: 10%;
             text-align: center;
+        }
+
+        .favorites-manage-table tbody tr:nth-child(odd) {
+            background: rgba(255, 255, 255, 0.02);
+        }
+
+        .favorites-manage-table tbody tr:nth-child(even) {
+            background: rgba(138, 13, 140, 0.08);
+        }
+
+        .favorites-manage-table tbody tr:hover {
+            background: rgba(216, 108, 242, 0.14);
         }
 
         .edit-link {
