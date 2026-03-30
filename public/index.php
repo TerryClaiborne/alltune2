@@ -33,114 +33,6 @@ function is_placeholder_config_value(mixed $value): bool
     ], true);
 }
 
-function parse_ini_stanza(string $path, string $stanza): array
-{
-    if (!is_file($path) || !is_readable($path)) {
-        return [];
-    }
-
-    $lines = file($path, FILE_IGNORE_NEW_LINES);
-    if (!is_array($lines)) {
-        return [];
-    }
-
-    $target = '[' . strtolower(trim($stanza)) . ']';
-    $inStanza = false;
-    $values = [];
-
-    foreach ($lines as $line) {
-        $trimmed = trim((string) $line);
-
-        if ($trimmed === '' || str_starts_with($trimmed, ';') || str_starts_with($trimmed, '#')) {
-            continue;
-        }
-
-        if (preg_match('/^\[(.+)\]$/', $trimmed, $matches)) {
-            $current = '[' . strtolower(trim((string) $matches[1])) . ']';
-
-            if ($inStanza && $current !== $target) {
-                break;
-            }
-
-            $inStanza = ($current === $target);
-            continue;
-        }
-
-        if (!$inStanza) {
-            continue;
-        }
-
-        $parts = explode('=', $trimmed, 2);
-        if (count($parts) !== 2) {
-            continue;
-        }
-
-        $key = strtolower(trim((string) $parts[0]));
-        $value = trim((string) $parts[1]);
-
-        if (($commentPos = strpos($value, ';')) !== false) {
-            $value = trim(substr($value, 0, $commentPos));
-        }
-
-        if (($commentPos = strpos($value, '#')) !== false) {
-            $value = trim(substr($value, 0, $commentPos));
-        }
-
-        $value = trim($value, " \t\n\r\0\x0B\"'");
-
-        if ($key !== '') {
-            $values[$key] = $value;
-        }
-    }
-
-    return $values;
-}
-
-function has_real_echolink_config(string $myNode): bool
-{
-    $echolinkConf = '/etc/asterisk/echolink.conf';
-    $el0 = parse_ini_stanza($echolinkConf, 'el0');
-
-    if ($el0 === []) {
-        return false;
-    }
-
-    $requiredKeys = ['astnode', 'call', 'email', 'name', 'node', 'pwd', 'qth'];
-
-    foreach ($requiredKeys as $key) {
-        $value = trim((string) ($el0[$key] ?? ''));
-        if ($value === '') {
-            return false;
-        }
-    }
-
-    $placeholderValues = [
-        'INVALID',
-        'YOUR NAME',
-        '000000',
-        'CHANGE_ME',
-        'CHANGEME',
-    ];
-
-    foreach (['call', 'email', 'name', 'node', 'pwd', 'qth'] as $key) {
-        $value = strtoupper(trim((string) ($el0[$key] ?? '')));
-        if (in_array($value, $placeholderValues, true)) {
-            return false;
-        }
-    }
-
-    $astnode = trim((string) ($el0['astnode'] ?? ''));
-    if ($astnode === '' || is_placeholder_config_value($astnode)) {
-        return false;
-    }
-
-    if ($myNode !== '' && !is_placeholder_config_value($myNode) && $astnode !== $myNode) {
-        return false;
-    }
-
-    return true;
-}
-
 $appName = 'AllTune2';
 
 $dvswitchNode = trim((string) $config->get('DVSWITCH_NODE', ''));
@@ -152,14 +44,13 @@ $hasRealMyNode = !is_placeholder_config_value($myNode);
 $hasRealDvSwitchNode = !is_placeholder_config_value($dvswitchNode);
 $hasRealBmPassword = !is_placeholder_config_value($bmPassword);
 $hasRealTgifKey = !is_placeholder_config_value($tgifKey);
-$hasRealEchoLink = $hasRealMyNode && has_real_echolink_config($myNode);
 
 $displayMyNode = $hasRealMyNode ? $myNode : 'Not Set';
 $displayDvSwitchNode = $hasRealDvSwitchNode ? $dvswitchNode : '';
 
 $modeAvailability = [
     'ASL'  => $hasRealMyNode,
-    'ECHO' => $hasRealEchoLink,
+    'ECHO' => $hasRealMyNode,
     'BM'   => $hasRealMyNode && $hasRealDvSwitchNode && $hasRealBmPassword,
     'TGIF' => $hasRealMyNode && $hasRealDvSwitchNode && $hasRealTgifKey,
     'YSF'  => $hasRealMyNode && $hasRealDvSwitchNode,
@@ -174,6 +65,11 @@ if ($autoloadDvSwitchMode !== 'local_monitor') {
     $autoloadDvSwitchMode = 'transceive';
 }
 
+$rawDvSwitchActiveMode = strtolower(trim((string) ($_SESSION['dvswitch_active_mode'] ?? '')));
+$dvswitchActiveMode = in_array($rawDvSwitchActiveMode, ['local_monitor', 'transceive'], true)
+    ? $rawDvSwitchActiveMode
+    : '';
+
 $disconnectBeforeConnect = isset($_SESSION['disconnect_before_connect'])
     ? (bool) $_SESSION['disconnect_before_connect']
     : false;
@@ -184,10 +80,6 @@ if (in_array($selectedMode, ['ALLSTAR', 'ALLSTAR LINK', 'ALLSTARLINK'], true)) {
 }
 if (in_array($selectedMode, ['ECHO', 'ECHO LINK', 'ECHOLINK', 'EL', 'E/L'], true)) {
     $selectedMode = 'ECHO';
-}
-
-if ($selectedMode === 'ECHO' && !$hasRealEchoLink) {
-    $selectedMode = $modeAvailability['ASL'] ? 'ASL' : 'BM';
 }
 
 $targetValue = (string) ($_SESSION['pending_target'] ?? $_SESSION['last_target'] ?? '');
@@ -210,12 +102,9 @@ $modeOptions = [
     'BM'   => 'BrandMeister (DMR)',
     'TGIF' => 'TGIF Network',
     'ASL'  => 'AllStar Link',
+    'ECHO' => 'EchoLink',
     'YSF'  => 'System Fusion (YSF)',
 ];
-
-if ($hasRealEchoLink) {
-    $modeOptions['ECHO'] = 'EchoLink';
-}
 
 $activityLines = [];
 
@@ -257,12 +146,16 @@ $activityLines[] = [
     'label' => 'Link Mode',
     'value' => $autoloadDvSwitchMode === 'local_monitor' ? 'Local Monitor' : 'Transceive',
 ];
-
+$activityLines[] = [
+    'label' => 'DVSwitch Active Link Mode',
+    'value' => $dvswitchActiveMode === 'local_monitor'
+        ? 'Local Monitor'
+        : ($dvswitchActiveMode === 'transceive' ? 'Transceive' : '-'),
+];
 $activityLines[] = [
     'label' => 'DVSwitch Link Active',
     'value' => $dvswitchLinkActive ? 'Yes' : 'No',
 ];
-
 $activityLines[] = [
     'label' => 'Disconnect Before Connect',
     'value' => $disconnectBeforeConnect ? 'Enabled' : 'Disabled',
@@ -322,7 +215,6 @@ $activityLines[] = [
                         data-has-real-bm-password="<?= $hasRealBmPassword ? '1' : '0' ?>"
                         data-has-real-tgif-key="<?= $hasRealTgifKey ? '1' : '0' ?>"
                         data-asl-configured="<?= $modeAvailability['ASL'] ? '1' : '0' ?>"
-                        data-echo-configured="<?= $modeAvailability['ECHO'] ? '1' : '0' ?>"
                         data-bm-configured="<?= $modeAvailability['BM'] ? '1' : '0' ?>"
                         data-tgif-configured="<?= $modeAvailability['TGIF'] ? '1' : '0' ?>"
                         data-ysf-configured="<?= $modeAvailability['YSF'] ? '1' : '0' ?>"
@@ -413,7 +305,7 @@ $activityLines[] = [
                                 id="autoload_dvswitch_mode"
                                 name="autoload_dvswitch_mode"
                                 class="control control-compact"
-                                aria-label="DVSwitch Auto-Load Mode"
+                                aria-label="Link Mode"
                             >
                                 <option value="transceive" <?= $autoloadDvSwitchMode === 'transceive' ? 'selected' : '' ?>>
                                     Transceive
@@ -427,7 +319,8 @@ $activityLines[] = [
                         <div class="helper-panel" id="helper-panel">
                             <div class="helper-title">Network Flow</div>
                             <p class="helper-text" id="helper-text">
-                                For BM and TGIF, enter or load a talkgroup, press Connect, wait until the system is ready, then press Connect again. AllStar Link and YSF are one-step connects. EchoLink appears only when it is actually configured on this ASL3 system. Link Mode controls how the AllStarLink, EchoLink, and DVSwitch auto-load link are connected.                            </p>
+                                For BM and TGIF, enter or load a talkgroup, press Connect, wait until the system is ready, then press Connect again. AllStar Link, EchoLink, and YSF are one-step connects. When DVSwitch auto-load is enabled, the configured DVSwitch link will be loaded using the selected mode.
+                            </p>
                         </div>
                     </form>
                 </div>
@@ -504,55 +397,14 @@ $activityLines[] = [
                 <div class="favorites-table-wrap">
                     <table class="favorites-table" id="favorites-table">
                         <thead>
-                        <thead>
-<tr>
-    <th>
-        <button
-            type="button"
-            class="favorites-sort-button"
-            data-sort-key="target"
-            data-sort-type="mixed"
-            aria-sort="none"
-        >
-            TG / Node / YSF
-        </button>
-    </th>
-    <th>
-        <button
-            type="button"
-            class="favorites-sort-button"
-            data-sort-key="name"
-            data-sort-type="text"
-            aria-sort="none"
-        >
-            Station Name
-        </button>
-    </th>
-    <th>
-        <button
-            type="button"
-            class="favorites-sort-button"
-            data-sort-key="description"
-            data-sort-type="text"
-            aria-sort="none"
-        >
-            Description
-        </button>
-    </th>
-    <th>
-        <button
-            type="button"
-            class="favorites-sort-button"
-            data-sort-key="mode"
-            data-sort-type="text"
-            aria-sort="none"
-        >
-            Mode
-        </button>
-    </th>
-    <th>Action</th>
-</tr>
-</thead>
+                        <tr>
+                            <th>TG / Node / YSF</th>
+                            <th>Station Name</th>
+                            <th>Description</th>
+                            <th>Mode</th>
+                            <th>Action</th>
+                        </tr>
+                        </thead>
                         <tbody id="favorites-body">
                         <tr>
                             <td colspan="5">Loading favorites...</td>

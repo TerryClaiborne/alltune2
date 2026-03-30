@@ -258,7 +258,7 @@
                 );
 
                 if (indicator) {
-                    indicator.textContent = state.favoriteSortDirection === 'desc' ? '?' : '?';
+                    indicator.textContent = state.favoriteSortDirection === 'desc' ? 'v' : '^';
                 }
             } else {
                 button.setAttribute('aria-sort', 'none');
@@ -989,6 +989,17 @@
             'transceive'
         );
 
+        const rawActiveDvSwitchMode = String(
+            payload.dvswitch_active_mode ??
+            system.dvswitch_active_mode ??
+            ''
+        ).trim().toLowerCase();
+
+        const activeDvSwitchMode =
+            rawActiveDvSwitchMode === 'local_monitor' || rawActiveDvSwitchMode === 'transceive'
+                ? rawActiveDvSwitchMode
+                : '';
+
         const disconnectBeforeConnect = !!(
             payload.disconnect_before_connect ??
             system.disconnect_before_connect ??
@@ -1014,6 +1025,10 @@
         );
         updateActivityValue('DVSwitch Auto-Load', autoLoadValue);
         updateActivityValue('Link Mode', autoloadModeLabel(autoloadMode));
+        updateActivityValue(
+            'DVSwitch Active Link Mode',
+            activeDvSwitchMode ? autoloadModeLabel(activeDvSwitchMode) : '-'
+        );
         updateActivityValue('DVSwitch Link Active', dvswitchActive ? 'Yes' : 'No');
         updateActivityValue('Disconnect Before Connect', disconnectBeforeConnect ? 'Enabled' : 'Disabled');
         updateActivityValue('Current Status', statusText);

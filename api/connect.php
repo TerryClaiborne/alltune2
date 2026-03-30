@@ -221,7 +221,8 @@ function clear_runtime_targets(): void
         $_SESSION['pending_tg'],
         $_SESSION['dmr_network'],
         $_SESSION['dmr_ready'],
-        $_SESSION['dvswitch_autoloaded']
+        $_SESSION['dvswitch_autoloaded'],
+        $_SESSION['dvswitch_active_mode']
     );
 
     clear_dmr_active_state();
@@ -277,6 +278,7 @@ function disconnect_only_dvswitch_link(string $myNode, string $dvSwitchNode): vo
 
     unset(
         $_SESSION['dvswitch_autoloaded'],
+        $_SESSION['dvswitch_active_mode'],
         $_SESSION['dmr_network'],
         $_SESSION['dmr_ready'],
         $_SESSION['pending_tg']
@@ -334,6 +336,7 @@ function session_payload(string $statusText, array $extra = []): array
         'dmr_ready' => !empty($_SESSION['dmr_ready']),
         'dmr_active_network' => (string) ($_SESSION['dmr_active_network'] ?? ''),
         'dmr_active_target' => (string) ($_SESSION['dmr_active_target'] ?? ''),
+        'dvswitch_active_mode' => (string) ($_SESSION['dvswitch_active_mode'] ?? ''),
         'dvswitch_link_active' => !empty($_SESSION['dvswitch_autoloaded']) || !empty($_SESSION['dmr_ready']) || normalize_mode((string) ($_SESSION['last_mode'] ?? '')) === 'YSF',
     ], $extra);
 }
@@ -528,6 +531,7 @@ if ($action === 'connect') {
         }
 
         load_dvswitch_link($myNode, $dvSwitchNode, $autoloadDvSwitchMode);
+        $_SESSION['dvswitch_active_mode'] = $autoloadDvSwitchMode;
         pause_seconds(0.5);
 
         dvswitch_mode('YSF');
@@ -584,10 +588,12 @@ if ($action === 'connect') {
 
             if ($autoload && $hasRealDvSwitchNode) {
                 load_dvswitch_link($myNode, $dvSwitchNode, $autoloadDvSwitchMode);
+                $_SESSION['dvswitch_active_mode'] = $autoloadDvSwitchMode;
                 pause_seconds(1.0);
                 $_SESSION['dvswitch_autoloaded'] = true;
             } else {
                 $_SESSION['dvswitch_autoloaded'] = false;
+                unset($_SESSION['dvswitch_active_mode']);
             }
 
             dvswitch_mode('DMR');
@@ -693,6 +699,7 @@ if ($dvswitchAutoloaded && $hasRealDvSwitchNode) {
     asterisk_ilink_disconnect($myNode, $dvSwitchNode);
     pause_seconds(0.5);
     unset($_SESSION['dvswitch_autoloaded']);
+    unset($_SESSION['dvswitch_active_mode']);
     clear_dmr_active_state();
     $_SESSION['last_status'] = 'DISCONNECTED: DVSWITCH LINK';
     respond(session_payload($_SESSION['last_status']));

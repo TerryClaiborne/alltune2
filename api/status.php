@@ -73,6 +73,21 @@ function autoload_dvswitch_mode_label(string $mode): string
         : 'Transceive';
 }
 
+function active_dvswitch_mode_label(string $mode): string
+{
+    $value = strtolower(trim($mode));
+
+    if ($value === 'local_monitor') {
+        return 'Local Monitor';
+    }
+
+    if ($value === 'transceive') {
+        return 'Transceive';
+    }
+
+    return '-';
+}
+
 function normalize_link_mode_label(mixed $mode): string
 {
     $value = strtolower(trim((string) $mode));
@@ -277,6 +292,10 @@ if (!isset($_SESSION['disconnect_before_connect'])) {
 
 $autoloadDvSwitch = (bool) $_SESSION['autoload_dvswitch'];
 $autoloadDvSwitchMode = normalize_autoload_dvswitch_mode($_SESSION['autoload_dvswitch_mode']);
+$rawDvSwitchActiveMode = strtolower(trim((string) ($_SESSION['dvswitch_active_mode'] ?? '')));
+$dvswitchActiveMode = in_array($rawDvSwitchActiveMode, ['local_monitor', 'transceive'], true)
+    ? $rawDvSwitchActiveMode
+    : '';
 $disconnectBeforeConnect = (bool) $_SESSION['disconnect_before_connect'];
 $dmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
 $dmrReady = !empty($_SESSION['dmr_ready']);
@@ -337,6 +356,7 @@ $payload = [
         'pending_target' => $pendingTarget,
         'autoload_dvswitch' => $autoloadDvSwitch,
         'autoload_dvswitch_mode' => $autoloadDvSwitchMode,
+        'dvswitch_active_mode' => $dvswitchActiveMode,
         'disconnect_before_connect' => $disconnectBeforeConnect,
         'dmr_network' => $dmrNetwork,
         'dmr_ready' => $dmrReady,
@@ -351,6 +371,7 @@ $payload = [
     'pending_target' => $pendingTarget,
     'autoload_dvswitch' => $autoloadDvSwitch,
     'autoload_dvswitch_mode' => $autoloadDvSwitchMode,
+    'dvswitch_active_mode' => $dvswitchActiveMode,
     'disconnect_before_connect' => $disconnectBeforeConnect,
     'dmr_network' => $dmrNetwork,
     'dmr_ready' => $dmrReady,
@@ -461,6 +482,10 @@ $payload = [
         [
             'label' => 'Link Mode',
             'value' => autoload_dvswitch_mode_label($autoloadDvSwitchMode),
+        ],
+        [
+            'label' => 'DVSwitch Active Link Mode',
+            'value' => active_dvswitch_mode_label($dvswitchActiveMode),
         ],
         [
             'label' => 'DVSwitch Link Active',
