@@ -398,10 +398,30 @@ $activityLines[] = [
                     <table class="favorites-table" id="favorites-table">
                         <thead>
                         <tr>
-                            <th>TG / Node / YSF</th>
-                            <th>Station Name</th>
-                            <th>Description</th>
-                            <th>Mode</th>
+                            <th>
+                                <button type="button" class="favorites-sort-button" data-sort-key="target" data-sort-type="mixed">
+                                    TG / Node / YSF
+                                    <span class="favorites-sort-indicator" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th>
+                                <button type="button" class="favorites-sort-button" data-sort-key="name" data-sort-type="text">
+                                    Station Name
+                                    <span class="favorites-sort-indicator" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th>
+                                <button type="button" class="favorites-sort-button" data-sort-key="description" data-sort-type="text">
+                                    Description
+                                    <span class="favorites-sort-indicator" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th>
+                                <button type="button" class="favorites-sort-button" data-sort-key="mode" data-sort-type="text">
+                                    Mode
+                                    <span class="favorites-sort-indicator" aria-hidden="true"></span>
+                                </button>
+                            </th>
                             <th>Action</th>
                         </tr>
                         </thead>
