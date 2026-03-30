@@ -92,11 +92,28 @@ function is_dmr_mode(string $mode): bool
 function normalize_mode(string $mode): string
 {
     $mode = strtoupper(trim($mode));
-    if ($mode === 'ALLSTAR') {
+
+    if (in_array($mode, ['ALLSTAR', 'ALLSTAR LINK', 'ALLSTARLINK'], true)) {
         return 'ASL';
     }
 
+    if (in_array($mode, ['ECHO', 'ECHO LINK', 'ECHOLINK', 'EL', 'E/L'], true)) {
+        return 'ECHO';
+    }
+
     return $mode;
+}
+
+function normalize_direct_ui_mode(string $mode): string
+{
+    return normalize_mode($mode) === 'ECHO' ? 'ECHO' : 'ASL';
+}
+
+function direct_node_status_label(string $mode): string
+{
+    return normalize_direct_ui_mode($mode) === 'ECHO'
+        ? 'ECHOLINK NODE'
+        : 'ALLSTAR NODE';
 }
 
 function normalize_autoload_dvswitch_mode(mixed $mode): string
@@ -151,13 +168,18 @@ function ensure_allstar_tracking_structures(): void
     if (!isset($_SESSION['allstar_link_order']) || !is_array($_SESSION['allstar_link_order'])) {
         $_SESSION['allstar_link_order'] = [];
     }
+
+    if (!isset($_SESSION['allstar_link_ui_modes']) || !is_array($_SESSION['allstar_link_ui_modes'])) {
+        $_SESSION['allstar_link_ui_modes'] = [];
+    }
 }
 
-function track_allstar_link(string $node, string $mode): void
+function track_allstar_link(string $node, string $mode, string $uiMode = 'ASL'): void
 {
     ensure_allstar_tracking_structures();
 
     $_SESSION['allstar_link_modes'][$node] = normalize_autoload_dvswitch_mode($mode);
+    $_SESSION['allstar_link_ui_modes'][$node] = normalize_direct_ui_mode($uiMode);
 
     $order = array_values(array_filter(
         $_SESSION['allstar_link_order'],
@@ -168,11 +190,36 @@ function track_allstar_link(string $node, string $mode): void
     $_SESSION['allstar_link_order'] = $order;
 }
 
+function tracked_allstar_ui_mode(string $node): string
+{
+    ensure_allstar_tracking_structures();
+
+    $node = trim($node);
+    if ($node === '') {
+        return 'ASL';
+    }
+
+    $stored = $_SESSION['allstar_link_ui_modes'][$node] ?? '';
+    if (is_string($stored) && $stored !== '') {
+        return normalize_direct_ui_mode($stored);
+    }
+
+    $lastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
+    $lastTarget = trim((string) ($_SESSION['last_target'] ?? ''));
+
+    if ($lastTarget === $node && in_array($lastMode, ['ASL', 'ECHO'], true)) {
+        return normalize_direct_ui_mode($lastMode);
+    }
+
+    return 'ASL';
+}
+
 function untrack_allstar_link(string $node): void
 {
     ensure_allstar_tracking_structures();
 
     unset($_SESSION['allstar_link_modes'][$node]);
+    unset($_SESSION['allstar_link_ui_modes'][$node]);
 
     $_SESSION['allstar_link_order'] = array_values(array_filter(
         $_SESSION['allstar_link_order'],
@@ -184,6 +231,7 @@ function clear_allstar_tracking(): void
 {
     $_SESSION['allstar_link_modes'] = [];
     $_SESSION['allstar_link_order'] = [];
+    $_SESSION['allstar_link_ui_modes'] = [];
 }
 
 function last_tracked_allstar_node(): string
@@ -197,6 +245,12 @@ function last_tracked_allstar_node(): string
 
     $last = end($order);
     return is_string($last) ? trim($last) : '';
+}
+
+function last_tracked_allstar_ui_mode(): string
+{
+    $node = last_tracked_allstar_node();
+    return $node !== '' ? tracked_allstar_ui_mode($node) : 'ASL';
 }
 
 function clear_dmr_session_state(): void
@@ -347,6 +401,7 @@ $action = strtolower(trim((string) ($request['action'] ?? $request['action_type'
 $rawTarget = trim((string) ($request['target'] ?? $request['tgNum'] ?? ''));
 $selectedNode = preg_replace('/[^0-9]/', '', (string) ($request['selected_node'] ?? '')) ?? '';
 $mode = normalize_mode((string) ($request['mode'] ?? ($_SESSION['selected_mode'] ?? 'BM')));
+$uiMode = normalize_mode((string) ($request['ui_mode'] ?? $mode));
 $autoloadPosted = array_key_exists('autoload_dvswitch', $request);
 $autoloadModePosted = array_key_exists('autoload_dvswitch_mode', $request);
 $disconnectBeforeConnectPosted = array_key_exists('disconnect_before_connect', $request);
@@ -370,7 +425,12 @@ if ($disconnectBeforeConnectPosted) {
 }
 
 ensure_allstar_tracking_structures();
-$_SESSION['selected_mode'] = $mode;
+
+if ($mode === 'ASL') {
+    $_SESSION['selected_mode'] = normalize_direct_ui_mode($uiMode);
+} else {
+    $_SESSION['selected_mode'] = $mode;
+}
 
 $myNode = $config->getString('MYNODE', '');
 $dvSwitchNode = $config->getString('DVSWITCH_NODE', '');
@@ -456,27 +516,37 @@ if ($action === 'disconnect_selected') {
         respond(session_payload($_SESSION['last_status']), 404);
     }
 
+    $selectedUiMode = tracked_allstar_ui_mode($selectedNode);
+
     asterisk_ilink_disconnect($myNode, $selectedNode);
     pause_seconds(0.5);
     untrack_allstar_link($selectedNode);
 
     $remainingTracked = last_tracked_allstar_node();
     if ($remainingTracked !== '') {
-        $_SESSION['last_mode'] = 'ASL';
+        $_SESSION['last_mode'] = last_tracked_allstar_ui_mode();
         $_SESSION['last_target'] = $remainingTracked;
         $_SESSION['pending_target'] = $remainingTracked;
     } else {
         unset($_SESSION['last_mode'], $_SESSION['last_target'], $_SESSION['pending_target']);
     }
 
-    $_SESSION['last_status'] = 'DISCONNECTED: ALLSTAR NODE ' . $selectedNode;
+    $_SESSION['last_status'] = 'DISCONNECTED: ' . direct_node_status_label($selectedUiMode) . ' ' . $selectedNode;
     respond(session_payload($_SESSION['last_status']));
 }
 
 if ($action === 'connect') {
     $digitsOnlyTarget = preg_replace('/[^0-9]/', '', $rawTarget) ?? '';
     $bmTarget = $mode === 'BM' ? normalize_bm_target($rawTarget) : '';
-    $_SESSION['selected_mode'] = $mode;
+    $directUiMode = $mode === 'ASL' || $mode === 'ECHO'
+        ? normalize_direct_ui_mode($uiMode === 'BM' || $uiMode === 'TGIF' || $uiMode === 'YSF' ? $mode : $uiMode)
+        : $mode;
+
+    if ($mode === 'ASL' || $mode === 'ECHO') {
+        $_SESSION['selected_mode'] = $directUiMode;
+    } else {
+        $_SESSION['selected_mode'] = $mode;
+    }
 
     if (is_dmr_mode($mode)) {
         $pendingTarget = (string) ($_SESSION['pending_target'] ?? $_SESSION['pending_tg'] ?? '');
@@ -494,7 +564,7 @@ if ($action === 'connect') {
         respond(session_payload($_SESSION['last_status']), 422);
     }
 
-    if ($mode === 'ASL') {
+    if ($mode === 'ASL' || $mode === 'ECHO') {
         if (!$hasRealMyNode) {
             $_SESSION['last_status'] = 'ERROR: ALLSTAR NOT CONFIGURED';
             respond(session_payload($_SESSION['last_status']), 500);
@@ -510,13 +580,13 @@ if ($action === 'connect') {
         }
 
         asterisk_ilink_connect($myNode, $digitsOnlyTarget, $autoloadDvSwitchMode);
-        track_allstar_link($digitsOnlyTarget, $autoloadDvSwitchMode);
+        track_allstar_link($digitsOnlyTarget, $autoloadDvSwitchMode, $directUiMode);
 
-        $_SESSION['last_mode'] = 'ASL';
+        $_SESSION['last_mode'] = $directUiMode;
         $_SESSION['last_target'] = $digitsOnlyTarget;
         $_SESSION['pending_target'] = $digitsOnlyTarget;
 
-        $_SESSION['last_status'] = 'CONNECTED: ALLSTAR NODE ' . $digitsOnlyTarget;
+        $_SESSION['last_status'] = 'CONNECTED: ' . direct_node_status_label($directUiMode) . ' ' . $digitsOnlyTarget;
         respond(session_payload($_SESSION['last_status']));
     }
 
@@ -650,20 +720,22 @@ if (!$hasRealMyNode) {
 
 $trackedAllstarNode = last_tracked_allstar_node();
 if ($trackedAllstarNode !== '') {
+    $trackedUiMode = last_tracked_allstar_ui_mode();
+
     asterisk_ilink_disconnect($myNode, $trackedAllstarNode);
     pause_seconds(0.5);
     untrack_allstar_link($trackedAllstarNode);
 
     $remainingTracked = last_tracked_allstar_node();
     if ($remainingTracked !== '') {
-        $_SESSION['last_mode'] = 'ASL';
+        $_SESSION['last_mode'] = last_tracked_allstar_ui_mode();
         $_SESSION['last_target'] = $remainingTracked;
         $_SESSION['pending_target'] = $remainingTracked;
     } else {
         unset($_SESSION['last_mode'], $_SESSION['last_target'], $_SESSION['pending_target']);
     }
 
-    $_SESSION['last_status'] = 'DISCONNECTED: ALLSTAR NODE ' . $trackedAllstarNode;
+    $_SESSION['last_status'] = 'DISCONNECTED: ' . direct_node_status_label($trackedUiMode) . ' ' . $trackedAllstarNode;
     respond(session_payload($_SESSION['last_status']));
 }
 
