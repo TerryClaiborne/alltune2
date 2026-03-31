@@ -492,7 +492,8 @@ select.control {
     grid-template-columns: 164px minmax(0, 1fr);
     gap: 10px;
     align-items: center;
-    padding: 7px 10px;
+    min-height: 28px;
+    padding: 5px 10px;
     border-bottom: 1px solid #2b1d38;
     background: rgba(255, 255, 255, 0.015);
 }
@@ -519,25 +520,31 @@ select.control {
 
 .activity-row:last-child {
     border-bottom: 0;
-    padding-bottom: 7px;
+    padding-bottom: 5px;
 }
 
 .activity-label {
     color: var(--text-soft);
-    font-size: 0.73rem;
+    font-size: 0.66rem;
     font-weight: 700;
     text-transform: uppercase;
-    letter-spacing: 0.025em;
-    line-height: 1.12;
-    word-break: keep-all;
+    letter-spacing: 0.015em;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: normal;
     overflow-wrap: normal;
 }
 
 .activity-value {
     color: var(--text-main);
-    font-size: 0.83rem;
-    line-height: 1.18;
-    word-break: break-word;
+    font-size: 0.81rem;
+    line-height: 1;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: normal;
     font-weight: 700;
 }
 
