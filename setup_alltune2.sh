@@ -203,6 +203,7 @@ check_required_files() {
         "$APP_DIR/api/status.php"
         "$APP_DIR/public/index.php"
         "$APP_DIR/public/favorites.php"
+        "$APP_DIR/public/alltune2_ribbon_bar.php"
         "$APP_DIR/public/assets/js/app.js"
         "$APP_DIR/public/assets/css/style.css"
         "$CONFIG_EXAMPLE_FILE"
@@ -251,6 +252,7 @@ check_php_syntax() {
         "$APP_DIR/api/status.php"
         "$APP_DIR/public/index.php"
         "$APP_DIR/public/favorites.php"
+        "$APP_DIR/public/alltune2_ribbon_bar.php"
     )
 
     for file in "${php_files[@]}"; do

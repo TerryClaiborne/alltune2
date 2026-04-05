@@ -23,6 +23,7 @@
 ¦   ¦   ¦   +-- style.css
 ¦   ¦   +-- js
 ¦   ¦       +-- app.js
+¦   +-- alltune2_ribbon_bar.php
 ¦   +-- favorites.php
 ¦   +-- index.php
 +-- setup_alltune2.sh

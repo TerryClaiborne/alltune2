@@ -197,6 +197,8 @@ $activityLines[] = [
         </nav>
     </header>
 
+    <?php require __DIR__ . '/alltune2_ribbon_bar.php'; ?>
+
     <main class="dashboard-grid">
         <section class="left-stack">
             <article class="card">

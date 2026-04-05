@@ -70,7 +70,7 @@ select {
     align-items: center;
     justify-content: center;
     gap: 12px;
-    margin-bottom: 14px;
+    margin-bottom: 6px;
     padding: 12px 18px;
     background: #120b19;
     border: 1px solid var(--border-main);
