@@ -34,6 +34,17 @@ function is_placeholder_config_value(mixed $value): bool
 }
 
 $appName = 'AllTune2';
+$repoUrl = 'https://github.com/TerryClaiborne/alltune2';
+$remoteVersionUrl = 'https://raw.githubusercontent.com/TerryClaiborne/alltune2/main/VERSION';
+$versionFile = dirname(__DIR__) . '/VERSION';
+$localVersion = '0.0.0';
+
+if (is_readable($versionFile)) {
+    $versionText = trim((string) @file_get_contents($versionFile));
+    if ($versionText !== '') {
+        $localVersion = $versionText;
+    }
+}
 
 $dvswitchNode = trim((string) $config->get('DVSWITCH_NODE', ''));
 $myNode = trim((string) $config->get('MYNODE', ''));
@@ -178,7 +189,29 @@ $activityLines[] = [
 <div class="page">
     <header class="topbar">
         <div class="branding">
-            <h1 class="branding-title"><?= e($appName) ?></h1>
+            <a
+                class="branding-link"
+                href="<?= e($repoUrl) ?>"
+                target="_blank"
+                rel="noopener noreferrer"
+                aria-label="Open AllTune2 GitHub repository"
+            >
+                <h1
+                    class="branding-title"
+                    id="branding-title"
+                    data-local-version="<?= e($localVersion) ?>"
+                    data-version-url="<?= e($remoteVersionUrl) ?>"
+                    title="AllTune2 v<?= e($localVersion) ?>"
+                >
+                    <span class="branding-title-text"><?= e($appName) ?></span>
+                    <span
+                        class="branding-title-bolt"
+                        id="update-indicator"
+                        aria-hidden="true"
+                        title="Installed version: v<?= e($localVersion) ?>"
+                    >&#9889;</span>
+                </h1>
+            </a>
             <div class="branding-subtitle">
                 Modernized control flow with backend-first switching
             </div>

@@ -36,6 +36,8 @@
         statusYsf: document.getElementById('status-ysf'),
         statusAllstar: document.getElementById('status-allstar'),
         statusAllstarLinks: document.getElementById('status-allstar-links'),
+        brandingTitle: document.getElementById('branding-title'),
+        updateIndicator: document.getElementById('update-indicator'),
     };
 
     function hasCoreElements() {
@@ -60,6 +62,83 @@
             .replaceAll('>', '&gt;')
             .replaceAll('"', '&quot;')
             .replaceAll("'", '&#039;');
+    }
+
+    function parseVersionString(value) {
+        const match = String(value || '').trim().match(/^(\d+)\.(\d+)\.(\d+)$/);
+
+        if (!match) {
+            return null;
+        }
+
+        return [
+            Number(match[1]),
+            Number(match[2]),
+            Number(match[3]),
+        ];
+    }
+
+    function compareVersions(left, right) {
+        const leftParts = parseVersionString(left);
+        const rightParts = parseVersionString(right);
+
+        if (!leftParts || !rightParts) {
+            return 0;
+        }
+
+        for (let index = 0; index < leftParts.length; index += 1) {
+            if (leftParts[index] > rightParts[index]) {
+                return 1;
+            }
+
+            if (leftParts[index] < rightParts[index]) {
+                return -1;
+            }
+        }
+
+        return 0;
+    }
+
+    async function checkForRepoUpdate() {
+        const title = els.brandingTitle;
+        const indicator = els.updateIndicator;
+
+        if (!title || !indicator) {
+            return;
+        }
+
+        const localVersion = String(title.dataset.localVersion || '').trim();
+        const versionUrl = String(title.dataset.versionUrl || '').trim();
+
+        if (localVersion !== '') {
+            title.title = `AllTune2 v${localVersion}`;
+            indicator.title = `Installed version: v${localVersion}`;
+        }
+
+        if (localVersion === '' || versionUrl === '') {
+            return;
+        }
+
+        try {
+            const response = await fetch(versionUrl, {
+                method: 'GET',
+                cache: 'no-store',
+            });
+
+            if (!response.ok) {
+                return;
+            }
+
+            const remoteVersion = String(await response.text()).trim();
+
+            if (compareVersions(remoteVersion, localVersion) > 0) {
+                indicator.classList.add('update-available');
+                title.title = `AllTune2 v${localVersion} - update available: v${remoteVersion}`;
+                indicator.title = `Update available: v${remoteVersion} (installed v${localVersion})`;
+            }
+        } catch (error) {
+            // Fail quietly if GitHub cannot be reached.
+        }
     }
 
     function normalizeMode(mode) {
@@ -1532,6 +1611,7 @@
         wireFavoritesSort();
         wireFavoritesLoad();
         updateHelperText();
+        checkForRepoUpdate();
 
         loadStatus().catch((error) => {
             console.error(error);
