@@ -686,7 +686,7 @@ if (!function_exists('at2r_collect')) {
         $uptime = at2r_uptime();
         $network = at2r_network();
         $sessions = at2r_sessions();
-        $serverTime = date('m-d-Y h:i:s A');
+        $serverTime = date('m-d-Y h:i A');
         $timezone = date_default_timezone_get();
 
         $disks = [
@@ -721,7 +721,7 @@ if (!function_exists('at2r_collect')) {
             'detail' => [
                 'Server time: ' . $serverTime,
                 'Timezone: ' . $timezone,
-                'Browser local time updates every second in the ribbon.',
+                'Browser local time updates every minute in the ribbon.',
             ],
         ];
 
@@ -1025,13 +1025,12 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
                 const pad = (value) => String(value).padStart(2, '0');
                 let hours = dateObj.getHours();
                 const minutes = pad(dateObj.getMinutes());
-                const seconds = pad(dateObj.getSeconds());
-                const ampm = hours >= 12 ? 'PM' : 'AM';
+                                const ampm = hours >= 12 ? 'PM' : 'AM';
                 hours = hours % 12;
                 if (hours === 0) {
                     hours = 12;
                 }
-                return pad(dateObj.getMonth() + 1) + '-' + pad(dateObj.getDate()) + '-' + dateObj.getFullYear() + ' ' + pad(hours) + ':' + minutes + ':' + seconds + ' ' + ampm;
+                return pad(dateObj.getMonth() + 1) + '-' + pad(dateObj.getDate()) + '-' + dateObj.getFullYear() + ' ' + pad(hours) + ':' + minutes + ' ' + ampm;
             }
 
             function popupHtml(pill) {
@@ -1096,9 +1095,10 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
                     }
                     button.dataset.key = pill.key;
                     const iconClass = pill.icon === 'up' || pill.icon === 'down' || pill.icon === 'temp' || pill.icon === 'disk' ? ' ' + pill.icon : '';
+                    const displayValue = pill.key === 'time' ? formatDate(localClock) : pill.value;
                     button.innerHTML = '<span class="at2r-icon' + iconClass + '">' + (icons[pill.icon] || icons.disk) + '</span>' +
                         '<span class="at2r-label">' + escapeHtml(pill.label) + '</span>' +
-                        '<span class="at2r-value">' + escapeHtml(pill.value) + '</span>';
+                        '<span class="at2r-value">' + escapeHtml(displayValue) + '</span>';
                     button.addEventListener('click', function (event) {
                         event.stopPropagation();
                         openPopup(button, pill);
@@ -1122,7 +1122,7 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
                 if (!timePill) {
                     return;
                 }
-                localClock = new Date(localClock.getTime() + 1000);
+                localClock = new Date(localClock.getTime() + 60000);
                 timePill.textContent = formatDate(localClock);
                 if (openKey === 'time' && currentButton) {
                     const pill = state.pills.find((item) => item.key === 'time');
@@ -1178,7 +1178,7 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
 
             localClock = new Date();
             render(initialData);
-            window.setInterval(updateClockOnly, 1000);
+            window.setInterval(updateClockOnly, 60000);
             window.setInterval(refresh, 2500);
             refresh();
         }());
