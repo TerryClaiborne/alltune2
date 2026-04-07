@@ -150,40 +150,326 @@ function load_favorites_file(string $path): array
     return $favorites;
 }
 
-function fetch_live_allstar_nodes(string $myNode, string $dvSwitchNode): array
+function ensure_allstar_tracking_structures(): void
 {
-    if ($myNode === '') {
-        return [];
+    if (!isset($_SESSION['allstar_link_modes']) || !is_array($_SESSION['allstar_link_modes'])) {
+        $_SESSION['allstar_link_modes'] = [];
     }
 
-    $output = asterisk_cli("rpt nodes {$myNode}");
-    if ($output === '') {
-        return [];
+    if (!isset($_SESSION['allstar_link_order']) || !is_array($_SESSION['allstar_link_order'])) {
+        $_SESSION['allstar_link_order'] = [];
     }
 
-    if (stripos($output, '<NONE>') !== false) {
-        return [];
+    if (!isset($_SESSION['allstar_link_ui_modes']) || !is_array($_SESSION['allstar_link_ui_modes'])) {
+        $_SESSION['allstar_link_ui_modes'] = [];
     }
+}
 
-    $nodes = [];
+function sync_live_allstar_tracking(array $links): void
+{
+    ensure_allstar_tracking_structures();
 
-    if (preg_match_all('/\b(\d{3,})\b/', $output, $matches)) {
-        foreach ($matches[1] as $node) {
-            $node = trim((string) $node);
+    $modes = [];
+    $order = [];
+    $uiModes = [];
 
-            if ($node === '' || $node === $myNode || $node === $dvSwitchNode) {
-                continue;
-            }
+    foreach ($links as $link) {
+        $node = trim((string) ($link['node'] ?? ''));
+        if ($node === '') {
+            continue;
+        }
 
-            $nodes[$node] = $node;
+        $order[] = $node;
+        $modes[$node] = normalize_autoload_dvswitch_mode((string) ($link['link_mode'] ?? 'local_monitor'));
+
+        $existingUiMode = trim((string) ($_SESSION['allstar_link_ui_modes'][$node] ?? ''));
+        if ($existingUiMode !== '') {
+            $uiModes[$node] = normalize_mode($existingUiMode) === 'ECHO' ? 'ECHO' : 'ASL';
+        } else {
+            $uiModes[$node] = ctype_digit($node) && (int) $node >= 3000000 ? 'ECHO' : 'ASL';
         }
     }
 
-    return array_values($nodes);
+    $_SESSION['allstar_link_modes'] = $modes;
+    $_SESSION['allstar_link_order'] = $order;
+    $_SESSION['allstar_link_ui_modes'] = $uiModes;
+}
+
+function ami_config_from_manager_conf(): ?array
+{
+    $file = '/etc/asterisk/manager.conf';
+    if (!is_file($file)) {
+        return null;
+    }
+
+    $parsed = parse_ini_file($file, true, INI_SCANNER_RAW);
+    if (!is_array($parsed)) {
+        return null;
+    }
+
+    $host = '127.0.0.1';
+    $port = '5038';
+    $user = '';
+    $pass = '';
+
+    foreach ($parsed as $section => $values) {
+        if (!is_array($values)) {
+            continue;
+        }
+
+        if ($section === 'general') {
+            if (isset($values['bindaddr']) && trim((string) $values['bindaddr']) !== '') {
+                $host = trim((string) $values['bindaddr']);
+            }
+            if (isset($values['port']) && trim((string) $values['port']) !== '') {
+                $port = trim((string) $values['port']);
+            }
+            continue;
+        }
+
+        if ($user === '' && array_key_exists('secret', $values)) {
+            $user = trim((string) $section);
+            $pass = trim((string) ($values['secret'] ?? ''));
+        }
+    }
+
+    if ($user === '' || $pass === '') {
+        return null;
+    }
+
+    return [
+        'host' => $host,
+        'port' => $port,
+        'user' => $user,
+        'pass' => $pass,
+    ];
+}
+
+function ami_connect_socket(array $cfg)
+{
+    if (($cfg['host'] ?? '') === '' || ($cfg['port'] ?? '') === '' || ($cfg['user'] ?? '') === '' || ($cfg['pass'] ?? '') === '') {
+        return false;
+    }
+
+    $errno = 0;
+    $errstr = '';
+    $fp = @fsockopen((string) $cfg['host'], (int) $cfg['port'], $errno, $errstr, 5);
+    if ($fp === false) {
+        return false;
+    }
+
+    stream_set_timeout($fp, 5);
+    return $fp;
+}
+
+function ami_get_response($fp, string $actionId): array|string
+{
+    $ignore = ['Privilege: Command', 'Command output follows'];
+    $response = [];
+    $start = time();
+
+    while (time() - $start < 20) {
+        $line = fgets($fp);
+        if ($line === false) {
+            return $response;
+        }
+
+        $line = trim($line);
+        if ($line === '') {
+            continue;
+        }
+
+        if (strpos($line, 'Response: ') === 0) {
+            $response[] = $line;
+            continue;
+        }
+
+        if ($line === 'ActionID: ' . $actionId) {
+            $response[] = $line;
+
+            while (time() - $start < 20) {
+                $next = fgets($fp);
+                if ($next === false || $next === "\r\n" || $next === "\n") {
+                    return $response;
+                }
+
+                $next = trim($next);
+                if ($next === '' || in_array($next, $ignore, true)) {
+                    continue;
+                }
+
+                $response[] = $next;
+            }
+        }
+    }
+
+    return $response;
+}
+
+function ami_login_socket($fp, array $cfg): bool
+{
+    $actionId = 'login_' . md5((string) microtime(true));
+    $command = "ACTION: LOGIN\r\n"
+        . 'USERNAME: ' . $cfg['user'] . "\r\n"
+        . 'SECRET: ' . $cfg['pass'] . "\r\n"
+        . "EVENTS: 0\r\n"
+        . 'ActionID: ' . $actionId . "\r\n\r\n";
+
+    if (@fwrite($fp, $command) === false) {
+        return false;
+    }
+
+    $response = ami_get_response($fp, $actionId);
+    if (!is_array($response) || count($response) < 3) {
+        return false;
+    }
+
+    return strpos((string) ($response[2] ?? ''), 'Authentication accepted') !== false;
+}
+
+function ami_rpt_status($fp, string $node, string $command): array
+{
+    $actionId = strtolower($command) . '_' . mt_rand();
+
+    $payload = "ACTION: RptStatus\r\n"
+        . 'COMMAND: ' . $command . "\r\n"
+        . 'NODE: ' . $node . "\r\n"
+        . 'ActionID: ' . $actionId . "\r\n\r\n";
+
+    if (@fwrite($fp, $payload) === false) {
+        return [];
+    }
+
+    $response = ami_get_response($fp, $actionId);
+    return is_array($response) ? $response : [];
+}
+
+function parse_live_allstar_links_from_ami(array $xstatLines, array $sawStatLines): array
+{
+    $connections = [];
+    $modeCodes = [];
+    $keyed = [];
+
+    foreach ($xstatLines as $line) {
+        if (preg_match('/Conn:\s+(.*)/', $line, $matches) === 1) {
+            $parts = preg_split('/\s+/', trim($matches[1]));
+            if (is_array($parts) && isset($parts[0]) && ctype_digit((string) $parts[0])) {
+                $node = trim((string) $parts[0]);
+                $connections[] = [
+                    'node' => $node,
+                    'ip' => $parts[1] ?? '',
+                    'direction' => isset($parts[5]) ? ($parts[3] ?? '') : ($parts[2] ?? ''),
+                    'elapsed' => isset($parts[5]) ? ($parts[4] ?? '') : ($parts[3] ?? ''),
+                    'link' => isset($parts[5]) ? ($parts[5] ?? '') : '',
+                ];
+            }
+        }
+
+        if (preg_match('/LinkedNodes:\s+(.*)/', $line, $matches) === 1) {
+            $items = preg_split('/,\s*/', trim($matches[1]));
+            if (is_array($items)) {
+                foreach ($items as $item) {
+                    $item = trim((string) $item);
+                    if ($item === '' || strlen($item) < 2) {
+                        continue;
+                    }
+
+                    $code = substr($item, 0, 1);
+                    $node = substr($item, 1);
+
+                    if (ctype_digit($node)) {
+                        $modeCodes[$node] = $code;
+                    }
+                }
+            }
+        }
+    }
+
+    foreach ($sawStatLines as $line) {
+        if (preg_match('/Conn:\s+(.*)/', $line, $matches) === 1) {
+            $parts = preg_split('/\s+/', trim($matches[1]));
+            if (is_array($parts) && isset($parts[0]) && ctype_digit((string) $parts[0])) {
+                $node = trim((string) $parts[0]);
+                $keyed[$node] = [
+                    'isKeyed' => $parts[1] ?? '0',
+                    'lastKeyed' => $parts[2] ?? '-1',
+                    'lastUnkeyed' => $parts[3] ?? '-1',
+                ];
+            }
+        }
+    }
+
+    $links = [];
+    foreach ($connections as $connection) {
+        $node = $connection['node'];
+        $modeCode = strtoupper(trim((string) ($modeCodes[$node] ?? '')));
+        $linkMode = $modeCode === 'T' ? 'transceive' : 'local_monitor';
+
+        $links[] = [
+            'node' => $node,
+            'label' => 'Connected Node',
+            'link_mode' => $linkMode,
+            'mode_label' => $linkMode === 'transceive' ? 'Transceive' : 'Local Monitor',
+            'is_live' => true,
+            'direction' => $connection['direction'],
+            'elapsed' => $connection['elapsed'],
+            'keyed' => isset($keyed[$node]) ? (($keyed[$node]['isKeyed'] ?? '0') === '1') : false,
+            'last_keyed' => $keyed[$node]['lastKeyed'] ?? '-1',
+        ];
+    }
+
+    return $links;
+}
+
+function fetch_live_allstar_links_via_ami(string $myNode): array
+{
+    if ($myNode === '') {
+        return [
+            'available' => false,
+            'links' => [],
+        ];
+    }
+
+    $cfg = ami_config_from_manager_conf();
+    if ($cfg === null) {
+        return [
+            'available' => false,
+            'links' => [],
+        ];
+    }
+
+    $fp = ami_connect_socket($cfg);
+    if ($fp === false) {
+        return [
+            'available' => false,
+            'links' => [],
+        ];
+    }
+
+    try {
+        if (!ami_login_socket($fp, $cfg)) {
+            return [
+                'available' => false,
+                'links' => [],
+            ];
+        }
+
+        $xstat = ami_rpt_status($fp, $myNode, 'XStat');
+        $sawStat = ami_rpt_status($fp, $myNode, 'SawStat');
+
+        return [
+            'available' => true,
+            'links' => parse_live_allstar_links_from_ami($xstat, $sawStat),
+        ];
+    } finally {
+        @fclose($fp);
+    }
 }
 
 function allstar_tracked_nodes_in_order(): array
 {
+    ensure_allstar_tracking_structures();
+
     $ordered = [];
     $seen = [];
 
@@ -222,22 +508,19 @@ function allstar_tracked_nodes_in_order(): array
     return $ordered;
 }
 
-function build_allstar_connected_nodes(
-    string $myNode,
-    string $dvSwitchNode,
+function build_tracked_allstar_connected_nodes(
     string $lastMode,
     string $lastTarget,
     string $autoloadDvSwitchMode
 ): array {
+    ensure_allstar_tracking_structures();
+
     $storedModes = $_SESSION['allstar_link_modes'] ?? [];
     if (!is_array($storedModes)) {
         $storedModes = [];
     }
 
     $trackedNodes = allstar_tracked_nodes_in_order();
-    $liveNodes = fetch_live_allstar_nodes($myNode, $dvSwitchNode);
-    $liveLookup = array_fill_keys($liveNodes, true);
-
     $connectedNodes = [];
 
     foreach ($trackedNodes as $node) {
@@ -254,7 +537,7 @@ function build_allstar_connected_nodes(
             'label' => 'Connected Node',
             'link_mode' => $mode ?? '',
             'mode_label' => $mode !== null ? normalize_link_mode_label($mode) : 'Connected',
-            'is_live' => isset($liveLookup[$node]),
+            'is_live' => false,
         ];
     }
 
@@ -264,7 +547,7 @@ function build_allstar_connected_nodes(
             'label' => 'Connected Node',
             'link_mode' => $autoloadDvSwitchMode,
             'mode_label' => normalize_link_mode_label($autoloadDvSwitchMode),
-            'is_live' => isset($liveLookup[$lastTarget]),
+            'is_live' => false,
         ];
     }
 
@@ -289,6 +572,8 @@ if (!isset($_SESSION['autoload_dvswitch_mode'])) {
 if (!isset($_SESSION['disconnect_before_connect'])) {
     $_SESSION['disconnect_before_connect'] = false;
 }
+
+ensure_allstar_tracking_structures();
 
 $autoloadDvSwitch = (bool) $_SESSION['autoload_dvswitch'];
 $autoloadDvSwitchMode = normalize_autoload_dvswitch_mode($_SESSION['autoload_dvswitch_mode']);
@@ -330,13 +615,17 @@ if ($lastMode === 'YSF' && $lastTarget !== '') {
     $ysfState = 'Connected: ' . $lastTarget;
 }
 
-$allstarConnectedNodes = build_allstar_connected_nodes(
-    $myNode,
-    $dvSwitchNode,
-    $lastMode,
-    $lastTarget,
-    $autoloadDvSwitchMode
-);
+$liveAllstar = fetch_live_allstar_links_via_ami($myNode);
+if ($liveAllstar['available']) {
+    $allstarConnectedNodes = $liveAllstar['links'];
+    sync_live_allstar_tracking($allstarConnectedNodes);
+} else {
+    $allstarConnectedNodes = build_tracked_allstar_connected_nodes(
+        $lastMode,
+        $lastTarget,
+        $autoloadDvSwitchMode
+    );
+}
 
 if ($allstarConnectedNodes !== []) {
     $allstarState = 'Connected: ' . count($allstarConnectedNodes);
