@@ -5,7 +5,6 @@
         busy: false,
         pollTimer: null,
         pollIntervalMs: 3000,
-        audioSuppressUntil: 0,
         lastRequestedUiMode: '',
         preferredAslUiMode: 'ASL',
         favoriteSortKey: '',
@@ -16,6 +15,8 @@
         audioStateInitialized: false,
         previousConnectedNodes: [],
         muteAudioAnnouncements: false,
+        audioSettleUntil: 0,
+        recentAudioEvents: new Map(),
         endpoints: {
             status: '/alltune2/api/status.php',
             connect: '/alltune2/api/connect.php',
@@ -173,12 +174,6 @@
         }
     }
 
-
-    function suppressAudioDuringTransitions(milliseconds = 1000) {
-        state.audioSuppressUntil = Date.now() + milliseconds;
-        cancelSpeechQueue();
-    }
-
     function loadAudioAlertsPreference() {
         let enabled = true;
 
@@ -208,12 +203,45 @@
         }
     }
 
-    function speakAudioAlert(text) {
+    function markAudioSettleWindow(milliseconds) {
+        const until = Date.now() + Math.max(0, milliseconds);
+        state.audioSettleUntil = Math.max(state.audioSettleUntil, until);
+    }
+
+    function pruneRecentAudioEvents() {
+        const cutoff = Date.now() - 6000;
+
+        for (const [signature, timestamp] of state.recentAudioEvents.entries()) {
+            if (timestamp < cutoff) {
+                state.recentAudioEvents.delete(signature);
+            }
+        }
+    }
+
+    function shouldSuppressRecentAudio(signature, cooldownMs = 3500) {
+        pruneRecentAudioEvents();
+
+        const now = Date.now();
+        const last = state.recentAudioEvents.get(signature) ?? 0;
+
+        if ((now - last) < cooldownMs) {
+            return true;
+        }
+
+        state.recentAudioEvents.set(signature, now);
+        return false;
+    }
+
+    function speakAudioAlert(text, signature = '') {
         if (!state.audioAlertsEnabled || state.muteAudioAnnouncements) {
             return;
         }
 
         if (!('speechSynthesis' in window)) {
+            return;
+        }
+
+        if (signature !== '' && shouldSuppressRecentAudio(signature)) {
             return;
         }
 
@@ -243,6 +271,30 @@
         }
     }
 
+    function announceNodeConnected(node) {
+        const normalizedNode = String(node || '').trim();
+        if (normalizedNode === '') {
+            return;
+        }
+
+        speakAudioAlert(
+            `Node ${formatNodeForSpeech(normalizedNode)} has connected`,
+            `connect:${normalizedNode}`
+        );
+    }
+
+    function announceNodeDisconnected(node) {
+        const normalizedNode = String(node || '').trim();
+        if (normalizedNode === '') {
+            return;
+        }
+
+        speakAudioAlert(
+            `Node ${formatNodeForSpeech(normalizedNode)} has disconnected`,
+            `disconnect:${normalizedNode}`
+        );
+    }
+
     function connectedNodeListFromPayload(allstarPayload) {
         const connected = Array.isArray(allstarPayload?.connected_nodes)
             ? allstarPayload.connected_nodes
@@ -264,6 +316,81 @@
         return nodes;
     }
 
+    function parseNodeFromStatus(statusText) {
+        const match = String(statusText || '').match(/(?:ALLSTAR NODE|ECHOLINK NODE|DVSWITCH LINK)\s+(\d{3,})/i);
+        return match ? String(match[1]).trim() : '';
+    }
+
+    function configuredDvSwitchNodeFromDom() {
+        const checkboxLabel = document.querySelector('label[for="autoload_dvswitch"]');
+        const labelText = String(checkboxLabel?.textContent || '');
+        let match = labelText.match(/\((\d{3,})\)/);
+
+        if (match) {
+            return String(match[1]).trim();
+        }
+
+        const activityRows = document.querySelectorAll('.activity-row');
+
+        for (const row of activityRows) {
+            const labelEl = row.querySelector('.activity-label');
+            const valueEl = row.querySelector('.activity-value');
+
+            if (!labelEl || !valueEl) {
+                continue;
+            }
+
+            if (labelEl.textContent.trim().toUpperCase() !== 'DVSWITCH AUTO-LOAD') {
+                continue;
+            }
+
+            match = String(valueEl.textContent || '').match(/\((\d{3,})\)/);
+            if (match) {
+                return String(match[1]).trim();
+            }
+        }
+
+        return '';
+    }
+
+    function announceImmediateActionAudio(statusText) {
+        const normalizedStatus = normalizeStatusText(statusText);
+        const upperStatus = normalizedStatus.toUpperCase();
+        const directNode = parseNodeFromStatus(normalizedStatus);
+
+        if (directNode !== '') {
+            if (upperStatus.startsWith('CONNECTED:')) {
+                announceNodeConnected(directNode);
+                return;
+            }
+
+            if (upperStatus.startsWith('DISCONNECTED:')) {
+                announceNodeDisconnected(directNode);
+            }
+
+            return;
+        }
+
+        const dvswitchNode = configuredDvSwitchNodeFromDom();
+        if (dvswitchNode === '') {
+            return;
+        }
+
+        if (upperStatus.startsWith('CONNECTED: YSF TARGET')) {
+            announceNodeConnected(dvswitchNode);
+            return;
+        }
+
+        if (/^CONNECTED:\s+TG\s+/i.test(normalizedStatus) && (upperStatus.includes('(BM)') || upperStatus.includes('(TGIF)'))) {
+            announceNodeConnected(dvswitchNode);
+            return;
+        }
+
+        if (upperStatus === 'DISCONNECTED: YSF' || upperStatus === 'DISCONNECTED: BM' || upperStatus === 'DISCONNECTED: TGIF') {
+            announceNodeDisconnected(dvswitchNode);
+        }
+    }
+
     function syncAudioAlertsFromAllstar(allstarPayload) {
         const currentNodes = connectedNodeListFromPayload(allstarPayload);
 
@@ -278,33 +405,32 @@
             return;
         }
 
-        if (state.muteAudioAnnouncements) {
-            state.previousConnectedNodes = currentNodes.slice();
+        const addedNodes = currentNodes.filter((node) => !state.previousConnectedNodes.includes(node));
+        const removedNodes = state.previousConnectedNodes.filter((node) => !currentNodes.includes(node));
 
+        state.previousConnectedNodes = currentNodes.slice();
+
+        if (state.muteAudioAnnouncements) {
             if (currentNodes.length === 0) {
                 state.muteAudioAnnouncements = false;
                 cancelSpeechQueue();
+                markAudioSettleWindow(250);
             }
 
             return;
         }
 
-        if (Date.now() < state.audioSuppressUntil) {
+        if (Date.now() < state.audioSettleUntil) {
             return;
         }
 
-        const addedNodes = currentNodes.filter((node) => !state.previousConnectedNodes.includes(node));
-        const removedNodes = state.previousConnectedNodes.filter((node) => !currentNodes.includes(node));
-
         addedNodes.forEach((node) => {
-            speakAudioAlert(`Node ${formatNodeForSpeech(node)} has connected`);
+            announceNodeConnected(node);
         });
 
         removedNodes.forEach((node) => {
-            speakAudioAlert(`Node ${formatNodeForSpeech(node)} has disconnected`);
+            announceNodeDisconnected(node);
         });
-
-        state.previousConnectedNodes = currentNodes.slice();
     }
 
     function normalizeMode(mode) {
@@ -1526,8 +1652,6 @@
             ...extraPayload,
         };
 
-        suppressAudioDuringTransitions();
-
         let busyReleasedEarly = false;
         setBusy(true);
 
@@ -1548,6 +1672,15 @@
             }
 
             applyActionStatus(responsePayload);
+
+            if (action === 'disconnect_all') {
+                markAudioSettleWindow(1500);
+            } else {
+                markAudioSettleWindow(1200);
+                announceImmediateActionAudio(
+                    responsePayload.status_text || responsePayload.status || responsePayload.last_status || ''
+                );
+            }
 
             setBusy(false);
             busyReleasedEarly = true;
@@ -1745,7 +1878,8 @@
         if (els.disconnectAllButton) {
             els.disconnectAllButton.addEventListener('click', () => {
                 state.muteAudioAnnouncements = true;
-                suppressAudioDuringTransitions(1500);
+                cancelSpeechQueue();
+                markAudioSettleWindow(1500);
                 sendAction('disconnect_all');
             });
         }
