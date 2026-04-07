@@ -310,6 +310,17 @@ $activityLines[] = [
                                     >
                                     <span>Disconnect before Connect</span>
                                 </label>
+
+                                <label class="checkbox-inline" for="audio_alerts">
+                                    <input
+                                        type="checkbox"
+                                        id="audio_alerts"
+                                        name="audio_alerts"
+                                        value="1"
+                                        checked
+                                    >
+                                    <span>Audio Alerts</span>
+                                </label>
                             </div>
 
                             <div class="control-settings-right">

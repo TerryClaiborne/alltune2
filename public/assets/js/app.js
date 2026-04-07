@@ -4,13 +4,17 @@
     const state = {
         busy: false,
         pollTimer: null,
-        pollIntervalMs: 10000,
+        pollIntervalMs: 3000,
         lastRequestedUiMode: '',
         preferredAslUiMode: 'ASL',
         favoriteSortKey: '',
         favoriteSortDirection: 'asc',
         favoriteSortType: 'text',
         favoritesRaw: [],
+        audioAlertsEnabled: true,
+        audioStateInitialized: false,
+        previousConnectedNodes: [],
+        muteAudioAnnouncements: false,
         endpoints: {
             status: '/alltune2/api/status.php',
             connect: '/alltune2/api/connect.php',
@@ -24,6 +28,7 @@
         autoloadCheckbox: document.getElementById('autoload_dvswitch'),
         autoloadModeSelect: document.getElementById('autoload_dvswitch_mode'),
         disconnectBeforeConnectCheckbox: document.getElementById('disconnect_before_connect'),
+        audioAlertsCheckbox: document.getElementById('audio_alerts'),
         connectButton: document.getElementById('connect-button'),
         disconnectButton: document.getElementById('disconnect-button'),
         disconnectAllButton: document.getElementById('disconnect-all-button'),
@@ -139,6 +144,156 @@
         } catch (error) {
             // Fail quietly if GitHub cannot be reached.
         }
+    }
+
+    const AUDIO_ALERTS_STORAGE_KEY = 'alltune2_audio_alerts_enabled';
+
+    function formatNodeForSpeech(node) {
+        return String(node || '').trim().split('').join(' ');
+    }
+
+    function persistAudioAlertsPreference(enabled) {
+        try {
+            window.localStorage.setItem(AUDIO_ALERTS_STORAGE_KEY, enabled ? '1' : '0');
+        } catch (error) {
+            // Ignore storage issues and keep the current in-memory preference.
+        }
+    }
+
+    function cancelSpeechQueue() {
+        if (!('speechSynthesis' in window)) {
+            return;
+        }
+
+        try {
+            window.speechSynthesis.cancel();
+        } catch (error) {
+            // Ignore browser speech errors.
+        }
+    }
+
+    function loadAudioAlertsPreference() {
+        let enabled = true;
+
+        try {
+            const stored = window.localStorage.getItem(AUDIO_ALERTS_STORAGE_KEY);
+            if (stored === '0') {
+                enabled = false;
+            } else if (stored === '1') {
+                enabled = true;
+            }
+        } catch (error) {
+            // Ignore storage issues and keep alerts enabled by default.
+        }
+
+        state.audioAlertsEnabled = enabled;
+
+        if (els.audioAlertsCheckbox) {
+            els.audioAlertsCheckbox.checked = enabled;
+        }
+
+        if ('speechSynthesis' in window) {
+            try {
+                window.speechSynthesis.getVoices();
+            } catch (error) {
+                // Ignore voice enumeration errors.
+            }
+        }
+    }
+
+    function speakAudioAlert(text) {
+        if (!state.audioAlertsEnabled || state.muteAudioAnnouncements) {
+            return;
+        }
+
+        if (!('speechSynthesis' in window)) {
+            return;
+        }
+
+        try {
+            window.speechSynthesis.cancel();
+        } catch (error) {
+            // Ignore browser speech errors.
+        }
+
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.rate = 1.25;
+        utterance.pitch = 1.0;
+
+        try {
+            const voices = window.speechSynthesis.getVoices();
+            const ziraVoice = voices.find((voice) =>
+                String(voice.name || '').toLowerCase().includes('zira')
+            );
+
+            if (ziraVoice) {
+                utterance.voice = ziraVoice;
+            }
+
+            window.speechSynthesis.speak(utterance);
+        } catch (error) {
+            // Ignore browser speech errors.
+        }
+    }
+
+    function connectedNodeListFromPayload(allstarPayload) {
+        const connected = Array.isArray(allstarPayload?.connected_nodes)
+            ? allstarPayload.connected_nodes
+            : [];
+
+        const seen = new Set();
+        const nodes = [];
+
+        connected.forEach((item) => {
+            const node = String(item?.node ?? item?.target ?? '').trim();
+            if (node === '' || seen.has(node)) {
+                return;
+            }
+
+            seen.add(node);
+            nodes.push(node);
+        });
+
+        return nodes;
+    }
+
+    function syncAudioAlertsFromAllstar(allstarPayload) {
+        const currentNodes = connectedNodeListFromPayload(allstarPayload);
+
+        if (!state.audioStateInitialized) {
+            state.previousConnectedNodes = currentNodes.slice();
+            state.audioStateInitialized = true;
+
+            if (state.muteAudioAnnouncements && currentNodes.length === 0) {
+                state.muteAudioAnnouncements = false;
+            }
+
+            return;
+        }
+
+        if (state.muteAudioAnnouncements) {
+            state.previousConnectedNodes = currentNodes.slice();
+
+            if (currentNodes.length === 0) {
+                state.muteAudioAnnouncements = false;
+                cancelSpeechQueue();
+            }
+
+            return;
+        }
+
+        const addedNodes = currentNodes.filter((node) => !state.previousConnectedNodes.includes(node));
+        const removedNodes = state.previousConnectedNodes.filter((node) => !currentNodes.includes(node));
+
+        addedNodes.forEach((node) => {
+            speakAudioAlert(`Node ${formatNodeForSpeech(node)} has connected`);
+        });
+
+        removedNodes.forEach((node) => {
+            speakAudioAlert(`Node ${formatNodeForSpeech(node)} has disconnected`);
+        });
+
+        state.previousConnectedNodes = currentNodes.slice();
     }
 
     function normalizeMode(mode) {
@@ -1179,6 +1334,7 @@
         }
 
         renderAllstarLinks(allstar);
+        syncAudioAlertsFromAllstar(allstar);
 
         if (allowFieldSync && els.modeSelect && !state.busy) {
             if (typeof payload.selected_mode === 'string') {
@@ -1575,6 +1731,8 @@
 
         if (els.disconnectAllButton) {
             els.disconnectAllButton.addEventListener('click', () => {
+                state.muteAudioAnnouncements = true;
+                cancelSpeechQueue();
                 sendAction('disconnect_all');
             });
         }
@@ -1601,6 +1759,17 @@
             });
         }
 
+        if (els.audioAlertsCheckbox) {
+            els.audioAlertsCheckbox.addEventListener('change', () => {
+                state.audioAlertsEnabled = !!els.audioAlertsCheckbox.checked;
+                persistAudioAlertsPreference(state.audioAlertsEnabled);
+
+                if (!state.audioAlertsEnabled) {
+                    cancelSpeechQueue();
+                }
+            });
+        }
+
         if (els.controlForm) {
             els.controlForm.addEventListener('submit', (event) => {
                 event.preventDefault();
@@ -1610,6 +1779,7 @@
         wireAllstarDisconnectButtons();
         wireFavoritesSort();
         wireFavoritesLoad();
+        loadAudioAlertsPreference();
         updateHelperText();
         checkForRepoUpdate();
 
