@@ -5,6 +5,7 @@
         busy: false,
         pollTimer: null,
         pollIntervalMs: 3000,
+        audioSuppressUntil: 0,
         lastRequestedUiMode: '',
         preferredAslUiMode: 'ASL',
         favoriteSortKey: '',
@@ -172,6 +173,12 @@
         }
     }
 
+
+    function suppressAudioDuringTransitions(milliseconds = 1000) {
+        state.audioSuppressUntil = Date.now() + milliseconds;
+        cancelSpeechQueue();
+    }
+
     function loadAudioAlertsPreference() {
         let enabled = true;
 
@@ -279,6 +286,10 @@
                 cancelSpeechQueue();
             }
 
+            return;
+        }
+
+        if (Date.now() < state.audioSuppressUntil) {
             return;
         }
 
@@ -1515,6 +1526,8 @@
             ...extraPayload,
         };
 
+        suppressAudioDuringTransitions();
+
         let busyReleasedEarly = false;
         setBusy(true);
 
@@ -1732,7 +1745,7 @@
         if (els.disconnectAllButton) {
             els.disconnectAllButton.addEventListener('click', () => {
                 state.muteAudioAnnouncements = true;
-                cancelSpeechQueue();
+                suppressAudioDuringTransitions(1500);
                 sendAction('disconnect_all');
             });
         }
