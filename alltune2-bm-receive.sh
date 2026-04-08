@@ -212,7 +212,7 @@ stop_stfu_process() {
         rm -f "$PID_FILE"
     else
         rm -f "$PID_FILE"
-        pkill -f '^/usr/local/bin/STFU$' 2>/dev/null || true
+        pkill -f '^/var/www/html/alltune2/stfu/STFU$' 2>/dev/null || true
     fi
 }
 
