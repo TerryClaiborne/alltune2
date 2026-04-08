@@ -39,6 +39,62 @@ function shell_run(string $command): string
     return is_string($output) ? trim($output) : '';
 }
 
+function bm_receive_helper_path(): string
+{
+    return dirname(__DIR__) . '/alltune2-bm-receive.sh';
+}
+
+function bm_receive_run(string $action, ?string $target = null): array
+{
+    $helperPath = bm_receive_helper_path();
+    $command = 'sudo ' . escapeshellarg($helperPath) . ' ' . escapeshellarg($action);
+
+    if ($target !== null && $target !== '') {
+        $command .= ' ' . escapeshellarg($target);
+    }
+
+    $output = shell_run($command);
+    $decoded = json_decode($output, true);
+
+    if (is_array($decoded)) {
+        return $decoded;
+    }
+
+    return [
+        'ok' => false,
+        'action' => $action,
+        'message' => 'BM RECEIVE HELPER RETURNED INVALID JSON',
+        'raw_output' => $output,
+        'active' => false,
+    ];
+}
+
+function bm_receive_status(): array
+{
+    return bm_receive_run('status');
+}
+
+function bm_receive_is_active(): bool
+{
+    $status = bm_receive_status();
+    return !empty($status['active']);
+}
+
+function bm_receive_start(string $target): array
+{
+    return bm_receive_run('start', $target);
+}
+
+function bm_receive_tune(string $target): array
+{
+    return bm_receive_run('tune', $target);
+}
+
+function bm_receive_stop(): array
+{
+    return bm_receive_run('stop');
+}
+
 function asterisk_rpt_fun(string $node, string $digits): string
 {
     $command = 'sudo /usr/sbin/asterisk -rx ' . escapeshellarg("rpt fun {$node} {$digits}");
@@ -287,6 +343,23 @@ function disconnect_selected_dvswitch_link(string $myNode, string $dvSwitchNode)
         return;
     }
 
+    if (bm_receive_is_active()) {
+        bm_receive_stop();
+        pause_seconds(0.5);
+
+        unset(
+            $_SESSION['dvswitch_autoloaded'],
+            $_SESSION['dvswitch_active_mode'],
+            $_SESSION['dmr_network'],
+            $_SESSION['dmr_ready'],
+            $_SESSION['pending_tg']
+        );
+
+        clear_dmr_active_state();
+        unset($_SESSION['last_mode'], $_SESSION['last_target'], $_SESSION['pending_target']);
+        return;
+    }
+
     $lastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
     $dmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
 
@@ -347,6 +420,12 @@ function clear_runtime_targets(): void
 
 function disconnect_dvswitch_runtime(string $myNode, string $dvSwitchNode): void
 {
+    if (bm_receive_is_active()) {
+        bm_receive_stop();
+        pause_seconds(0.5);
+        return;
+    }
+
     $lastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
     $dvswitchAutoloaded = !empty($_SESSION['dvswitch_autoloaded']);
     $dmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
@@ -373,6 +452,23 @@ function disconnect_dvswitch_runtime(string $myNode, string $dvSwitchNode): void
 function disconnect_only_dvswitch_link(string $myNode, string $dvSwitchNode): void
 {
     if ($dvSwitchNode === '') {
+        return;
+    }
+
+    if (bm_receive_is_active()) {
+        bm_receive_stop();
+        pause_seconds(0.5);
+
+        unset(
+            $_SESSION['dvswitch_autoloaded'],
+            $_SESSION['dvswitch_active_mode'],
+            $_SESSION['dmr_network'],
+            $_SESSION['dmr_ready'],
+            $_SESSION['pending_tg']
+        );
+
+        clear_dmr_active_state();
+        unset($_SESSION['last_mode'], $_SESSION['last_target'], $_SESSION['pending_target']);
         return;
     }
 
@@ -411,6 +507,11 @@ function disconnect_only_dvswitch_link(string $myNode, string $dvSwitchNode): vo
 function disconnect_all_managed_links(string $myNode, string $dvSwitchNode): void
 {
     ensure_allstar_tracking_structures();
+
+    if (bm_receive_is_active()) {
+        bm_receive_stop();
+        pause_seconds(0.5);
+    }
 
     $trackedOrder = array_reverse($_SESSION['allstar_link_order']);
     foreach ($trackedOrder as $trackedNode) {
@@ -454,7 +555,8 @@ function session_payload(string $statusText, array $extra = []): array
         'dmr_active_network' => (string) ($_SESSION['dmr_active_network'] ?? ''),
         'dmr_active_target' => (string) ($_SESSION['dmr_active_target'] ?? ''),
         'dvswitch_active_mode' => (string) ($_SESSION['dvswitch_active_mode'] ?? ''),
-        'dvswitch_link_active' => !empty($_SESSION['dvswitch_autoloaded']) || !empty($_SESSION['dmr_ready']) || normalize_mode((string) ($_SESSION['last_mode'] ?? '')) === 'YSF',
+        'bm_receive_active' => bm_receive_is_active(),
+        'dvswitch_link_active' => !empty($_SESSION['dvswitch_autoloaded']) || !empty($_SESSION['dmr_ready']) || normalize_mode((string) ($_SESSION['last_mode'] ?? '')) === 'YSF' || bm_receive_is_active(),
     ], $extra);
 }
 
@@ -527,6 +629,11 @@ if (
 }
 
 if ($action === 'disconnect_all') {
+    if (bm_receive_is_active()) {
+        bm_receive_stop();
+        pause_seconds(0.5);
+    }
+
     shell_run('sudo systemctl restart asterisk');
     pause_seconds(2.0);
 
@@ -662,6 +769,16 @@ if ($action === 'connect') {
 
         if ($disconnectBeforeConnect) {
             disconnect_managed_links_before_connect($myNode, $dvSwitchNode);
+        } elseif (bm_receive_is_active()) {
+            $bmStop = bm_receive_stop();
+            pause_seconds(0.5);
+
+            if (empty($bmStop['ok'])) {
+                $_SESSION['last_status'] = 'ERROR: FAILED TO STOP BM RECEIVE';
+                respond(session_payload($_SESSION['last_status'], ['bm_receive' => $bmStop]), 500);
+            }
+
+            clear_runtime_targets();
         }
 
         load_dvswitch_link($myNode, $dvSwitchNode, $autoloadDvSwitchMode);
@@ -684,40 +801,95 @@ if ($action === 'connect') {
         respond(session_payload($_SESSION['last_status']));
     }
 
-    if ($mode === 'BM' || $mode === 'TGIF') {
-        if (!$hasRealMyNode || !$hasRealDvSwitchNode) {
-            $_SESSION['last_status'] = 'ERROR: ' . $mode . ' NOT CONFIGURED';
+    if ($mode === 'BM') {
+        if (!$hasRealMyNode || !$hasRealDvSwitchNode || !$hasRealBmPassword) {
+            $_SESSION['last_status'] = 'ERROR: BM NOT CONFIGURED';
             respond(session_payload($_SESSION['last_status']), 500);
         }
 
-        $connectTarget = $mode === 'BM' ? $bmTarget : $digitsOnlyTarget;
+        $connectTarget = $bmTarget;
 
         if ($connectTarget === '') {
-            $_SESSION['last_status'] = $mode === 'BM'
-                ? 'ERROR: INVALID BM TG / PRIVATE'
-                : 'ERROR: INVALID TG';
+            $_SESSION['last_status'] = 'ERROR: INVALID BM TG / PRIVATE';
             respond(session_payload($_SESSION['last_status']), 422);
         }
 
-        $server = $mode === 'TGIF'
-            ? 'tgif.network:62031'
-            : '3103.master.brandmeister.network:62031';
+        if ($disconnectBeforeConnect) {
+            disconnect_managed_links_before_connect($myNode, $dvSwitchNode);
+        } else {
+            $currentDmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
+            $currentLastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
 
-        $key = $mode === 'TGIF' ? $tgifPassword : $bmPassword;
-        $hasRealKey = $mode === 'TGIF' ? $hasRealTgifPassword : $hasRealBmPassword;
+            if (!bm_receive_is_active() && ($currentLastMode === 'YSF' || $currentDmrNetwork === 'TGIF')) {
+                disconnect_dvswitch_runtime($myNode, $dvSwitchNode);
+                clear_runtime_targets();
+            }
+        }
 
-        if (!$hasRealKey) {
-            $_SESSION['last_status'] = 'ERROR: ' . $mode . ' NOT CONFIGURED';
+        $bmResult = bm_receive_is_active()
+            ? bm_receive_tune($connectTarget)
+            : bm_receive_start($connectTarget);
+
+        if (empty($bmResult['ok'])) {
+            $_SESSION['last_status'] = 'ERROR: BM RECEIVE FAILED';
+            respond(session_payload($_SESSION['last_status'], ['bm_receive' => $bmResult]), 500);
+        }
+
+        $_SESSION['last_mode'] = 'BM';
+        $_SESSION['last_target'] = $connectTarget;
+        $_SESSION['pending_target'] = $connectTarget;
+        $_SESSION['pending_tg'] = $connectTarget;
+        $_SESSION['dmr_network'] = 'BM';
+        $_SESSION['dmr_ready'] = true;
+        $_SESSION['dmr_active_network'] = 'BM';
+        $_SESSION['dmr_active_target'] = $connectTarget;
+        $_SESSION['dvswitch_autoloaded'] = true;
+        $_SESSION['dvswitch_active_mode'] = 'transceive';
+        $_SESSION['last_status'] = 'CONNECTED: TG ' . $connectTarget . ' (BM)';
+
+        respond(session_payload($_SESSION['last_status'], ['bm_receive' => $bmResult]));
+    }
+
+    if ($mode === 'TGIF') {
+        if (!$hasRealMyNode || !$hasRealDvSwitchNode) {
+            $_SESSION['last_status'] = 'ERROR: TGIF NOT CONFIGURED';
             respond(session_payload($_SESSION['last_status']), 500);
         }
 
-        $currentNetwork = (string) ($_SESSION['dmr_network'] ?? '');
+        $connectTarget = $digitsOnlyTarget;
+
+        if ($connectTarget === '') {
+            $_SESSION['last_status'] = 'ERROR: INVALID TG';
+            respond(session_payload($_SESSION['last_status']), 422);
+        }
+
+        if (!$hasRealTgifPassword) {
+            $_SESSION['last_status'] = 'ERROR: TGIF NOT CONFIGURED';
+            respond(session_payload($_SESSION['last_status']), 500);
+        }
+
+        if ($disconnectBeforeConnect) {
+            disconnect_managed_links_before_connect($myNode, $dvSwitchNode);
+        } elseif (bm_receive_is_active()) {
+            $bmStop = bm_receive_stop();
+            pause_seconds(0.5);
+
+            if (empty($bmStop['ok'])) {
+                $_SESSION['last_status'] = 'ERROR: FAILED TO STOP BM RECEIVE';
+                respond(session_payload($_SESSION['last_status'], ['bm_receive' => $bmStop]), 500);
+            }
+
+            clear_runtime_targets();
+        }
+
+        $currentNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
         $dmrReady = !empty($_SESSION['dmr_ready']);
         $autoload = !empty($_SESSION['autoload_dvswitch']);
 
-        if ($currentNetwork !== $mode || !$dmrReady) {
-            if ($disconnectBeforeConnect) {
-                disconnect_managed_links_before_connect($myNode, $dvSwitchNode);
+        if ($currentNetwork !== 'TGIF' || !$dmrReady) {
+            if ($currentNetwork !== '' || normalize_mode((string) ($_SESSION['last_mode'] ?? '')) === 'YSF' || !empty($_SESSION['dvswitch_autoloaded'])) {
+                disconnect_dvswitch_runtime($myNode, $dvSwitchNode);
+                clear_runtime_targets();
             }
 
             if ($autoload && $hasRealDvSwitchNode) {
@@ -736,32 +908,24 @@ if ($action === 'connect') {
             dvswitch_tune('disconnect');
             pause_seconds(1.0);
 
-            dvswitch_tune($key . '@' . $server);
+            dvswitch_tune($tgifPassword . '@tgif.network:62031');
             pause_seconds(10.0);
 
-            $_SESSION['dmr_network'] = $mode;
+            $_SESSION['dmr_network'] = 'TGIF';
             $_SESSION['dmr_ready'] = true;
-            $_SESSION['pending_tg'] = $connectTarget;
-            $_SESSION['pending_target'] = $connectTarget;
-            $_SESSION['last_mode'] = $mode;
-            $_SESSION['last_target'] = '';
-
             clear_dmr_active_state();
-
-            $_SESSION['last_status'] = 'WAITING: ' . $mode . ' READY - CLICK CONNECT AGAIN FOR TG ' . $connectTarget;
-            respond(session_payload($_SESSION['last_status']));
         }
 
         dvswitch_tune($connectTarget);
         pause_seconds(1.0);
 
-        $_SESSION['last_mode'] = $mode;
+        $_SESSION['last_mode'] = 'TGIF';
         $_SESSION['last_target'] = $connectTarget;
         $_SESSION['pending_target'] = $connectTarget;
         $_SESSION['pending_tg'] = $connectTarget;
-        $_SESSION['dmr_active_network'] = $mode;
+        $_SESSION['dmr_active_network'] = 'TGIF';
         $_SESSION['dmr_active_target'] = $connectTarget;
-        $_SESSION['last_status'] = 'CONNECTED: TG ' . $connectTarget . ' (' . $mode . ')';
+        $_SESSION['last_status'] = 'CONNECTED: TG ' . $connectTarget . ' (TGIF)';
 
         respond(session_payload($_SESSION['last_status']));
     }
@@ -819,12 +983,22 @@ if ($lastMode === 'YSF') {
 }
 
 if ($lastMode === 'BM' || $lastMode === 'TGIF') {
-    dvswitch_tune('disconnect');
-    pause_seconds(1.0);
-
-    if ($dvswitchAutoloaded && $hasRealDvSwitchNode) {
-        asterisk_ilink_disconnect($myNode, $dvSwitchNode);
+    if ($lastMode === 'BM' && bm_receive_is_active()) {
+        $bmStop = bm_receive_stop();
         pause_seconds(0.5);
+
+        if (empty($bmStop['ok'])) {
+            $_SESSION['last_status'] = 'ERROR: FAILED TO STOP BM RECEIVE';
+            respond(session_payload($_SESSION['last_status'], ['bm_receive' => $bmStop]), 500);
+        }
+    } else {
+        dvswitch_tune('disconnect');
+        pause_seconds(1.0);
+
+        if ($dvswitchAutoloaded && $hasRealDvSwitchNode) {
+            asterisk_ilink_disconnect($myNode, $dvSwitchNode);
+            pause_seconds(0.5);
+        }
     }
 
     clear_runtime_targets();

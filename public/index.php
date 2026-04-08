@@ -112,7 +112,7 @@ $navItems = [
 $modeOptions = [
     'BM'   => 'BrandMeister (DMR)',
     'TGIF' => 'TGIF Network',
-    'ASL'  => 'AllStar Link',
+    'ASL'  => 'AllStarLink',
     'ECHO' => 'EchoLink',
     'YSF'  => 'System Fusion (YSF)',
 ];
@@ -384,7 +384,7 @@ $activityLines[] = [
                     <div class="helper-panel helper-panel-standalone" id="helper-panel">
                         <div class="helper-title">Network Flow</div>
                         <p class="helper-text" id="helper-text">
-                            For BM and TGIF, enter or load a talkgroup, press Connect, wait until the system is ready, then press Connect again. AllStar Link, EchoLink, and YSF are one-step connects. When DVSwitch auto-load is enabled, the configured DVSwitch link will be loaded using the selected mode.
+                            BrandMeister, TGIF, YSF, AllStarLink, and EchoLink are all one-step connects. Enter or load the target and press Connect once. BrandMeister private calls are supported with a single trailing #. Disconnect removes the current managed connection. Disconnect DVSwitch removes only the configured DVSwitch link and stops BM receive mode if it is active. Disconnect All performs a full reset. With Disconnect before Connect off, BM, TGIF, or YSF can stay up while you add direct AllStarLink or EchoLink connections. When Disconnect before Connect is on, a new managed connect clears the earlier managed session first. When DVSwitch auto-load is enabled, the configured DVSwitch link is loaded using the selected link mode.
                         </p>
                     </div>
                 </div>

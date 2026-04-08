@@ -23,3 +23,9 @@ temp/
 *.orig
 *.save
 *.BeforeLocalMonitor
+# Local backup and runtime files
+*.bak
+*.BeforeSTFU
+*.BeforeAllConnections
+*.STFU_Mod
+stfu/DVSwitch.ini

@@ -554,6 +554,60 @@ function build_tracked_allstar_connected_nodes(
     return $connectedNodes;
 }
 
+function read_bm_receive_helper_status(): array
+{
+    $script = dirname(__DIR__) . '/alltune2-bm-receive.sh';
+
+    $fallback = [
+        'available' => false,
+        'ok' => false,
+        'active' => false,
+        'target' => '',
+        'message' => '',
+        'stfu_running' => false,
+        'mmdvm_bridge' => '',
+        'pid' => '',
+        'version' => '',
+        'raw_output' => '',
+    ];
+
+    if (!is_file($script)) {
+        return $fallback;
+    }
+
+    $command = 'sudo ' . escapeshellarg($script) . ' status';
+    $output = shell_run($command);
+
+    if ($output === '') {
+        return array_merge($fallback, [
+            'available' => true,
+            'message' => 'BM helper returned no output.',
+        ]);
+    }
+
+    $decoded = json_decode($output, true);
+    if (!is_array($decoded)) {
+        return array_merge($fallback, [
+            'available' => true,
+            'message' => 'BM helper returned invalid JSON.',
+            'raw_output' => $output,
+        ]);
+    }
+
+    return [
+        'available' => true,
+        'ok' => !empty($decoded['ok']),
+        'active' => !empty($decoded['active']),
+        'target' => trim((string) ($decoded['target'] ?? '')),
+        'message' => trim((string) ($decoded['message'] ?? '')),
+        'stfu_running' => !empty($decoded['stfu_running']),
+        'mmdvm_bridge' => trim((string) ($decoded['mmdvm_bridge'] ?? '')),
+        'pid' => trim((string) ($decoded['pid'] ?? '')),
+        'version' => trim((string) ($decoded['version'] ?? '')),
+        'raw_output' => $output,
+    ];
+}
+
 $favorites = load_favorites_file(dirname(__DIR__) . '/data/favorites.txt');
 
 $selectedMode = normalize_mode((string) ($_SESSION['selected_mode'] ?? 'BM'));
@@ -590,12 +644,24 @@ $myNode = $config->getString('MYNODE', '');
 $dvSwitchNode = $config->getString('DVSWITCH_NODE', '');
 $dvswitchLinkActive = !empty($_SESSION['dvswitch_autoloaded']) || $dmrReady || $lastMode === 'YSF';
 
+$bmReceive = read_bm_receive_helper_status();
+
+if ($bmReceive['active']) {
+    $dmrNetwork = 'BM';
+    $dmrReady = true;
+    $dmrActiveNetwork = 'BM';
+    $dmrActiveTarget = $bmReceive['target'];
+    $dvswitchLinkActive = true;
+}
+
 $bmState = 'Idle';
 $tgifState = 'Idle';
 $ysfState = 'Idle';
 $allstarState = 'No links';
 
-if ($dmrActiveNetwork === 'BM' && $dmrActiveTarget !== '') {
+if ($bmReceive['active'] && $bmReceive['target'] !== '') {
+    $bmState = 'Connected: TG ' . $bmReceive['target'];
+} elseif ($dmrActiveNetwork === 'BM' && $dmrActiveTarget !== '') {
     $bmState = 'Connected: TG ' . $dmrActiveTarget;
 } elseif ($dmrNetwork === 'BM' && $dmrReady && str_starts_with(strtoupper($lastStatus), 'WAITING: BM READY')) {
     $bmState = 'Ready';
@@ -630,6 +696,79 @@ if ($liveAllstar['available']) {
 if ($allstarConnectedNodes !== []) {
     $allstarState = 'Connected: ' . count($allstarConnectedNodes);
 }
+
+
+$activity = [];
+
+if ($lastMode !== '') {
+    $activity[] = [
+        'label' => 'Last Mode',
+        'value' => $lastMode,
+    ];
+}
+
+if ($lastTarget !== '') {
+    $activity[] = [
+        'label' => 'Last Target',
+        'value' => $lastTarget,
+    ];
+}
+
+if ($pendingTarget !== '') {
+    $activity[] = [
+        'label' => 'Pending Target',
+        'value' => $pendingTarget,
+    ];
+}
+
+$dmrActivityValue = $bmReceive['active']
+    ? 'BM (TG ' . $bmReceive['target'] . ' Receive)'
+    : ($dmrActiveNetwork !== ''
+        ? $dmrActiveNetwork . ($dmrActiveTarget !== '' ? ' (TG ' . $dmrActiveTarget . ')' : '')
+        : ($dmrNetwork !== ''
+            ? $dmrNetwork . ($dmrReady ? ' (Ready)' : ' (Preparing)')
+            : ''));
+
+if ($dmrActivityValue !== '') {
+    $activity[] = [
+        'label' => 'DMR Network',
+        'value' => $dmrActivityValue,
+    ];
+}
+
+$activity[] = [
+    'label' => 'DVSwitch Auto-Load',
+    'value' => $autoloadDvSwitch
+        ? 'Enabled' . ($dvSwitchNode !== '' ? ' (' . $dvSwitchNode . ')' : '')
+        : 'Disabled',
+];
+
+$activity[] = [
+    'label' => 'Link Mode',
+    'value' => autoload_dvswitch_mode_label($autoloadDvSwitchMode),
+];
+
+if ($dvswitchActiveMode !== '') {
+    $activity[] = [
+        'label' => 'DVSwitch Active Link Mode',
+        'value' => active_dvswitch_mode_label($dvswitchActiveMode),
+    ];
+}
+
+$activity[] = [
+    'label' => 'DVSwitch Link Active',
+    'value' => $dvswitchLinkActive ? 'Yes' : 'No',
+];
+
+$activity[] = [
+    'label' => 'Disconnect Before Connect',
+    'value' => $disconnectBeforeConnect ? 'Enabled' : 'Disabled',
+];
+
+$activity[] = [
+    'label' => 'Current Status',
+    'value' => $lastStatus,
+];
 
 $payload = [
     'ok' => true,
@@ -668,6 +807,18 @@ $payload = [
     'dmr_active_target' => $dmrActiveTarget,
     'dvswitch_link_active' => $dvswitchLinkActive,
 
+    'bm_receive' => [
+        'available' => $bmReceive['available'],
+        'ok' => $bmReceive['ok'],
+        'active' => $bmReceive['active'],
+        'target' => $bmReceive['target'],
+        'message' => $bmReceive['message'],
+        'stfu_running' => $bmReceive['stfu_running'],
+        'mmdvm_bridge' => $bmReceive['mmdvm_bridge'],
+        'pid' => $bmReceive['pid'],
+        'version' => $bmReceive['version'],
+    ],
+
     'config' => [
         'path' => $config->path(),
         'exists' => $config->exists(),
@@ -687,7 +838,9 @@ $payload = [
             'state' => $bmState,
             'label' => $bmState,
             'status' => $bmState,
-            'active' => $dmrActiveNetwork === 'BM' || ($dmrNetwork === 'BM' && $dmrReady),
+            'active' => $dmrActiveNetwork === 'BM' || ($dmrNetwork === 'BM' && $dmrReady) || $bmReceive['active'],
+            'receive_mode_active' => $bmReceive['active'],
+            'receive_mode_target' => $bmReceive['target'],
         ],
         'tgif' => [
             'state' => $tgifState,
@@ -714,7 +867,9 @@ $payload = [
         'state' => $bmState,
         'label' => $bmState,
         'status' => $bmState,
-        'active' => $dmrActiveNetwork === 'BM' || ($dmrNetwork === 'BM' && $dmrReady),
+        'active' => $dmrActiveNetwork === 'BM' || ($dmrNetwork === 'BM' && $dmrReady) || $bmReceive['active'],
+        'receive_mode_active' => $bmReceive['active'],
+        'receive_mode_target' => $bmReceive['target'],
     ],
     'tgif' => [
         'state' => $tgifState,
@@ -741,54 +896,7 @@ $payload = [
         ])),
     ],
 
-    'activity' => [
-        [
-            'label' => 'Last Mode',
-            'value' => $lastMode !== '' ? $lastMode : '-',
-        ],
-        [
-            'label' => 'Last Target',
-            'value' => $lastTarget !== '' ? $lastTarget : '-',
-        ],
-        [
-            'label' => 'Pending Target',
-            'value' => $pendingTarget !== '' ? $pendingTarget : '-',
-        ],
-        [
-            'label' => 'DMR Network',
-            'value' => $dmrActiveNetwork !== ''
-                ? $dmrActiveNetwork . ($dmrActiveTarget !== '' ? ' (TG ' . $dmrActiveTarget . ')' : '')
-                : ($dmrNetwork !== ''
-                    ? $dmrNetwork . ($dmrReady ? ' (Ready)' : ' (Preparing)')
-                    : '-'),
-        ],
-        [
-            'label' => 'DVSwitch Auto-Load',
-            'value' => $autoloadDvSwitch
-                ? 'Enabled' . ($dvSwitchNode !== '' ? ' (' . $dvSwitchNode . ')' : '')
-                : 'Disabled',
-        ],
-        [
-            'label' => 'Link Mode',
-            'value' => autoload_dvswitch_mode_label($autoloadDvSwitchMode),
-        ],
-        [
-            'label' => 'DVSwitch Active Link Mode',
-            'value' => active_dvswitch_mode_label($dvswitchActiveMode),
-        ],
-        [
-            'label' => 'DVSwitch Link Active',
-            'value' => $dvswitchLinkActive ? 'Yes' : 'No',
-        ],
-        [
-            'label' => 'Disconnect Before Connect',
-            'value' => $disconnectBeforeConnect ? 'Enabled' : 'Disabled',
-        ],
-        [
-            'label' => 'Current Status',
-            'value' => $lastStatus,
-        ],
-    ],
+    'activity' => $activity,
 ];
 
 respond($payload);
