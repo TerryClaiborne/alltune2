@@ -1,30 +1,34 @@
 /var/www/html/alltune2
 +-- README.md
++-- VERSION
++-- alltune2-bm-receive.sh
 +-- api
-¦   +-- connect.php
-¦   +-- status.php
+|   +-- connect.php
+|   +-- status.php
 +-- app
-¦   +-- Actions
-¦   ¦   +-- AllStarAction.php
-¦   ¦   +-- BrandMeisterAction.php
-¦   ¦   +-- TGIFAction.php
-¦   ¦   +-- YSFAction.php
-¦   +-- State
-¦   ¦   +-- StatusMapper.php
-¦   +-- Support
-¦       +-- Config.php
+|   +-- Actions
+|   |   +-- AllStarAction.php
+|   |   +-- BrandMeisterAction.php
+|   |   +-- TGIFAction.php
+|   |   +-- YSFAction.php
+|   +-- State
+|   |   +-- StatusMapper.php
+|   +-- Support
+|       +-- Config.php
 +-- config.ini
 +-- config.ini.example
 +-- data
-¦   +-- favorites.txt
+|   +-- favorites.txt
 +-- public
-¦   +-- assets
-¦   ¦   +-- css
-¦   ¦   ¦   +-- style.css
-¦   ¦   +-- js
-¦   ¦       +-- app.js
-¦   +-- alltune2_ribbon_bar.php
-¦   +-- favorites.php
-¦   +-- index.php
+|   +-- assets
+|   |   +-- css
+|   |   |   +-- style.css
+|   |   +-- js
+|   |       +-- app.js
+|   +-- alltune2_ribbon_bar.php
+|   +-- favorites.php
+|   +-- index.php
 +-- setup_alltune2.sh
++-- stfu
+|   +-- STFU
 +-- tree.txt
