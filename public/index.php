@@ -119,49 +119,15 @@ $modeOptions = [
 
 $activityLines = [];
 
-if ($lastMode !== '') {
-    $activityLines[] = [
-        'label' => 'Last Mode',
-        'value' => $lastMode,
-    ];
-}
-
-if ($lastTarget !== '') {
-    $activityLines[] = [
-        'label' => 'Last Target',
-        'value' => $lastTarget,
-    ];
-}
-
-if ($pendingTarget !== '') {
-    $activityLines[] = [
-        'label' => 'Pending Target',
-        'value' => $pendingTarget,
-    ];
-}
-
-if ($dmrNetwork !== '') {
-    $activityLines[] = [
-        'label' => 'DMR Network',
-        'value' => $dmrNetwork . ($dmrReady ? ' (Ready)' : ' (Preparing)'),
-    ];
-}
-
 $activityLines[] = [
     'label' => 'DVSwitch Auto-Load',
     'value' => $autoloadDvSwitch
-        ? 'Enabled' . ($displayDvSwitchNode !== '' ? ' (' . e($displayDvSwitchNode) . ')' : '')
+        ? 'Enabled' . ($displayDvSwitchNode !== '' ? ' (' . $displayDvSwitchNode . ')' : '')
         : 'Disabled',
 ];
 $activityLines[] = [
     'label' => 'Link Mode',
     'value' => $autoloadDvSwitchMode === 'local_monitor' ? 'Local Monitor' : 'Transceive',
-];
-$activityLines[] = [
-    'label' => 'DVSwitch Active Link Mode',
-    'value' => $dvswitchActiveMode === 'local_monitor'
-        ? 'Local Monitor'
-        : ($dvswitchActiveMode === 'transceive' ? 'Transceive' : '-'),
 ];
 $activityLines[] = [
     'label' => 'DVSwitch Link Active',
@@ -171,7 +137,6 @@ $activityLines[] = [
     'label' => 'Disconnect Before Connect',
     'value' => $disconnectBeforeConnect ? 'Enabled' : 'Disabled',
 ];
-
 $activityLines[] = [
     'label' => 'Current Status',
     'value' => $lastStatus,
@@ -250,6 +215,7 @@ $activityLines[] = [
                         data-has-real-bm-password="<?= $hasRealBmPassword ? '1' : '0' ?>"
                         data-has-real-tgif-key="<?= $hasRealTgifKey ? '1' : '0' ?>"
                         data-asl-configured="<?= $modeAvailability['ASL'] ? '1' : '0' ?>"
+                        data-echo-configured="<?= $modeAvailability['ECHO'] ? '1' : '0' ?>"
                         data-bm-configured="<?= $modeAvailability['BM'] ? '1' : '0' ?>"
                         data-tgif-configured="<?= $modeAvailability['TGIF'] ? '1' : '0' ?>"
                         data-ysf-configured="<?= $modeAvailability['YSF'] ? '1' : '0' ?>"
