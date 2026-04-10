@@ -9,12 +9,12 @@ DVSWITCH_INI="/opt/MMDVM_Bridge/DVSwitch.ini"
 PID_FILE="/var/run/alltune2-bm-receive.pid"
 STATE_FILE="/var/run/alltune2-bm-receive.state"
 LOG_FILE="/var/log/alltune2-bm-receive.log"
-VERSION="2026-04-08b"
+VERSION="2026-04-08c"
 
 json_escape() {
     local s=${1-}
     s=${s//\\/\\\\}
-    s=${s//"/\\"}
+    s=${s//\"/\\\"}
     s=${s//$'\n'/\\n}
     s=${s//$'\r'/\\r}
     s=${s//$'\t'/\\t}
@@ -72,8 +72,28 @@ ensure_symlink() {
     ln -sf "$DVSWITCH_INI" "$STFU_DIR/DVSwitch.ini"
 }
 
+find_stfu_pid() {
+    pgrep -f -x "$STFU_BIN" 2>/dev/null | head -n 1 || true
+}
+
 is_stfu_running() {
-    [[ -f "$PID_FILE" ]] && kill -0 "$(cat "$PID_FILE" 2>/dev/null)" 2>/dev/null
+    local pid real_pid
+
+    if [[ -f "$PID_FILE" ]]; then
+        pid=$(cat "$PID_FILE" 2>/dev/null || true)
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            return 0
+        fi
+    fi
+
+    real_pid=$(find_stfu_pid)
+    if [[ -n "$real_pid" ]]; then
+        echo "$real_pid" > "$PID_FILE"
+        return 0
+    fi
+
+    rm -f "$PID_FILE"
+    return 1
 }
 
 read_state_target() {
@@ -179,7 +199,13 @@ disconnect_dvswitch_node() {
 }
 
 start_stfu_process() {
+    local real_pid
+
     if is_stfu_running; then
+        real_pid=$(find_stfu_pid)
+        if [[ -n "$real_pid" ]]; then
+            echo "$real_pid" > "$PID_FILE"
+        fi
         return 0
     fi
 
@@ -189,31 +215,40 @@ start_stfu_process() {
     (
         cd "$STFU_DIR" || exit 1
         nohup "$STFU_BIN" >>"$LOG_FILE" 2>&1 &
-        echo $! > "$PID_FILE"
     )
 
     sleep 2
 
-    if ! is_stfu_running; then
+    real_pid=$(find_stfu_pid)
+    if [[ -z "$real_pid" ]]; then
         rm -f "$PID_FILE"
         fail_json "start" "STFU failed to start. Check $LOG_FILE"
     fi
+
+    echo "$real_pid" > "$PID_FILE"
 }
 
 stop_stfu_process() {
-    if is_stfu_running; then
-        local pid
+    local pid real_pid
+
+    if [[ -f "$PID_FILE" ]]; then
         pid=$(cat "$PID_FILE" 2>/dev/null || true)
         if [[ -n "$pid" ]]; then
             kill "$pid" 2>/dev/null || true
             sleep 1
             kill -9 "$pid" 2>/dev/null || true
         fi
-        rm -f "$PID_FILE"
-    else
-        rm -f "$PID_FILE"
-        pkill -f '^/var/www/html/alltune2/stfu/STFU$' 2>/dev/null || true
     fi
+
+    pkill -f -x "$STFU_BIN" 2>/dev/null || true
+    sleep 1
+
+    real_pid=$(find_stfu_pid)
+    if [[ -n "$real_pid" ]]; then
+        pkill -9 -f -x "$STFU_BIN" 2>/dev/null || true
+    fi
+
+    rm -f "$PID_FILE"
 }
 
 start_mode() {
@@ -313,6 +348,7 @@ status_mode() {
 
     if is_stfu_running; then
         active=true
+        pid=$(cat "$PID_FILE" 2>/dev/null || true)
     fi
 
     if ! is_numeric_node "$MAIN_NODE"; then

@@ -1013,13 +1013,13 @@
         }
 
         if (mode === 'BM' && status.includes('(BM)')) {
-            return false;
+            return true;
         }
 
         if (mode === 'TGIF' && status.includes('(TGIF)')) {
             return false;
         }
-
+        
         if (mode === 'YSF' && status.includes('CONNECTED: YSF TARGET')) {
             return disconnectFirst ? false : true;
         }
