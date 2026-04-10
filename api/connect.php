@@ -205,6 +205,46 @@ function normalize_bm_target(string $target): string
     return $value;
 }
 
+function normalize_dtmf_code(string $value): string
+{
+    $value = preg_replace('/\s+/', '', trim($value)) ?? '';
+    return trim((string) $value);
+}
+
+function validate_dtmf_code(string $value): string
+{
+    $normalized = normalize_dtmf_code($value);
+
+    if ($normalized === '') {
+        return '';
+    }
+
+    if (strlen($normalized) > 14) {
+        return '';
+    }
+
+    if (!preg_match('/^[0-9*#]+$/', $normalized)) {
+        return '';
+    }
+
+    return $normalized;
+}
+
+function dtmf_command_failed(string $output): bool
+{
+    $normalized = strtoupper(trim($output));
+
+    if ($normalized === '') {
+        return false;
+    }
+
+    return str_contains($normalized, 'NO SUCH COMMAND')
+        || str_contains($normalized, 'INVALID')
+        || str_contains($normalized, 'ERROR')
+        || str_contains($normalized, 'FAILED')
+        || str_contains($normalized, 'USAGE:');
+}
+
 function is_placeholder_config_value(mixed $value): bool
 {
     $normalized = strtoupper(trim((string) $value));
@@ -602,6 +642,7 @@ $request = request_data();
 
 $action = strtolower(trim((string) ($request['action'] ?? $request['action_type'] ?? '')));
 $rawTarget = trim((string) ($request['target'] ?? $request['tgNum'] ?? ''));
+$rawDtmfCode = trim((string) ($request['dtmf_code'] ?? $request['dtmf'] ?? $request['digits'] ?? $request['code'] ?? ''));
 $selectedNode = preg_replace('/[^0-9]/', '', (string) ($request['selected_node'] ?? '')) ?? '';
 $mode = normalize_mode((string) ($request['mode'] ?? ($_SESSION['selected_mode'] ?? 'BM')));
 $uiMode = normalize_mode((string) ($request['ui_mode'] ?? $mode));
@@ -661,9 +702,54 @@ if (
     $action !== 'disconnect' &&
     $action !== 'disconnect_all' &&
     $action !== 'disconnect_selected' &&
-    $action !== 'disconnect_dvswitch'
+    $action !== 'disconnect_dvswitch' &&
+    $action !== 'send_dtmf'
 ) {
     respond(session_payload('ERROR: INVALID ACTION'), 400);
+}
+
+if ($action === 'send_dtmf') {
+    $baseStatus = (string) ($_SESSION['last_status'] ?? 'IDLE - NO CONNECTIONS');
+
+    if (!$hasRealMyNode) {
+        respond(session_payload($baseStatus, [
+            'ok' => false,
+            'status' => 'ERROR: MYNODE NOT CONFIGURED',
+            'status_text' => 'ERROR: MYNODE NOT CONFIGURED',
+            'dtmf_code' => '',
+        ]), 500);
+    }
+
+    $dtmfCode = validate_dtmf_code($rawDtmfCode);
+
+    if ($dtmfCode === '') {
+        respond(session_payload($baseStatus, [
+            'ok' => false,
+            'status' => 'ERROR: INVALID DTMF CODE',
+            'status_text' => 'ERROR: INVALID DTMF CODE',
+            'dtmf_code' => normalize_dtmf_code($rawDtmfCode),
+        ]), 422);
+    }
+
+    $dtmfResult = asterisk_rpt_fun($myNode, $dtmfCode);
+
+    if (dtmf_command_failed($dtmfResult)) {
+        respond(session_payload($baseStatus, [
+            'ok' => false,
+            'status' => 'ERROR: DTMF SEND FAILED',
+            'status_text' => 'ERROR: DTMF SEND FAILED',
+            'dtmf_code' => $dtmfCode,
+            'dtmf_result' => $dtmfResult,
+        ]), 500);
+    }
+
+    respond(session_payload($baseStatus, [
+        'ok' => true,
+        'status' => 'DTMF SENT: ' . $dtmfCode,
+        'status_text' => 'DTMF SENT: ' . $dtmfCode,
+        'dtmf_code' => $dtmfCode,
+        'dtmf_result' => $dtmfResult,
+    ]));
 }
 
 if ($action === 'disconnect_all') {

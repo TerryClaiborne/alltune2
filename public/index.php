@@ -290,21 +290,78 @@ $activityLines[] = [
                             </div>
 
                             <div class="control-settings-right">
-                                <button
-                                    type="button"
-                                    class="btn btn-warning"
-                                    id="disconnect-dvswitch-button"
-                                >
-                                    Disconnect DVSwitch
-                                </button>
+                                <div style="display:flex; flex-direction:column; align-items:flex-end; gap:6px;">
+                                    <div style="display:flex; align-items:center; gap:10px; justify-content:flex-end;">
+                                        <button
+                                            type="button"
+                                            class="btn btn-warning"
+                                            id="disconnect-dvswitch-button"
+                                        >
+                                            Disconnect DVSwitch
+                                        </button>
 
-                                <button
-                                    type="button"
-                                    class="btn btn-danger"
-                                    id="disconnect-all-button"
-                                >
-                                    Disconnect All
-                                </button>
+                                        <button
+                                            type="button"
+                                            class="btn btn-danger"
+                                            id="disconnect-all-button"
+                                        >
+                                            Disconnect All
+                                        </button>
+                                    </div>
+
+                                    <div style="display:flex; align-items:center; gap:6px; justify-content:flex-end;">
+                                        <label
+                                            for="dtmf-code"
+                                            style="font-size:0.68rem; font-weight:700; letter-spacing:0.06em; text-transform:uppercase; color:#f4a6ff;"
+                                        >
+                                            DTMF
+                                        </label>
+
+                                        <input
+                                            id="dtmf-code"
+                                            name="dtmf_code"
+                                            type="text"
+                                            value=""
+                                            placeholder="*70 or 1234#"
+                                            maxlength="14"
+                                            aria-label="DTMF Command"
+                                            style="
+                                                width:118px;
+                                                min-width:118px;
+                                                max-width:118px;
+                                                height:32px;
+                                                padding:0 10px;
+                                                border-radius:10px;
+                                                border:1px solid rgba(193, 107, 255, 0.70);
+                                                background:#05030a;
+                                                color:#ffffff;
+                                                font-size:0.88rem;
+                                                font-weight:700;
+                                                box-sizing:border-box;
+                                            "
+                                        >
+
+                                        <button
+                                            type="button"
+                                            class="btn btn-primary"
+                                            id="send-dtmf-button"
+                                            disabled
+                                            style="
+                                                min-width:78px;
+                                                height:32px;
+                                                padding:0 14px;
+                                                border-radius:10px;
+                                                font-size:0.88rem;
+                                                font-weight:700;
+                                                opacity:0.38;
+                                                cursor:not-allowed;
+                                                filter:saturate(0.45) brightness(0.88);
+                                            "
+                                        >
+                                            Send
+                                        </button>
+                                    </div>
+                                </div>
                             </div>
                         </div>
 
@@ -460,6 +517,49 @@ $activityLines[] = [
     </section>
 </div>
 
+<script>
+(function () {
+    const dtmfInput = document.getElementById('dtmf-code');
+    const sendButton = document.getElementById('send-dtmf-button');
+
+    if (!dtmfInput || !sendButton) {
+        return;
+    }
+
+    const syncDtmfUi = () => {
+        const hasValue = String(dtmfInput.value || '').trim() !== '';
+        sendButton.disabled = !hasValue;
+        sendButton.style.opacity = hasValue ? '1' : '0.45';
+        sendButton.style.cursor = hasValue ? 'pointer' : 'not-allowed';
+    };
+
+    dtmfInput.addEventListener('input', syncDtmfUi);
+    syncDtmfUi();
+}());
+</script>
+
 <script src="/alltune2/public/assets/js/app.js"></script>
+<script>
+(function () {
+    const dtmfInput = document.getElementById('dtmf-code');
+    const sendButton = document.getElementById('send-dtmf-button');
+
+    if (!dtmfInput || !sendButton) {
+        return;
+    }
+
+    function syncDtmfUi() {
+        const hasValue = String(dtmfInput.value || '').trim() !== '';
+
+        sendButton.disabled = !hasValue;
+        sendButton.style.opacity = hasValue ? '1' : '0.38';
+        sendButton.style.cursor = hasValue ? 'pointer' : 'not-allowed';
+        sendButton.style.filter = hasValue ? 'none' : 'saturate(0.45) brightness(0.88)';
+    }
+
+    dtmfInput.addEventListener('input', syncDtmfUi);
+    syncDtmfUi();
+}());
+</script>
 </body>
 </html>

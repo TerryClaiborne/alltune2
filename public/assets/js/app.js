@@ -1,3 +1,4 @@
+
 (() => {
     'use strict';
 
@@ -45,6 +46,8 @@
         statusAllstarLinks: document.getElementById('status-allstar-links'),
         brandingTitle: document.getElementById('branding-title'),
         updateIndicator: document.getElementById('update-indicator'),
+        dtmfCode: document.getElementById('dtmf-code'),
+        sendDtmfButton: document.getElementById('send-dtmf-button'),
     };
 
     function hasCoreElements() {
@@ -749,6 +752,27 @@
             : 'IDLE - NO CONNECTIONS';
     }
 
+    function sanitizeDtmf(value) {
+        return String(value || '')
+            .replace(/[^0-9*#]/g, '')
+            .slice(0, 14);
+    }
+
+    function currentDtmfValue() {
+        return sanitizeDtmf(els.dtmfCode?.value || '');
+    }
+
+    function updateDtmfButtonState() {
+        if (!els.sendDtmfButton) {
+            return;
+        }
+
+        const enabled = !state.busy && currentDtmfValue() !== '';
+        els.sendDtmfButton.disabled = !enabled;
+        els.sendDtmfButton.style.opacity = enabled ? '1' : '0.55';
+        els.sendDtmfButton.style.cursor = enabled ? 'pointer' : 'not-allowed';
+    }
+
     function currentAllstarCount() {
         if (!els.statusAllstar) {
             return 0;
@@ -1067,6 +1091,7 @@
         setButtonVisualState(els.disconnectButton, shouldEnableDisconnectButton(statusText));
         setButtonVisualState(els.disconnectAllButton, shouldEnableDisconnectAllButton(statusText));
         setButtonVisualState(els.disconnectDvSwitchButton, shouldEnableDisconnectDvSwitchButton(statusText));
+        updateDtmfButtonState();
     }
 
     function setBusy(isBusy) {
@@ -1095,6 +1120,12 @@
                 els.disconnectDvSwitchButton.disabled = true;
                 els.disconnectDvSwitchButton.style.opacity = '0.7';
                 els.disconnectDvSwitchButton.style.cursor = 'wait';
+            }
+
+            if (els.sendDtmfButton) {
+                els.sendDtmfButton.disabled = true;
+                els.sendDtmfButton.style.opacity = '0.55';
+                els.sendDtmfButton.style.cursor = 'wait';
             }
 
             const rowButtons = document.querySelectorAll('.allstar-disconnect-button');
@@ -1671,9 +1702,18 @@
                 responsePayload.selected_mode = 'ECHO';
             }
 
-            applyActionStatus(responsePayload);
+            applyActionStatus(
+                responsePayload,
+                action === 'send_dtmf'
+                    ? { preserveTarget: true, preserveMode: true }
+                    : {}
+            );
 
-            if (action === 'disconnect_all') {
+            if (action === 'send_dtmf') {
+                if (els.dtmfCode && !isErrorStatus(responsePayload.status_text || responsePayload.status || responsePayload.last_status || '')) {
+                    els.dtmfCode.value = '';
+                }
+            } else if (action === 'disconnect_all') {
                 markAudioSettleWindow(1500);
             } else {
                 markAudioSettleWindow(1200);
@@ -1684,6 +1724,7 @@
 
             setBusy(false);
             busyReleasedEarly = true;
+            updateDtmfButtonState();
             refreshStatusInBackground();
         } catch (error) {
             console.error(error);
@@ -1694,6 +1735,7 @@
                 setBusy(false);
             }
             state.lastRequestedUiMode = '';
+            updateDtmfButtonState();
         }
     }
 
@@ -1725,6 +1767,28 @@
         } catch (error) {
             console.error(error);
         }
+    }
+
+    function sendDtmf() {
+        if (!els.dtmfCode) {
+            return;
+        }
+
+        const code = currentDtmfValue();
+        els.dtmfCode.value = code;
+
+        if (code === '' || state.busy) {
+            updateDtmfButtonState();
+            return;
+        }
+
+        sendAction('send_dtmf', {
+            target: '',
+            tgNum: '',
+            dtmf_code: code,
+            dtmf: code,
+            digits: code,
+        });
     }
 
     function wireAllstarDisconnectButtons() {
@@ -1917,6 +1981,34 @@
             });
         }
 
+        if (els.dtmfCode) {
+            const syncDtmfField = () => {
+                const clean = sanitizeDtmf(els.dtmfCode.value);
+                if (els.dtmfCode.value !== clean) {
+                    els.dtmfCode.value = clean;
+                }
+                updateDtmfButtonState();
+            };
+
+            els.dtmfCode.addEventListener('input', syncDtmfField);
+            els.dtmfCode.addEventListener('change', syncDtmfField);
+            els.dtmfCode.addEventListener('blur', syncDtmfField);
+            els.dtmfCode.addEventListener('keydown', (event) => {
+                if (event.key === 'Enter') {
+                    event.preventDefault();
+                    sendDtmf();
+                }
+            });
+
+            syncDtmfField();
+        }
+
+        if (els.sendDtmfButton) {
+            els.sendDtmfButton.addEventListener('click', () => {
+                sendDtmf();
+            });
+        }
+
         if (els.controlForm) {
             els.controlForm.addEventListener('submit', (event) => {
                 event.preventDefault();
@@ -1928,6 +2020,7 @@
         wireFavoritesLoad();
         loadAudioAlertsPreference();
         updateHelperText();
+        updateDtmfButtonState();
         checkForRepoUpdate();
 
         loadStatus().catch((error) => {
