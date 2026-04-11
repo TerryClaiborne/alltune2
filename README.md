@@ -1,144 +1,223 @@
 # AllTune2
 
-**Version 1.20.0 — Major Release**
+**Version 1.20.3**
 
-Copyright Terry Claiborne - KC3KMV - kc3kmv@yahoo.com
+AllTune2 is a web-based control and status dashboard for **AllStarLink 3 / Debian / DVSwitch** systems. It is designed to make day-to-day switching between BM, TGIF, YSF, AllStarLink, and EchoLink simpler and faster, while keeping the original app separate so you can test safely.
 
-AllTune2 is a web-based control and status dashboard for radio network switching and favorites management on AllStarLink 3 / Debian Linux.
+This project is intended for the common ASL3-style layout on Raspberry Pi based nodes and similar systems.
 
-Version 1.20.0 is a major update. The old two-step BrandMeister and TGIF workflow has been replaced with a much more usable one-step connect flow. BrandMeister receive handling now uses an AllTune2-owned backend helper together with a local AllTune2 stfu/STFU runtime copy, making the BM receive path part of the AllTune2 project structure instead of depending on the older separate STFU web-panel workflow. This release is intended for ASL3 / Debian / DVSwitch systems using the expected default layout and has been tested on working Raspberry Pi nodes. The integrated BM receive backend, local stfu/STFU binary, installer behavior, and sudoers setup all assume that type of environment, so systems with different architectures, paths, or custom layouts may require adjustment before installation or update.
+---
 
-## 1.20.0 major release highlights
+## What AllTune2 does well
 
-This release is a big change from earlier AllTune2 behavior.
+AllTune2 is built around a simple idea: one main screen, clear status, and fast access to the things you actually use.
 
-### Major changes in this release
+Current highlights include:
 
-- **BrandMeister is now a one-step connect**
-- **TGIF is now a one-step connect**
-- **YSF remains a one-step connect**
-- **AllStarLink remains a one-step connect**
-- **EchoLink remains a one-step connect**
-- **BrandMeister receive handling now uses an AllTune2-owned helper**
-- **AllTune2 now uses its own local STFU runtime copy**
-- **BM can remain active while adding direct AllStarLink / EchoLink connections**
-- **Direct AllStarLink / EchoLink live detection and per-node disconnect remain supported**
-- **Activity box compact behavior has been preserved**
-- **The old BM/TGIF two-step wording and helper flow are no longer correct**
+- **BrandMeister one-step connect**
+- **BrandMeister quick talkgroup changes without disconnecting first**
+- **BM private call support** using a trailing `#`
+- **TGIF one-step connect**
+- **YSF one-step connect**
+- **AllStarLink one-step connect**
+- **EchoLink one-step connect**
+- **System Strip / ribbon bar** with live status details
+- **DTMF pad / send control** from the dashboard
+- **Shared favorites** with sorting on the dashboard
+- **Direct AllStarLink / EchoLink live node tracking**
+- **Per-node Disconnect buttons** for tracked direct nodes
+- **Disconnect DVSwitch** and **Disconnect All** actions
+- **Audio alerts** for node connect / disconnect activity with an on/off toggle
+- **Config-aware mode availability** so unconfigured modes do not pretend to work
+- **Installer-managed sudoers setup** for required helper actions
+- **AllTune2-owned BM receive helper** and local `stfu/STFU` runtime copy
 
-## Important
+---
 
-**AllTune2 will not work correctly until you edit `/var/www/html/alltune2/config.ini` and enter your real settings.**
+## Important current note about TGIF
 
-**The installer creates a starter `config.ini` with placeholder values. You must change them before using AllTune2.**
+TGIF remains available in AllTune2, but it should be considered **under active troubleshooting on some systems**.
 
-## Current supported modes and behavior
+On some ASL3 / DVSwitch environments, users may see:
 
-AllTune2 currently supports:
+- receive dropping after a short period
+- timeout / reconnect behavior
+- inconsistent TGIF behavior compared with BM
 
-- BrandMeister
-- BrandMeister private calls with a trailing `#`
-- TGIF
-- YSF
-- AllStarLink
-- EchoLink
-- DVSwitch auto-load
-- Link Mode selection:
-  - Transceive
-  - Local Monitor
-- Shared favorites management
-- Dashboard favorites sorting
-- Live direct AllStarLink / EchoLink node detection
-- Per-node disconnect of a selected direct AllStarLink / EchoLink node
-- Disconnect of the DVSwitch link only
-- Full Disconnect All cleanup via Asterisk restart
-- Config-aware mode availability
-- Helper warnings for unconfigured modes
-- Connect disabled for modes that are not truly configured
-- Backend validation that rejects placeholder/default config values
-- Audio alerts for connect / disconnect events
-- Audio alerts toggle on / off
+Because of that, **BM is currently the more trusted DMR path** in day-to-day use.
 
-## Important paths
+This does **not** mean TGIF is removed, but it does mean the README should be honest: TGIF may still need more system-specific troubleshooting on some nodes.
 
-Original working app remains untouched:
+---
 
-- `/var/www/html/alltune`
+## Project paths
 
 Active AllTune2 project:
 
 - `/var/www/html/alltune2`
 
-Current AllTune2 BM receive helper:
-
-- `/var/www/html/alltune2/alltune2-bm-receive.sh`
-
-Current AllTune2 local STFU runtime copy:
-
-- `/var/www/html/alltune2/stfu/STFU`
-
-Current AllTune2 config file:
+Main config file:
 
 - `/var/www/html/alltune2/config.ini`
 
-Original STFU web panel, not required by AllTune2 runtime:
+BM receive helper:
 
-- `/var/www/html/stfu`
+- `/var/www/html/alltune2/alltune2-bm-receive.sh`
 
-## Features
+Local BM runtime copy used by AllTune2:
 
-- Safer web dashboard for connect / disconnect control
-- Shared favorites management
-- **BrandMeister one-step connect workflow**
-- BrandMeister private call support with a trailing `#`
-- **TGIF one-step connect workflow**
-- YSF one-step connect workflow
-- AllStarLink one-step connect workflow
-- EchoLink one-step connect workflow
-- DVSwitch auto-load option
-- Link Mode selection:
-  - Transceive
-  - Local Monitor
-- Direct AllStarLink / EchoLink node list with per-node Disconnect buttons
-- Separate Disconnect DVSwitch action
-- Separate Disconnect All action
-- Config-aware mode availability
-- Unconfigured modes show helper warnings
-- Connect is disabled for modes that are not truly configured
-- Backend validation prevents placeholder/default config values from pretending to connect
-- Separate app config file
-- Installer script for setup and permissions
-- Automatic sudoers rule creation during install
-- Improved dashboard action responsiveness
-- Compact Activity box behavior preserved
+- `/var/www/html/alltune2/stfu/STFU`
 
-## Project structure
+Favorites file:
 
-- `public/index.php` - main dashboard
-- `public/favorites.php` - favorites manager
-- `public/alltune2_ribbon_bar.php` - ribbon/status UI include
-- `api/connect.php` - connect / disconnect actions
-- `api/status.php` - live status endpoint
-- `app/` - application classes and support code
-- `public/assets/js/app.js` - frontend logic
-- `public/assets/css/style.css` - frontend styling
-- `data/favorites.txt` - shared favorites file
-- `config.ini` - local app configuration file
-- `config.ini.example` - starter config example
-- `alltune2-bm-receive.sh` - BM receive helper owned by AllTune2
-- `stfu/STFU` - local AllTune2 STFU runtime copy used by the BM helper
-- `setup_alltune2.sh` - install / setup script
+- `/var/www/html/alltune2/data/favorites.txt`
 
-## Requirements
+---
 
-- Debian / Linux system
-- Apache
-- PHP
-- Asterisk installed at:
-  - `/usr/sbin/asterisk`
-- DVSwitch / MMDVM_Bridge installed with:
-  - `/opt/MMDVM_Bridge/dvswitch.sh`
-  - `/opt/MMDVM_Bridge/DVSwitch.ini`
+## Main dashboard behavior
+
+The dashboard is the heart of AllTune2.
+
+It combines:
+
+- mode selection
+- target entry
+- live status
+- action buttons
+- favorites loading
+- direct node status
+- activity details
+- system strip / ribbon information
+
+The main actions are:
+
+- **Connect**
+- **Disconnect**
+- **Disconnect DVSwitch**
+- **Disconnect All**
+- **Send DTMF**
+
+### Connect behavior by mode
+
+#### BrandMeister
+
+BrandMeister is now a **one-step connect flow**.
+
+1. Enter or load a talkgroup.
+2. Press **Connect** once.
+3. Wait for the status line to confirm the session.
+
+**BrandMeister can now be retuned without disconnecting first.**
+
+That means if BM is already active, you can enter another BM talkgroup and press **Connect** again to change TGs quickly.
+
+BrandMeister private calls are also supported with a trailing `#`.
+
+Examples:
+
+- `310997#` = BM parrot private call
+- `1234567#` = private call to DMR ID `1234567`
+
+#### TGIF
+
+TGIF uses a **one-step connect flow** from the dashboard.
+
+1. Enter or load a talkgroup.
+2. Press **Connect** once.
+3. Wait for the status line to confirm the connection.
+
+**Important:** on some systems, TGIF may still show timeout or unstable behavior. If your node shows that behavior, BM is currently the safer DMR choice.
+
+#### YSF
+
+YSF remains a one-step connect:
+
+1. Enter or load the YSF target.
+2. Press **Connect** once.
+
+#### AllStarLink and EchoLink
+
+AllStarLink and EchoLink also use the same simple one-step flow.
+
+If **Disconnect before Connect** is disabled, direct nodes can be added and tracked together.
+
+If **Disconnect before Connect** is enabled, the next managed connect clears the earlier managed session first.
+
+---
+
+## System Strip / ribbon bar
+
+AllTune2 includes a live **System Strip** / ribbon-style status area.
+
+Its job is to give a quick at-a-glance view of what the node is doing without making the screen feel cluttered.
+
+It is part of the current layout and should be treated as a normal part of the dashboard, not an experiment.
+
+---
+
+## DTMF support
+
+The dashboard includes a **DTMF send control** so you can send valid DTMF commands directly from the web interface.
+
+This is intended for convenience and quick node control without dropping back to the CLI.
+
+---
+
+## Favorites
+
+Favorites are shared through:
+
+- `data/favorites.txt`
+
+Supported favorite modes include:
+
+- BM
+- TGIF
+- YSF
+- AllStarLink
+- EchoLink
+
+The dashboard favorites table supports sorting and quick load-back into the control form.
+
+The Favorites page supports:
+
+- add
+- edit
+- delete
+
+---
+
+## Direct node tracking
+
+AllTune2 tracks direct AllStarLink / EchoLink nodes connected by AllTune2 and shows them in the live status area.
+
+Supported behavior includes:
+
+- direct node count
+- live node list
+- per-node Disconnect buttons
+- support for Transceive and Local Monitor labels
+
+Normal **Disconnect** removes the most recently tracked direct node first when direct nodes are present.
+
+**Disconnect DVSwitch** removes only the configured DVSwitch link.
+
+**Disconnect All** performs a full cleanup by restarting Asterisk so stubborn sessions are cleared reliably.
+
+---
+
+## Audio alerts
+
+AllTune2 supports browser-side audio alerts for node activity.
+
+Current behavior includes:
+
+- node connect announcement
+- node disconnect announcement
+- duplicate suppression to reduce repeats
+- user toggle on / off
+
+---
 
 ## Config file
 
@@ -155,7 +234,7 @@ BM_SelfcarePassword="CHANGE_ME"
 TGIF_HotspotSecurityKey="CHANGE_ME"
 ```
 
-Typical local setup example:
+Example:
 
 ```ini
 MYNODE="67040"
@@ -164,343 +243,154 @@ BM_SelfcarePassword="YOUR_REAL_PASSWORD"
 TGIF_HotspotSecurityKey="YOUR_REAL_KEY"
 ```
 
-Placeholder or default values such as these are treated as **not configured**:
+Placeholder values are treated as **not configured**. That is intentional.
 
-- `CHANGE_ME`
-- `YOUR NODE`
-- `YOUR DVSWITCH NODE`
-- `YOUR_REAL_PASSWORD`
-- `YOUR_REAL_KEY`
+If a mode is not truly configured:
 
-This allows safer behavior for systems that may have:
+- helper text explains what is missing
+- Connect is disabled for that mode
+- backend validation rejects fake/default values
 
-- AllStarLink only
-- EchoLink only
-- BrandMeister only
-- TGIF only
-- BrandMeister + TGIF
-- full DVSwitch support
+That protects the dashboard from looking like it worked when it really did not.
+
+---
+
+## Requirements
+
+Expected environment:
+
+- Debian / Linux
+- Apache
+- PHP
+- Asterisk at `/usr/sbin/asterisk`
+- DVSwitch / MMDVM_Bridge installed with:
+  - `/opt/MMDVM_Bridge/dvswitch.sh`
+  - `/opt/MMDVM_Bridge/DVSwitch.ini`
+
+---
 
 ## Fresh install
 
-Run this from the terminal:
-
 ```bash
-sudo git clone https://github.com/TerryClaiborne/alltune2.git /var/www/html/alltune2 && cd /var/www/html/alltune2 && sudo bash setup_alltune2.sh
-```
-
-## Existing install update
-
-If you already have AllTune2 installed, use:
-
-```bash
+git clone https://github.com/TerryClaiborne/alltune2.git /var/www/html/alltune2
 cd /var/www/html/alltune2
-cp config.ini config.ini.bak
-cp data/favorites.txt data/favorites.txt.bak
-git pull
 sudo bash setup_alltune2.sh
 ```
 
-## Installer note for 1.20.0
+After install:
 
-This 1.20.0 release changes the packaging requirements.
+1. Edit `/var/www/html/alltune2/config.ini`
+2. Enter your real node values and credentials
+3. Open `/alltune2/public/` in a browser
 
-The installer for this release should fully handle:
+---
 
-- required directory creation
-- helper file permissions
-- local STFU runtime path under AllTune2
-- config file creation if missing
-- favorites file creation if missing
-- ownership and permissions
-- PHP syntax checks
-- sudoers creation and validation
-- required DVSwitch file checks
-- required Asterisk checks
+## Updating an existing install
 
-For 1.20.0, the installer should perform this automatically so users do **not** need to manually create sudoers rules or manually set executable bits after install.
+If you already have AllTune2 installed:
 
-## Required sudoers handling
+```bash
+cd /var/www/html/alltune2
+git pull origin main
+sudo bash setup_alltune2.sh
+```
 
-AllTune2 needs Apache / `www-data` to be able to run Asterisk commands without a password.
+That second command matters.
 
-AllTune2 also needs Apache / `www-data` to be able to run the AllTune2 BM receive helper without a password.
+A plain `git pull` updates the repo files, but it does **not** automatically apply all required live-node setup outside the repo. The setup script is what should refresh things like:
 
-For this release, installer-created sudoers handling should cover:
+- helper permissions
+- required directories
+- installer-managed sudoers rules
+- config bootstrap if needed
+- file ownership and executable bits
+
+If you are restoring an older image, moving to another node, or updating a node that already existed before newer helper features were added, **run `setup_alltune2.sh` again**.
+
+---
+
+## Sudoers / permissions
+
+AllTune2 expects installer-managed sudoers handling for at least:
 
 - `/usr/sbin/asterisk`
 - `/var/www/html/alltune2/alltune2-bm-receive.sh`
 
-The live tested design expects installer-managed sudoers setup, not manual post-install steps.
+If BM helper actions fail after a pull or restore, the first thing to check is whether the setup script was rerun and whether the helper sudoers entry exists.
 
-## Browser access
+---
 
-Open:
+## BM helper note
+
+BrandMeister receive is now handled by an AllTune2-owned helper and local runtime copy instead of depending on the older separate STFU web workflow.
+
+That is a major change in how BM is packaged and managed.
+
+The helper should only be active when BM receive mode is actually being used. Recent work in this repo also improved BM helper process tracking so BM can stay available without the helper misreporting the runtime state.
+
+---
+
+## Current supported files and structure
+
+Key project files:
+
+- `public/index.php` - main dashboard
+- `public/favorites.php` - favorites manager
+- `public/alltune2_ribbon_bar.php` - system strip / ribbon include
+- `api/connect.php` - connect and disconnect actions
+- `api/status.php` - live status endpoint
+- `public/assets/js/app.js` - frontend logic
+- `public/assets/css/style.css` - frontend styling
+- `alltune2-bm-receive.sh` - BM receive helper
+- `setup_alltune2.sh` - install / update script
+- `stfu/STFU` - local BM runtime copy used by AllTune2
+
+---
+
+## Current practical guidance
+
+At the time of this writing:
+
+- **BM is the best-tested DMR path in AllTune2**
+- **BM quick TG changes are supported**
+- **TGIF remains available, but may still show timeout issues on some systems**
+- **AllStarLink, EchoLink, and YSF remain part of the supported workflow**
+
+That is the honest current state.
+
+---
+
+## Browser path
+
+Open AllTune2 at:
 
 ```text
 /alltune2/public/
 ```
 
-Direct local example:
+Example:
 
 ```text
 http://YOUR-IP/alltune2/public/
 ```
 
-## Dashboard behavior
+---
 
-The dashboard and status are the same main screen.
+## Git safety
 
-The main control actions are:
-
-- **Connect** - starts the selected network / node workflow
-- **Disconnect** - removes the current managed connection, or removes the last tracked direct AllStarLink / EchoLink node first when one is present
-- **Disconnect DVSwitch** - removes only the configured DVSwitch link
-- **Disconnect All** - full cleanup by restarting Asterisk
-
-## Network behavior
-
-### BrandMeister
-
-BrandMeister now uses a **one-step connect flow**.
-
-1. Enter or load a talkgroup.
-2. Press **Connect** once.
-3. Wait for the status to confirm the BM receive session.
-
-BrandMeister private calls are also supported.
-
-To place a BM private call, enter the destination DMR ID with `#` at the end.
-
-Examples:
-
-- `310997#` = BrandMeister Parrot private call
-- `1234567#` = private call to DMR ID `1234567`
-
-Notes:
-
-- BM private call support is BrandMeister-only
-- TGIF, YSF, AllStarLink, and EchoLink do not use the trailing `#`
-- Only digits with an optional single trailing `#` are valid
-- BM receive handling uses the AllTune2 helper:
-  - `/var/www/html/alltune2/alltune2-bm-receive.sh`
-- BM receive handling uses the AllTune2 local STFU runtime copy:
-  - `/var/www/html/alltune2/stfu/STFU`
-- The separate STFU web panel at `/var/www/html/stfu` is **not required** for AllTune2 operation
-
-### TGIF
-
-TGIF now uses a **one-step connect flow**.
-
-1. Enter or load a talkgroup.
-2. Press **Connect** once.
-3. Wait for the status to confirm the TGIF connection.
-
-### YSF
-
-YSF uses a one-step connect flow:
-
-1. Enter or load the YSF target.
-2. Press **Connect** once.
-
-### AllStarLink / EchoLink
-
-AllStarLink / EchoLink uses a one-step connect flow:
-
-1. Enter or load the AllStarLink / EchoLink node.
-2. Press **Connect** once.
-
-If **Disconnect before Connect** is off, additional direct AllStarLink / EchoLink nodes can be added and tracked.
-
-If **Disconnect before Connect** is on, the next managed connect clears earlier managed links first.
-
-## Disconnect Before Connect
-
-This setting is important and should be understood before use.
-
-When **Disconnect before Connect** is enabled, AllTune2 clears the earlier managed session before starting the next managed connect.
-
-This matters most for DVSwitch-based modes such as:
-
-- BrandMeister
-- TGIF
-- YSF
-
-When it is **off**, BrandMeister can remain active while you add direct AllStarLink / EchoLink connections.
-
-When it is **on**, the next managed DVSwitch connect clears the earlier managed DVSwitch session first.
-
-This behavior should be documented clearly in both the UI helper text and the installer / README documentation.
-
-## Config-aware mode availability
-
-AllTune2 reads `config.ini` and checks whether a mode is truly configured before allowing Connect.
-
-Configuration rules:
-
-- **AllStarLink** requires a real `MYNODE`
-- **EchoLink** requires a real `MYNODE` and a working EchoLink configuration on the ASL3 system
-- **YSF** requires real `MYNODE` and `DVSWITCH_NODE`
-- **BrandMeister** requires real `MYNODE`, `DVSWITCH_NODE`, and `BM_SelfcarePassword`
-- **TGIF** requires real `MYNODE`, `DVSWITCH_NODE`, and `TGIF_HotspotSecurityKey`
-
-If a mode is not configured:
-
-- the helper text explains what is missing
-- the Connect button is disabled for that mode
-- backend validation also rejects fake/default config values
-
-## Mixed-link behavior
-
-AllTune2 supports mixed operation where DVSwitch can stay up while direct AllStarLink nodes are also connected.
-
-Confirmed working behavior includes:
-
-- BrandMeister + AllStarLink + EchoLink
-- TGIF + AllStarLink + EchoLink
-- YSF + AllStarLink + EchoLink
-- DVSwitch local node in Local Monitor + AllStarLink + EchoLink in Transceive
-
-This is one of the main design goals of AllTune2.
-
-## AllStarLink / EchoLink live status
-
-The AllStarLink / EchoLink Live Status box shows tracked direct AllStarLink / EchoLink nodes connected by AllTune2.
-
-It includes:
-
-- direct connected node count
-- direct node numbers
-- mode labels such as:
-  - Transceive
-  - Local Monitor
-
-Important:
-
-- only direct tracked nodes connected by AllTune2 are intended to be acted on
-- downstream nodes beyond the direct link are not the target of per-node disconnect control
-
-## Disconnect behavior
-
-### Disconnect
-
-Normal **Disconnect** uses managed disconnect behavior.
-
-When direct AllStarLink / EchoLink nodes are present, it removes the most recently tracked direct AllStarLink / EchoLink node first.
-
-If no tracked direct AllStarLink / EchoLink node is present, it disconnects the current managed mode as appropriate.
-
-### Disconnect DVSwitch
-
-**Disconnect DVSwitch** removes only the configured DVSwitch link.
-
-If BM receive mode is active, this action also stops the BM receive session cleanly.
-
-### Disconnect Selected AllStarLink / EchoLink Node
-
-The AllStarLink / EchoLink Live Status area includes a Disconnect button beside each tracked direct AllStarLink / EchoLink node.
-
-This allows disconnect of one specific direct AllStarLink / EchoLink node without removing the others.
-
-### Disconnect All
-
-**Disconnect All** is intentionally different from normal Disconnect.
-
-It performs full cleanup by restarting Asterisk so that stubborn sessions are cleared reliably.
-
-This is the intended design and should remain that way.
-
-## Favorites
-
-Favorites are stored in one shared file:
-
-- `data/favorites.txt`
-
-Favorites support:
-
-- BM
-- TGIF
-- YSF
-- AllStarLink
-- EchoLink
-
-The dashboard can load saved favorites into the control form.
-
-The dashboard saved favorites table supports click-to-sort for:
-
-- TG / Node / YSF
-- Station Name
-- Description
-- Mode
-
-The Favorites page can:
-
-- add favorites
-- edit favorites
-- remove selected favorites
-
-## Audio alerts
-
-AllTune2 supports audio alerts for direct node connect / disconnect activity.
-
-Current supported behavior includes:
-
-- audio alerts for node connect
-- audio alerts for node disconnect
-- user toggle for audio alerts on / off
-- browser-side speech handling
-- protection against repeated duplicate announcements
-
-## Live status and Activity box
-
-The Live Status area reflects:
-
-- BrandMeister
-- TGIF
-- YSF
-- AllStarLink / EchoLink
-
-The Activity box is intended to stay compact and should not be forced open with filler rows containing meaningless placeholder values.
-
-Accepted 1.20.0 behavior:
-
-- compact Activity layout
-- real status values shown
-- empty filler rows not forced open unnecessarily
-
-## Notes
-
-- AllTune2 uses its own `config.ini` in the app root.
-- The original working AllTune app can remain untouched while AllTune2 is tested separately.
-- Some users may use Allmon3 instead of Allscan, so AllTune2 should not depend on Allscan existing.
-- UI helper text explains the current selected network workflow.
-- Button state is part of the workflow and users should wait for the status line and button state to update before the next action.
-- The STFU web folder at `/var/www/html/stfu` is not required for AllTune2 runtime operation.
-
-## Git / safety
-
-The project `.gitignore` should prevent uploading local runtime files such as:
+The project should not upload local runtime files such as:
 
 - `config.ini`
-- `data/favorites.txt`
-- `*.bak`
-- `*.old`
-- `*.orig`
-- `*.save`
+- local favorites data
+- backup files like `*.bak`
+- temporary local runtime state
 
-Review whether the local STFU runtime copy should be committed directly or created by the installer for the public package. That packaging decision should remain deliberate.
+Review changes before every push, especially on live nodes.
 
-## Next steps after install
+---
 
-1. Edit `/var/www/html/alltune2/config.ini` and set real values.
-2. Open `/alltune2/public/` in the browser.
-3. Test BM, TGIF, YSF, AllStarLink, EchoLink, DVSwitch auto-load, and disconnect actions.
-4. Confirm favorites save correctly.
-5. Confirm direct AllStarLink nodes show correctly in Live Status.
-6. Confirm Disconnect DVSwitch and Disconnect All behave as expected.
-7. Confirm audio alerts behave as expected.
-8. Confirm unconfigured modes show warnings and disable Connect as expected.
+## Final note
 
-## License / sharing
+AllTune2 is meant to be practical, readable, and usable on a real live radio node.
 
-This project is being prepared for GitHub-ready installation and sharing.
+The goal is not fancy wording. The goal is a dashboard that makes sense, works quickly, and tells the truth about what is and is not stable.
