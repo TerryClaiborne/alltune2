@@ -253,6 +253,7 @@ select {
     display: grid;
     gap: 8px;
     min-width: 0;
+    justify-items: start;
 }
 
 .control-settings-right {
