@@ -399,6 +399,125 @@ function ami_rpt_status($fp, string $node, string $command): array
     return is_array($response) ? $response : [];
 }
 
+
+function allstar_astdb_candidate_paths(): array
+{
+    return [
+        '/var/lib/asterisk/astdb.txt',
+        '/var/www/html/allscan/astdb.txt',
+        '/var/www/html/supermon/astdb.txt',
+    ];
+}
+
+function clean_allstar_display_part(string $value): string
+{
+    $value = trim(preg_replace('/\s+/', ' ', $value) ?? '');
+
+    if ($value === '-' || $value === '--') {
+        return '';
+    }
+
+    return $value;
+}
+
+function allstar_astdb_lookup(string $node): ?array
+{
+    static $cache = [];
+    static $loaded = false;
+
+    $node = trim($node);
+    if ($node === '') {
+        return null;
+    }
+
+    if (!$loaded) {
+        $loaded = true;
+
+        foreach (allstar_astdb_candidate_paths() as $path) {
+            if (!is_readable($path)) {
+                continue;
+            }
+
+            $handle = @fopen($path, 'r');
+            if ($handle === false) {
+                continue;
+            }
+
+            while (($line = fgets($handle)) !== false) {
+                $line = trim($line);
+                if ($line === '' || str_starts_with($line, '#')) {
+                    continue;
+                }
+
+                $parts = explode('|', $line);
+                if (count($parts) < 2) {
+                    continue;
+                }
+
+                $entryNode = trim((string) ($parts[0] ?? ''));
+                if ($entryNode === '') {
+                    continue;
+                }
+
+                $call = clean_allstar_display_part((string) ($parts[1] ?? ''));
+                $description = clean_allstar_display_part((string) ($parts[2] ?? ''));
+                $location = clean_allstar_display_part((string) ($parts[3] ?? ''));
+
+                $displayParts = [];
+                if ($call !== '') {
+                    $displayParts[] = $call;
+                }
+                if ($description !== '') {
+                    $displayParts[] = $description;
+                }
+
+                $full = implode(' — ', $displayParts);
+                if ($location !== '') {
+                    $full = $full !== '' ? $full . ', ' . $location : $location;
+                }
+
+                $cache[$entryNode] = [
+                    'call' => $call,
+                    'description' => $description,
+                    'location' => $location,
+                    'short' => $call !== '' ? $call : ($description !== '' ? $description : $location),
+                    'full' => $full,
+                ];
+            }
+
+            fclose($handle);
+            break;
+        }
+    }
+
+    return $cache[$node] ?? null;
+}
+
+function enrich_allstar_connected_nodes(array $links): array
+{
+    foreach ($links as &$link) {
+        $node = trim((string) ($link['node'] ?? $link['target'] ?? ''));
+        if ($node === '') {
+            continue;
+        }
+
+        $astdb = allstar_astdb_lookup($node);
+        if ($astdb === null) {
+            continue;
+        }
+
+        $link['display_name'] = $astdb['call'];
+        $link['display_description'] = $astdb['description'];
+        $link['display_location'] = $astdb['location'];
+        $link['display_short'] = $astdb['short'];
+        $link['display_full'] = $astdb['full'];
+    }
+    unset($link);
+
+    return $links;
+}
+
+
 function parse_live_allstar_links_from_ami(array $xstatLines, array $sawStatLines): array
 {
     $connections = [];
@@ -906,6 +1025,8 @@ if ($liveAllstar['available']) {
         $autoloadDvSwitchMode
     );
 }
+
+$allstarConnectedNodes = enrich_allstar_connected_nodes($allstarConnectedNodes);
 
 if ($allstarConnectedNodes !== []) {
     $allstarState = 'Connected: ' . count($allstarConnectedNodes);

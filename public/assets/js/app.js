@@ -817,6 +817,180 @@
         return '';
     }
 
+    function favoriteDisplayParts(item) {
+        const name = String(item?.name ?? '').trim();
+        const description = String(item?.description ?? item?.desc ?? '').trim();
+
+        if (name !== '' && description !== '' && description !== '-' && description !== name) {
+            return {
+                short: name,
+                full: `${name} — ${description}`,
+            };
+        }
+
+        if (name !== '') {
+            return {
+                short: name,
+                full: name,
+            };
+        }
+
+        if (description !== '' && description !== '-') {
+            return {
+                short: description,
+                full: description,
+            };
+        }
+
+        return {
+            short: '',
+            full: '',
+        };
+    }
+
+    function favoriteTargetCandidates(mode, target) {
+        const normalizedMode = normalizeMode(mode);
+        const raw = String(target ?? '').trim();
+        const candidates = [];
+
+        if (raw !== '') {
+            candidates.push(raw);
+        }
+
+        if (normalizedMode === 'ECHO' && /^3\d{6}$/.test(raw)) {
+            const padded = raw.slice(1);
+            const unpadded = String(Number(padded));
+            candidates.push(padded);
+            if (unpadded !== padded) {
+                candidates.push(unpadded);
+            }
+        }
+
+        return [...new Set(candidates.filter(Boolean))];
+    }
+
+    function favoriteForModeTarget(mode, target, favorites = state.favoritesRaw) {
+        const normalizedMode = normalizeMode(mode);
+        const candidates = favoriteTargetCandidates(normalizedMode, target);
+
+        if (normalizedMode === '' || candidates.length === 0 || !Array.isArray(favorites)) {
+            return null;
+        }
+
+        return favorites.find((favorite) => (
+            candidates.includes(String(favorite?.target ?? favorite?.tg ?? '').trim())
+            && normalizeMode(favorite?.mode ?? 'BM') === normalizedMode
+        )) || null;
+    }
+
+    function payloadDisplayParts(link) {
+        const short = String(
+            link?.display_short ??
+            link?.display_name ??
+            link?.callsign ??
+            link?.name ??
+            ''
+        ).trim();
+
+        const description = String(
+            link?.display_description ??
+            link?.description ??
+            link?.desc ??
+            ''
+        ).trim();
+
+        const location = String(link?.display_location ?? '').trim();
+        const fullFromPayload = String(link?.display_full ?? '').trim();
+
+        if (fullFromPayload !== '') {
+            return {
+                short: short || fullFromPayload,
+                full: fullFromPayload,
+            };
+        }
+
+        const pieces = [];
+        if (short !== '') {
+            pieces.push(short);
+        }
+        if (description !== '' && description !== '-' && description !== short) {
+            pieces.push(description);
+        }
+
+        let full = pieces.join(' — ');
+        if (location !== '') {
+            full = full !== '' ? `${full}, ${location}` : location;
+        }
+
+        return {
+            short: short || description || location,
+            full,
+        };
+    }
+
+    function parseStatusTarget(value) {
+        let text = String(value ?? '').trim();
+
+        if (text === '') {
+            return null;
+        }
+
+        text = text.replace(/^Connected:\s*/i, '').trim();
+
+        const tgMatch = text.match(/^TG\s*([0-9#]+)$/i);
+        if (tgMatch) {
+            return {
+                target: tgMatch[1],
+                display: `TG ${tgMatch[1]}`,
+            };
+        }
+
+        return {
+            target: text,
+            display: text,
+        };
+    }
+
+    function statusCardValueWithFavorite(networkPayload, mode, fallback, favorites = state.favoritesRaw) {
+        const raw = String(networkPayload?.label || networkPayload?.state || networkPayload?.status || fallback || '').trim();
+        const baseText = raw !== '' ? raw : fallback;
+
+        if (!payloadModeLooksActive(networkPayload)) {
+            return {
+                text: baseText,
+                title: baseText,
+            };
+        }
+
+        const parsed = parseStatusTarget(baseText);
+        if (!parsed || parsed.target === '') {
+            return {
+                text: baseText,
+                title: baseText,
+            };
+        }
+
+        const favorite = favoriteForModeTarget(mode, parsed.target, favorites);
+        const parts = favoriteDisplayParts(favorite);
+
+        if (!favorite || parts.short === '') {
+            return {
+                text: baseText,
+                title: baseText,
+            };
+        }
+
+        return {
+            text: `${parsed.display} • ${parts.short}`,
+            title: `${baseText} — ${parts.full}`,
+        };
+    }
+
+    function setStatusCardFromNetwork(element, networkPayload, mode, fallback, favorites = state.favoritesRaw) {
+        const value = statusCardValueWithFavorite(networkPayload, mode, fallback, favorites);
+        setStatusCardText(element, value.text, fallback, value.title);
+    }
+
     function compareFavoriteValues(left, right, type, direction) {
         const leftText = String(left ?? '').trim();
         const rightText = String(right ?? '').trim();
@@ -1643,13 +1817,15 @@
         els.helperText.textContent = configuredModeHelperText(mode, disconnectFirst);
     }
 
-    function setStatusCardText(element, value, fallback) {
+    function setStatusCardText(element, value, fallback, title = '') {
         if (!element) {
             return;
         }
 
         const text = String(value || fallback || '').trim();
-        element.textContent = text !== '' ? text : fallback;
+        const finalText = text !== '' ? text : fallback;
+        element.textContent = finalText;
+        element.title = String(title || finalText || '').trim();
     }
 
     function applyKeyedStateToCard(element, keyed) {
@@ -1896,25 +2072,32 @@
             return raw !== '' ? raw : 'Connected';
         }
 
-        function networkInfoForLink(rawNode, isDvSwitchNode) {
+        function networkInfoForLink(link, rawNode, isDvSwitchNode) {
             if (isDvSwitchNode) {
                 return {
                     label: 'DVSwitch',
                     sublabel: 'Private Link',
                     className: 'dvswitch',
                     description: 'Private DVSwitch audio link',
+                    fullDescription: 'Private DVSwitch audio link',
                 };
             }
 
             const numericNode = Number(rawNode);
             const looksEchoLink = Number.isFinite(numericNode) && numericNode >= 3000000;
+            const favoriteMode = looksEchoLink ? 'ECHO' : 'ASL';
+            const favorite = favoriteForModeTarget(favoriteMode, rawNode);
+            const favoriteParts = favoriteDisplayParts(favorite);
+            const payloadParts = payloadDisplayParts(link);
+            const description = favoriteParts.full || payloadParts.full || (looksEchoLink ? 'EchoLink / direct node' : 'AllStarLink direct node');
 
             if (looksEchoLink) {
                 return {
                     label: 'E/L',
                     sublabel: 'EchoLink',
                     className: 'echo',
-                    description: 'EchoLink / direct node',
+                    description,
+                    fullDescription: description,
                 };
             }
 
@@ -1922,7 +2105,8 @@
                 label: 'ASL',
                 sublabel: 'AllStarLink',
                 className: 'asl',
-                description: 'AllStarLink direct node',
+                description,
+                fullDescription: description,
             };
         }
 
@@ -1956,7 +2140,7 @@
             const bridgeAudioForNode = bridgeAudioActive && !isDvSwitchNode && !isLocalMonitor;
             const bridgeAudioForDvSwitch = isDvSwitchNode && externalBridgeAudioActive;
             const rowActive = rowKeyed || bridgeAudioForNode || bridgeAudioForDvSwitch;
-            const network = networkInfoForLink(rawNode, isDvSwitchNode);
+            const network = networkInfoForLink(link, rawNode, isDvSwitchNode);
 
             const liveLabel = isLive ? 'Live AMI' : 'Tracked';
             const keyedText = rowKeyed
@@ -2002,7 +2186,7 @@
 
                     <div class="connected-node-main">
                         <div class="connected-node-title">Node ${node}</div>
-                        <div class="connected-node-description">${escapeHtml(network.description)}</div>
+                        <div class="connected-node-description" title="${escapeHtml(network.fullDescription || network.description)}">${escapeHtml(network.description)}</div>
                     </div>
 
                     <div class="connected-node-state">
@@ -2180,46 +2364,24 @@
         const nxdn = payload.networks?.nxdn || payload.nxdn || null;
         const allstar = payload.allstar || payload.networks?.allstar || null;
 
-        setStatusCardText(
-            els.statusBm,
-            bm?.label || bm?.state || bm?.status,
-            'Idle'
-        );
+        const liveFavorites = Array.isArray(payload.favorites) ? payload.favorites : state.favoritesRaw;
+
+        setStatusCardFromNetwork(els.statusBm, bm, 'BM', 'Idle', liveFavorites);
         applyKeyedStateToCard(els.statusBm, payloadModeLooksActive(bm) && dvswitchLinkLooksKeyed(allstar));
 
-        setStatusCardText(
-            els.statusTgif,
-            tgif?.label || tgif?.state || tgif?.status,
-            'Idle'
-        );
+        setStatusCardFromNetwork(els.statusTgif, tgif, 'TGIF', 'Idle', liveFavorites);
         applyKeyedStateToCard(els.statusTgif, payloadModeLooksActive(tgif) && dvswitchLinkLooksKeyed(allstar));
 
-        setStatusCardText(
-            els.statusYsf,
-            ysf?.label || ysf?.state || ysf?.status,
-            'Idle'
-        );
+        setStatusCardFromNetwork(els.statusYsf, ysf, 'YSF', 'Idle', liveFavorites);
         applyKeyedStateToCard(els.statusYsf, payloadModeLooksActive(ysf) && dvswitchLinkLooksKeyed(allstar));
 
-        setStatusCardText(
-            els.statusDstar,
-            dstar?.label || dstar?.state || dstar?.status,
-            'Idle'
-        );
+        setStatusCardFromNetwork(els.statusDstar, dstar, 'DSTAR', 'Idle', liveFavorites);
         applyKeyedStateToCard(els.statusDstar, payloadModeLooksActive(dstar) && dvswitchLinkLooksKeyed(allstar));
 
-        setStatusCardText(
-            els.statusP25,
-            p25?.label || p25?.state || p25?.status,
-            'Idle'
-        );
+        setStatusCardFromNetwork(els.statusP25, p25, 'P25', 'Idle', liveFavorites);
         applyKeyedStateToCard(els.statusP25, payloadModeLooksActive(p25) && dvswitchLinkLooksKeyed(allstar));
 
-        setStatusCardText(
-            els.statusNxdn,
-            nxdn?.label || nxdn?.state || nxdn?.status,
-            'Idle'
-        );
+        setStatusCardFromNetwork(els.statusNxdn, nxdn, 'NXDN', 'Idle', liveFavorites);
         applyKeyedStateToCard(els.statusNxdn, payloadModeLooksActive(nxdn) && dvswitchLinkLooksKeyed(allstar));
 
         applyImmediateAllstarSnapshot(allstar);
@@ -2324,32 +2486,32 @@
         const allstar = payload.allstar || payload.networks?.allstar || null;
 
         if (bm) {
-            setStatusCardText(els.statusBm, bm?.label || bm?.state || bm?.status, 'Idle');
+            setStatusCardFromNetwork(els.statusBm, bm, 'BM', 'Idle');
             applyKeyedStateToCard(els.statusBm, payloadModeLooksActive(bm) && dvswitchLinkLooksKeyed(allstar));
         }
 
         if (tgif) {
-            setStatusCardText(els.statusTgif, tgif?.label || tgif?.state || tgif?.status, 'Idle');
+            setStatusCardFromNetwork(els.statusTgif, tgif, 'TGIF', 'Idle');
             applyKeyedStateToCard(els.statusTgif, payloadModeLooksActive(tgif) && dvswitchLinkLooksKeyed(allstar));
         }
 
         if (ysf) {
-            setStatusCardText(els.statusYsf, ysf?.label || ysf?.state || ysf?.status, 'Idle');
+            setStatusCardFromNetwork(els.statusYsf, ysf, 'YSF', 'Idle');
             applyKeyedStateToCard(els.statusYsf, payloadModeLooksActive(ysf) && dvswitchLinkLooksKeyed(allstar));
         }
 
         if (dstar) {
-            setStatusCardText(els.statusDstar, dstar?.label || dstar?.state || dstar?.status, 'Idle');
+            setStatusCardFromNetwork(els.statusDstar, dstar, 'DSTAR', 'Idle');
             applyKeyedStateToCard(els.statusDstar, payloadModeLooksActive(dstar) && dvswitchLinkLooksKeyed(allstar));
         }
 
         if (p25) {
-            setStatusCardText(els.statusP25, p25?.label || p25?.state || p25?.status, 'Idle');
+            setStatusCardFromNetwork(els.statusP25, p25, 'P25', 'Idle');
             applyKeyedStateToCard(els.statusP25, payloadModeLooksActive(p25) && dvswitchLinkLooksKeyed(allstar));
         }
 
         if (nxdn) {
-            setStatusCardText(els.statusNxdn, nxdn?.label || nxdn?.state || nxdn?.status, 'Idle');
+            setStatusCardFromNetwork(els.statusNxdn, nxdn, 'NXDN', 'Idle');
             applyKeyedStateToCard(els.statusNxdn, payloadModeLooksActive(nxdn) && dvswitchLinkLooksKeyed(allstar));
         }
 

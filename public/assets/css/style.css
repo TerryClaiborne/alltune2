@@ -527,7 +527,10 @@ select.control {
     font-size: 0.78rem;
     font-weight: 700;
     line-height: 1.18;
-    word-break: break-word;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    word-break: normal;
 }
 
 .activity-list {
@@ -1870,7 +1873,7 @@ select.control {
 
 .connected-node-card {
     display: grid;
-    grid-template-columns: 94px minmax(0, 1fr) 126px 150px;
+    grid-template-columns: 94px minmax(0, 1fr) 118px 150px;
     gap: 9px;
     align-items: center;
     padding: 8px 9px;
@@ -2161,7 +2164,7 @@ select.control {
     }
 
     #status-allstar-links .connected-node-card {
-        grid-template-columns: 78px minmax(0, 1fr) 105px 136px;
+        grid-template-columns: 78px minmax(0, 1fr) 98px 136px;
         gap: 6px;
         min-height: 44px;
         padding: 5px 6px;
