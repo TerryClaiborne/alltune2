@@ -183,6 +183,77 @@ function sort_favorites_by_target(array &$favorites): void
     usort($favorites, 'compare_favorites_by_target');
 }
 
+function normalize_favorites_sort_key(string $key): string
+{
+    $key = strtolower(trim($key));
+
+    return in_array($key, ['target', 'mode', 'name', 'description'], true) ? $key : 'target';
+}
+
+function normalize_favorites_sort_direction(string $direction): string
+{
+    return strtolower(trim($direction)) === 'desc' ? 'desc' : 'asc';
+}
+
+function favorite_sort_value(array $favorite, string $key): string
+{
+    if ($key === 'mode') {
+        return mode_display_label((string) ($favorite['mode'] ?? ''));
+    }
+
+    if ($key === 'description') {
+        return (string) ($favorite['description'] ?? '');
+    }
+
+    if ($key === 'name') {
+        return (string) ($favorite['name'] ?? '');
+    }
+
+    return (string) ($favorite['target'] ?? '');
+}
+
+function compare_favorites_by_display_sort(array $left, array $right, string $key, string $direction): int
+{
+    if ($key === 'target') {
+        $result = compare_favorites_by_target($left, $right);
+    } else {
+        $result = strnatcasecmp(
+            favorite_sort_value($left, $key),
+            favorite_sort_value($right, $key)
+        );
+
+        if ($result === 0) {
+            $result = compare_favorites_by_target($left, $right);
+        }
+    }
+
+    return $direction === 'desc' ? -$result : $result;
+}
+
+function sort_favorites_for_display(array &$favorites, string $key, string $direction): void
+{
+    usort(
+        $favorites,
+        static fn(array $left, array $right): int => compare_favorites_by_display_sort($left, $right, $key, $direction)
+    );
+}
+
+function favorites_sort_url(string $key, string $currentKey, string $currentDirection): string
+{
+    $nextDirection = ($key === $currentKey && $currentDirection === 'asc') ? 'desc' : 'asc';
+
+    return '/alltune2/public/favorites.php?sort=' . rawurlencode($key) . '&dir=' . rawurlencode($nextDirection);
+}
+
+function favorites_sort_indicator(string $key, string $currentKey, string $currentDirection): string
+{
+    if ($key !== $currentKey) {
+        return '△';
+    }
+
+    return $currentDirection === 'asc' ? '▲' : '▼';
+}
+
 function load_favorites(string $path): array
 {
     if (!is_file($path)) {
@@ -244,6 +315,8 @@ function save_favorites(string $path, array $favorites): bool
 }
 
 $favorites = load_favorites($favoritesPath);
+$favoriteSortKey = normalize_favorites_sort_key((string) ($_POST['sort'] ?? $_GET['sort'] ?? 'target'));
+$favoriteSortDirection = normalize_favorites_sort_direction((string) ($_POST['dir'] ?? $_GET['dir'] ?? 'asc'));
 $message = '';
 $messageType = 'info';
 
@@ -303,7 +376,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$authCanWrite) {
             }
 
             if (save_favorites($favoritesPath, $favorites)) {
-                header('Location: /alltune2/public/favorites.php?saved=1');
+                header('Location: /alltune2/public/favorites.php?saved=1&sort=' . rawurlencode($favoriteSortKey) . '&dir=' . rawurlencode($favoriteSortDirection));
                 exit;
             }
 
@@ -327,7 +400,29 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$authCanWrite) {
             ));
 
             if (save_favorites($favoritesPath, $favorites)) {
-                header('Location: /alltune2/public/favorites.php?removed=1');
+                header('Location: /alltune2/public/favorites.php?removed=1&sort=' . rawurlencode($favoriteSortKey) . '&dir=' . rawurlencode($favoriteSortDirection));
+                exit;
+            }
+
+            $message = 'Unable to update favorites.txt.';
+            $messageType = 'error';
+        }
+    }
+
+    if ($action === 'remove_one') {
+        $removeId = trim((string) ($_POST['remove_id'] ?? ''));
+
+        if ($removeId === '') {
+            $message = 'No favorite selected.';
+            $messageType = 'error';
+        } else {
+            $favorites = array_values(array_filter(
+                $favorites,
+                static fn(array $favorite): bool => (string) $favorite['id'] !== $removeId
+            ));
+
+            if (save_favorites($favoritesPath, $favorites)) {
+                header('Location: /alltune2/public/favorites.php?removed=1&sort=' . rawurlencode($favoriteSortKey) . '&dir=' . rawurlencode($favoriteSortDirection));
                 exit;
             }
 
@@ -338,7 +433,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$authCanWrite) {
 }
 
 $favorites = load_favorites($favoritesPath);
-sort_favorites_by_target($favorites);
+sort_favorites_for_display($favorites, $favoriteSortKey, $favoriteSortDirection);
 
 if (isset($_GET['saved'])) {
     $message = 'Favorite saved.';
@@ -775,6 +870,117 @@ $navItems = [
                 max-height: 360px;
             }
         }
+
+        /* favorites-page-row-action-cleanup */
+        .favorites-manage-table {
+            min-width: 900px;
+        }
+
+        .favorites-manage-table-clickable th:nth-child(1),
+        .favorites-manage-table-clickable td:nth-child(1) {
+            width: 14%;
+            text-align: left;
+        }
+
+        .favorites-manage-table-clickable th:nth-child(2),
+        .favorites-manage-table-clickable td:nth-child(2) {
+            width: 10%;
+            text-align: center;
+        }
+
+        .favorites-manage-table-clickable th:nth-child(3),
+        .favorites-manage-table-clickable td:nth-child(3) {
+            width: 25%;
+        }
+
+        .favorites-manage-table-clickable th:nth-child(4),
+        .favorites-manage-table-clickable td:nth-child(4) {
+            width: 31%;
+        }
+
+        .favorites-manage-table-clickable th:nth-child(5),
+        .favorites-manage-table-clickable td:nth-child(5) {
+            width: 8%;
+            text-align: center;
+        }
+
+        .favorites-manage-table-clickable th:nth-child(6),
+        .favorites-manage-table-clickable td:nth-child(6) {
+            width: 12%;
+            text-align: right;
+        }
+
+        .favorites-sort-link {
+            display: inline-flex;
+            align-items: center;
+            justify-content: flex-start;
+            gap: 5px;
+            color: inherit;
+            text-decoration: none;
+            white-space: nowrap;
+        }
+
+        .favorites-sort-link span {
+            color: #ffffff;
+            font-size: 0.68rem;
+            opacity: 0.82;
+        }
+
+        .favorites-sort-link:hover,
+        .favorites-sort-link:focus-visible {
+            color: #ffffff;
+            text-shadow: 0 0 8px rgba(255, 255, 255, 0.34);
+        }
+
+        .favorite-manage-row[data-edit-url] {
+            cursor: pointer;
+        }
+
+        .favorite-manage-row[data-edit-url]:focus-within,
+        .favorite-manage-row[data-edit-url]:hover {
+            outline: 1px solid rgba(216, 108, 242, 0.25);
+            outline-offset: -1px;
+        }
+
+        .favorite-edit-cell {
+            text-align: center;
+        }
+
+        .favorite-remove-cell {
+            text-align: right;
+        }
+
+        .favorite-remove-form {
+            display: inline-flex;
+            justify-content: flex-end;
+            margin: 0;
+        }
+
+        .favorite-remove-button {
+            min-width: 72px;
+            border: 1px solid rgba(255, 90, 130, 0.72);
+            border-radius: 999px;
+            background: rgba(255, 45, 95, 0.18);
+            color: #ffc5d3;
+            font-size: 0.68rem;
+            font-weight: 850;
+            line-height: 1;
+            padding: 5px 10px;
+            cursor: pointer;
+        }
+
+        .favorite-remove-button:hover,
+        .favorite-remove-button:focus-visible {
+            background: rgba(255, 45, 95, 0.30);
+            border-color: rgba(255, 120, 155, 0.95);
+            color: #ffffff;
+        }
+
+        .favorite-remove-button:disabled {
+            opacity: 0.5;
+            cursor: not-allowed;
+        }
+
     </style>
 </head>
 <body>
@@ -837,6 +1043,8 @@ $navItems = [
                     <?= \App\Support\AppCsrf::inputHtml() ?>
                     <input type="hidden" name="action" value="save">
                     <input type="hidden" name="edit_id" value="<?= e($editFavorite['id'] ?? '') ?>">
+                    <input type="hidden" name="sort" value="<?= e($favoriteSortKey) ?>">
+                    <input type="hidden" name="dir" value="<?= e($favoriteSortDirection) ?>">
 
                     <div class="favorites-form-grid">
                         <input
@@ -887,62 +1095,106 @@ $navItems = [
                 <span class="meta-line">One shared list</span>
             </div>
             <div class="card-body">
-                <form method="post">
-                    <?= \App\Support\AppCsrf::inputHtml() ?>
-                    <input type="hidden" name="action" value="remove_selected">
-
-                    <div class="toolbar-row">
-                        <button type="submit" class="btn btn-danger"<?= $formDisabled ?>>Remove Selected</button>
-                    </div>
-
-                    <div class="favorites-manage-table-wrap">
-                        <table class="favorites-manage-table">
-                            <thead>
+                <div class="favorites-manage-table-wrap">
+                    <table class="favorites-manage-table favorites-manage-table-clickable">
+                        <thead>
+                        <tr>
+                            <th>
+                                <a class="favorites-sort-link" href="<?= e(favorites_sort_url('target', $favoriteSortKey, $favoriteSortDirection)) ?>">
+                                    TG / Node <span><?= e(favorites_sort_indicator('target', $favoriteSortKey, $favoriteSortDirection)) ?></span>
+                                </a>
+                            </th>
+                            <th>
+                                <a class="favorites-sort-link" href="<?= e(favorites_sort_url('mode', $favoriteSortKey, $favoriteSortDirection)) ?>">
+                                    Mode <span><?= e(favorites_sort_indicator('mode', $favoriteSortKey, $favoriteSortDirection)) ?></span>
+                                </a>
+                            </th>
+                            <th>
+                                <a class="favorites-sort-link" href="<?= e(favorites_sort_url('name', $favoriteSortKey, $favoriteSortDirection)) ?>">
+                                    Station Name <span><?= e(favorites_sort_indicator('name', $favoriteSortKey, $favoriteSortDirection)) ?></span>
+                                </a>
+                            </th>
+                            <th>
+                                <a class="favorites-sort-link" href="<?= e(favorites_sort_url('description', $favoriteSortKey, $favoriteSortDirection)) ?>">
+                                    Description <span><?= e(favorites_sort_indicator('description', $favoriteSortKey, $favoriteSortDirection)) ?></span>
+                                </a>
+                            </th>
+                            <th>Edit</th>
+                            <th>Remove</th>
+                        </tr>
+                        </thead>
+                        <tbody>
+                        <?php if ($favorites === []): ?>
                             <tr>
-                                <th>#</th>
-                                <th>TG / Node / YSF / Digital</th>
-                                <th>Station Name</th>
-                                <th>Description</th>
-                                <th>Mode</th>
-                                <th>Edit</th>
+                                <td colspan="6">No favorites saved yet.</td>
                             </tr>
-                            </thead>
-                            <tbody>
-                            <?php if ($favorites === []): ?>
-                                <tr>
-                                    <td colspan="6">No favorites saved yet.</td>
+                        <?php else: ?>
+                            <?php foreach ($favorites as $favorite): ?>
+                                <?php
+                                    $editUrl = '/alltune2/public/favorites.php?edit=' . rawurlencode((string) $favorite['id'])
+                                        . '&sort=' . rawurlencode($favoriteSortKey)
+                                        . '&dir=' . rawurlencode($favoriteSortDirection);
+                                ?>
+                                <tr
+                                    class="favorite-manage-row"
+                                    data-mode="<?= e((string) $favorite['mode']) ?>"
+                                    <?= $authCanWrite ? 'data-edit-url="' . e($editUrl) . '"' : '' ?>
+                                >
+                                    <td class="favorite-target" title="<?= e($favorite['target']) ?>"><?= e($favorite['target']) ?></td>
+                                    <td class="favorite-mode-cell">
+                                        <span class="favorite-mode-badge"><?= e(mode_display_label((string) $favorite['mode'])) ?></span>
+                                    </td>
+                                    <td class="favorite-name" title="<?= e($favorite['name']) ?>"><?= e($favorite['name']) ?></td>
+                                    <td class="favorite-description" title="<?= e($favorite['description'] !== '' ? $favorite['description'] : '-') ?>"><?= e($favorite['description'] !== '' ? $favorite['description'] : '-') ?></td>
+                                    <td class="favorite-edit-cell">
+                                        <?php if ($authCanWrite): ?>
+                                            <a class="edit-link" href="<?= e($editUrl) ?>">Edit</a>
+                                        <?php else: ?>
+                                            <span class="edit-link disabled">View</span>
+                                        <?php endif; ?>
+                                    </td>
+                                    <td class="favorite-remove-cell">
+                                        <form method="post" class="favorite-remove-form">
+                                            <?= \App\Support\AppCsrf::inputHtml() ?>
+                                            <input type="hidden" name="action" value="remove_one">
+                                            <input type="hidden" name="sort" value="<?= e($favoriteSortKey) ?>">
+                                            <input type="hidden" name="dir" value="<?= e($favoriteSortDirection) ?>">
+                                            <input type="hidden" name="remove_id" value="<?= e($favorite['id']) ?>">
+                                            <button type="submit" class="favorite-remove-button"<?= $formDisabled ?>>Remove</button>
+                                        </form>
+                                    </td>
                                 </tr>
-                            <?php else: ?>
-                                <?php foreach ($favorites as $favorite): ?>
-                                    <tr data-mode="<?= e((string) $favorite['mode']) ?>">
-                                        <td>
-                                            <input type="checkbox" name="remove_ids[]" value="<?= e($favorite['id']) ?>"<?= $formDisabled ?>>
-                                        </td>
-                                        <td class="favorite-target"><?= e($favorite['target']) ?></td>
-                                        <td class="favorite-name"><?= e($favorite['name']) ?></td>
-                                        <td class="favorite-description"><?= e($favorite['description'] !== '' ? $favorite['description'] : '-') ?></td>
-                                        <td class="favorite-mode-cell">
-                                            <span class="favorite-mode-badge"><?= e(mode_display_label((string) $favorite['mode'])) ?></span>
-                                        </td>
-                                        <td>
-                                            <?php if ($authCanWrite): ?>
-                                                <a class="edit-link" href="/alltune2/public/favorites.php?edit=<?= e($favorite['id']) ?>">
-                                                    Edit
-                                                </a>
-                                            <?php else: ?>
-                                                <span class="edit-link disabled">View</span>
-                                            <?php endif; ?>
-                                        </td>
-                                    </tr>
-                                <?php endforeach; ?>
-                            <?php endif; ?>
-                            </tbody>
-                        </table>
-                    </div>
-                </form>
+                            <?php endforeach; ?>
+                        <?php endif; ?>
+                        </tbody>
+                    </table>
+                </div>
             </div>
         </article>
     </main>
 </div>
+
+    <script>
+        document.addEventListener('click', function (event) {
+            const blocked = event.target.closest('button, input, select, textarea, a, form, label');
+
+            if (blocked) {
+                return;
+            }
+
+            const row = event.target.closest('.favorite-manage-row[data-edit-url]');
+
+            if (!row) {
+                return;
+            }
+
+            const url = row.getAttribute('data-edit-url');
+
+            if (url) {
+                window.location.href = url;
+            }
+        });
+    </script>
+
 </body>
 </html>
