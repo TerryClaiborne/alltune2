@@ -137,9 +137,38 @@ select {
 }
 
 .branding-title-bolt.update-available {
-    color: #ff6b3d;
-    text-shadow: 0 0 7px rgba(255, 107, 61, 0.70), 0 0 14px rgba(255, 154, 76, 0.45);
-    filter: saturate(1.12);
+    color: #ffd54a;
+    text-shadow:
+        0 0 7px rgba(255, 213, 74, 0.95),
+        0 0 16px rgba(255, 107, 61, 0.80),
+        0 0 28px rgba(255, 45, 95, 0.55);
+    filter: saturate(1.35) brightness(1.15);
+    animation: alltuneUpdateBoltFlash 1.65s ease-in-out infinite;
+}
+
+@keyframes alltuneUpdateBoltFlash {
+    0%, 100% {
+        opacity: 0.72;
+        transform: translateY(-1px) scale(0.96);
+        text-shadow:
+            0 0 5px rgba(255, 213, 74, 0.55),
+            0 0 10px rgba(255, 107, 61, 0.42);
+    }
+
+    45%, 55% {
+        opacity: 1;
+        transform: translateY(-1px) scale(1.12);
+        text-shadow:
+            0 0 9px rgba(255, 255, 180, 1),
+            0 0 20px rgba(255, 154, 76, 0.95),
+            0 0 34px rgba(255, 45, 95, 0.78);
+    }
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .branding-title-bolt.update-available {
+        animation: none;
+    }
 }
 
 .branding-subtitle {
