@@ -1936,6 +1936,9 @@ select.control {
 }
 
 .connected-node-title {
+    display: flex;
+    align-items: center;
+    min-width: 0;
     color: #ffffff;
     font-size: 0.95rem;
     font-weight: 900;
@@ -3209,3 +3212,51 @@ select.control {
     color: #ffffff !important;
 }
 /* End auth buttons dim polish */
+
+
+
+/* Connected Nodes: compact favorite star beside the node title. */
+.connected-node-favorite-icon {
+    flex: 0 0 auto;
+    width: 18px;
+    height: 18px;
+    margin-left: 5px;
+    padding: 0;
+    border: 1px solid rgba(143, 243, 247, 0.48);
+    border-radius: 999px;
+    background: rgba(143, 243, 247, 0.10);
+    color: #d9fcff;
+    font-size: 0.72rem;
+    font-weight: 900;
+    line-height: 16px;
+    text-align: center;
+    cursor: pointer;
+    vertical-align: middle;
+}
+
+.connected-node-favorite-icon:hover,
+.connected-node-favorite-icon:focus-visible {
+    background: rgba(143, 243, 247, 0.20);
+    border-color: rgba(143, 243, 247, 0.78);
+    color: #ffffff;
+}
+
+.connected-node-favorite-icon.is-saved {
+    color: #ffe6a8;
+    border-color: rgba(255, 211, 122, 0.58);
+    background: rgba(255, 211, 122, 0.12);
+}
+
+.connected-node-favorite-icon:disabled {
+    opacity: 0.58;
+    cursor: not-allowed;
+}
+
+/* Auth status: calm down the green Normal Mode pill so it matches the rest of the header. */
+.auth-pill-normal,
+.topbar > .auth-status .auth-pill-normal {
+    background: rgba(154, 123, 233, 0.14) !important;
+    border-color: rgba(154, 123, 233, 0.38) !important;
+    color: rgba(235, 220, 245, 0.92) !important;
+    box-shadow: none !important;
+}

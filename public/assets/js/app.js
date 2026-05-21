@@ -16,6 +16,8 @@
         favoriteSortDirection: 'asc',
         favoriteSortType: 'mixed',
         favoritesRaw: [],
+        saveFavoriteTargetOverride: '',
+        saveFavoriteModeOverride: '',
         favoritesSignature: '',
         allstarLinksSignature: '',
         pendingDisconnectNodes: new Map(),
@@ -824,7 +826,7 @@
         if (name !== '' && description !== '' && description !== '-' && description !== name) {
             return {
                 short: name,
-                full: `${name} — ${description}`,
+                full: `${name} - ${description}`,
             };
         }
 
@@ -917,7 +919,7 @@
             pieces.push(description);
         }
 
-        let full = pieces.join(' — ');
+        let full = pieces.join(' - ');
         if (location !== '') {
             full = full !== '' ? `${full}, ${location}` : location;
         }
@@ -982,7 +984,7 @@
 
         return {
             text: `${parsed.display} • ${parts.short}`,
-            title: `${baseText} — ${parts.full}`,
+            title: `${baseText} - ${parts.full}`,
         };
     }
 
@@ -2080,6 +2082,11 @@
                     className: 'dvswitch',
                     description: 'Private DVSwitch audio link',
                     fullDescription: 'Private DVSwitch audio link',
+                    canSaveFavorite: false,
+                    favoriteMode: '',
+                    favoriteName: '',
+                    favoriteDescription: '',
+                    isSavedFavorite: false,
                 };
             }
 
@@ -2090,6 +2097,10 @@
             const favoriteParts = favoriteDisplayParts(favorite);
             const payloadParts = payloadDisplayParts(link);
             const description = favoriteParts.full || payloadParts.full || (looksEchoLink ? 'EchoLink / direct node' : 'AllStarLink direct node');
+            const favoriteName = favoriteParts.short || payloadParts.short || '';
+            const favoriteDescription = favorite
+                ? String(favorite.description ?? favorite.desc ?? '').trim()
+                : (payloadParts.full || '');
 
             if (looksEchoLink) {
                 return {
@@ -2098,6 +2109,11 @@
                     className: 'echo',
                     description,
                     fullDescription: description,
+                    canSaveFavorite: true,
+                    favoriteMode,
+                    favoriteName,
+                    favoriteDescription,
+                    isSavedFavorite: !!favorite,
                 };
             }
 
@@ -2107,6 +2123,11 @@
                 className: 'asl',
                 description,
                 fullDescription: description,
+                canSaveFavorite: true,
+                favoriteMode,
+                favoriteName,
+                favoriteDescription,
+                isSavedFavorite: !!favorite,
             };
         }
 
@@ -2177,6 +2198,24 @@
                     </button>
                 `;
 
+            const favoriteButtonHtml = network.canSaveFavorite
+                ? `
+                    <button
+                        type="button"
+                        class="connected-node-favorite-icon ${network.isSavedFavorite ? 'is-saved' : ''}"
+                        data-connected-node-favorite="1"
+                        data-favorite-node="${node}"
+                        data-favorite-mode="${escapeHtml(network.favoriteMode)}"
+                        data-favorite-name="${escapeHtml(network.favoriteName)}"
+                        data-favorite-description="${escapeHtml(network.favoriteDescription)}"
+                        aria-label="${network.isSavedFavorite ? 'Edit saved favorite' : 'Add connected node to favorites'}"
+                        ${actionBlocked ? 'disabled title="Login required to save favorites"' : `title="${network.isSavedFavorite ? 'Edit saved favorite' : 'Add connected node to favorites'}"`}
+                    >
+                        ${network.isSavedFavorite ? '★' : '☆'}
+                    </button>
+                `
+                : '';
+
             return `
                 <div class="connected-node-card ${rowActive ? 'keyed' : ''} ${bridgeAudioForNode ? 'bridge-audio' : ''}" data-node="${node}" data-network="${escapeHtml(network.className)}">
                     <div class="connected-node-badge connected-node-badge-${escapeHtml(network.className)}">
@@ -2185,7 +2224,7 @@
                     </div>
 
                     <div class="connected-node-main">
-                        <div class="connected-node-title">Node ${node}</div>
+                        <div class="connected-node-title">Node ${node}${favoriteButtonHtml}</div>
                         <div class="connected-node-description" title="${escapeHtml(network.fullDescription || network.description)}">${escapeHtml(network.description)}</div>
                     </div>
 
@@ -3013,11 +3052,9 @@
         )) || null;
     }
 
-    function openSaveFavoriteModal() {
+    function openSaveFavoriteModal(prefill = null) {
         if (
             !els.saveFavoriteModal ||
-            !els.targetInput ||
-            !els.modeSelect ||
             !els.saveFavoriteName ||
             !els.saveFavoriteDescription ||
             !els.saveFavoriteTargetValue ||
@@ -3028,28 +3065,31 @@
 
         if (!authAllowsActions()) {
             setSystemStatus(loginRequiredMessage());
-            updateActivityValue('Current Status', loginRequiredMessage());
             return;
         }
 
-        if (!authAllowsActions()) {
-            setSaveFavoriteMessage(loginRequiredMessage(), 'error');
-            return;
-        }
-
-        const target = String(els.targetInput.value || '').trim();
-        const mode = normalizeMode(els.modeSelect.value || 'BM');
+        const hasPrefill = prefill && typeof prefill === 'object' && !(prefill instanceof Event);
+        const target = hasPrefill
+            ? String(prefill.target || '').trim()
+            : String(els.targetInput?.value || '').trim();
+        const mode = normalizeMode(hasPrefill
+            ? String(prefill.mode || 'BM')
+            : String(els.modeSelect?.value || 'BM'));
 
         if (target === '') {
-            setSystemStatus('ENTER A TG / NODE BEFORE SAVING FAVORITE');
-            els.targetInput.focus();
+            setSaveFavoriteMessage('Enter or load a TG / node before saving a favorite.', 'error');
             return;
         }
 
+        state.saveFavoriteTargetOverride = hasPrefill ? target : '';
+        state.saveFavoriteModeOverride = hasPrefill ? mode : '';
+
         const existingFavorite = findExistingFavorite(target, mode);
+        const prefillName = hasPrefill ? String(prefill.name || '').trim() : '';
+        const prefillDescription = hasPrefill ? String(prefill.description || '').trim() : '';
 
         els.saveFavoriteTargetValue.textContent = target;
-        els.saveFavoriteModeValue.textContent = currentModeDisplayLabel();
+        els.saveFavoriteModeValue.textContent = hasPrefill ? favoriteModeLabel(mode) : currentModeDisplayLabel();
 
         if (existingFavorite) {
             els.saveFavoriteName.value = String(existingFavorite.name ?? '');
@@ -3062,11 +3102,11 @@
                 els.saveFavoriteSubmit.textContent = 'Update Favorite';
             }
         } else {
-            els.saveFavoriteName.value = '';
+            els.saveFavoriteName.value = prefillName;
             els.saveFavoriteName.placeholder = defaultFavoriteName(target, mode);
-            els.saveFavoriteDescription.value = '';
+            els.saveFavoriteDescription.value = prefillDescription;
             els.saveFavoriteDescription.placeholder = 'Quick access favorite';
-            setSaveFavoriteMessage('');
+            setSaveFavoriteMessage(hasPrefill ? 'Review and save this connected node as a favorite.' : '');
 
             if (els.saveFavoriteSubmit) {
                 els.saveFavoriteSubmit.textContent = 'Save Favorite';
@@ -3076,13 +3116,16 @@
         els.saveFavoriteModal.hidden = false;
         els.saveFavoriteModal.setAttribute('aria-hidden', 'false');
 
-        window.requestAnimationFrame(() => {
+        requestAnimationFrame(() => {
             els.saveFavoriteName.focus();
             els.saveFavoriteName.select();
         });
     }
 
     function closeSaveFavoriteModal() {
+        state.saveFavoriteTargetOverride = '';
+        state.saveFavoriteModeOverride = '';
+
         if (!els.saveFavoriteModal) {
             return;
         }
@@ -3107,8 +3150,8 @@
             return;
         }
 
-        const target = String(els.targetInput.value || '').trim();
-        const mode = normalizeMode(els.modeSelect.value || 'BM');
+        const target = String(state.saveFavoriteTargetOverride || els.targetInput.value || '').trim();
+        const mode = normalizeMode(state.saveFavoriteModeOverride || els.modeSelect.value || 'BM');
         const name = String(els.saveFavoriteName.value || '').trim();
         const description = String(els.saveFavoriteDescription.value || '').trim();
 
@@ -3167,7 +3210,31 @@
             return;
         }
 
-        els.saveFavoriteButton.addEventListener('click', openSaveFavoriteModal);
+        els.saveFavoriteButton.addEventListener('click', () => openSaveFavoriteModal());
+
+        if (els.statusAllstarLinks) {
+            els.statusAllstarLinks.addEventListener('click', (event) => {
+                const button = event.target.closest('.connected-node-favorite-icon');
+
+                if (!button) {
+                    return;
+                }
+
+                event.preventDefault();
+
+                if (button.disabled || !authAllowsActions()) {
+                    setSystemStatus(loginRequiredMessage());
+                    return;
+                }
+
+                openSaveFavoriteModal({
+                    target: button.getAttribute('data-favorite-node') || '',
+                    mode: button.getAttribute('data-favorite-mode') || 'ASL',
+                    name: button.getAttribute('data-favorite-name') || '',
+                    description: button.getAttribute('data-favorite-description') || '',
+                });
+            });
+        }
 
         if (els.saveFavoriteForm) {
             els.saveFavoriteForm.addEventListener('submit', (event) => {

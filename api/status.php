@@ -471,7 +471,7 @@ function allstar_astdb_lookup(string $node): ?array
                     $displayParts[] = $description;
                 }
 
-                $full = implode(' — ', $displayParts);
+                $full = implode(' - ', $displayParts);
                 if ($location !== '') {
                     $full = $full !== '' ? $full . ', ' . $location : $location;
                 }

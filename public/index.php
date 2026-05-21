@@ -643,9 +643,6 @@ $activityLines[] = [
                 <div class="favorite-modal-message" id="save-favorite-message" aria-live="polite"></div>
 
                 <div class="favorite-modal-actions">
-                    <a class="favorite-modal-full-link" href="/alltune2/public/favorites.php">
-                        Open Full Favorites Page
-                    </a>
 
                     <button type="button" class="favorite-modal-cancel" id="save-favorite-cancel">
                         Cancel
