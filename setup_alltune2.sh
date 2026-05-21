@@ -1199,7 +1199,9 @@ create_or_update_apache_accesslog_filter() {
     backup_dir="/root/alltune2-backups/apache-accesslog-filter-${timestamp}"
 
     if ! patch_output="$(python3 - "$backup_dir" <<'PYAPACHE'
+import os
 import pathlib
+import re
 import shutil
 import sys
 
@@ -1210,22 +1212,48 @@ manifest_name = "manifest.tsv"
 # from Apache access.log. It does not block the requests.
 expr_line = 'CustomLog ${APACHE_LOG_DIR}/access.log combined "expr=!(%{REQUEST_URI} =~ m#^/alltune2/(api/status\\.php|public/alltune2_ribbon_bar\\.php)#)"'
 
-replace_candidates = [
-    'CustomLog ${APACHE_LOG_DIR}/access.log combined env=!dontlog_alltune2_polling',
-    'CustomLog ${APACHE_LOG_DIR}/access.log combined',
+plain_customlog_re = re.compile(r'^(\s*)CustomLog\s+\$\{APACHE_LOG_DIR\}/access\.log\s+combined\s*$')
+old_env_customlog_re = re.compile(r'^(\s*)CustomLog\s+\$\{APACHE_LOG_DIR\}/access\.log\s+combined\s+env=!dontlog_alltune2_polling\s*$')
+
+def line_has_alltune_filter(line: str) -> bool:
+    normalized = line.replace("\\", "")
+    return (
+        "CustomLog" in line
+        and "access.log" in line
+        and "expr=" in line
+        and "/alltune2/" in normalized
+        and "api/status.php" in normalized
+        and "public/alltune2_ribbon_bar.php" in normalized
+    )
+
+def replacement_for_line(line: str):
+    if "CustomLog" not in line or "access.log" not in line:
+        return None
+
+    if line_has_alltune_filter(line):
+        return None
+
+    old_env_match = old_env_customlog_re.match(line.rstrip("\\r\\n"))
+    if old_env_match:
+        return old_env_match.group(1) + expr_line
+
+    plain_match = plain_customlog_re.match(line.rstrip("\\r\\n"))
+    if plain_match:
+        return plain_match.group(1) + expr_line
+
+    return None
+
+site_available = pathlib.Path(os.environ.get("ALLTUNE2_APACHE_SITES_AVAILABLE", "/etc/apache2/sites-available"))
+site_enabled = pathlib.Path(os.environ.get("ALLTUNE2_APACHE_SITES_ENABLED", "/etc/apache2/sites-enabled"))
+
+candidate_paths = [
+    site_available / "000-default.conf",
+    site_available / "default-ssl.conf",
 ]
 
-candidate_paths = []
-for path_text in (
-    "/etc/apache2/sites-available/000-default.conf",
-    "/etc/apache2/sites-available/default-ssl.conf",
-):
-    candidate_paths.append(pathlib.Path(path_text))
-
 # Include real files behind enabled .conf symlinks on systems with custom vhost names.
-enabled_dir = pathlib.Path("/etc/apache2/sites-enabled")
-if enabled_dir.exists():
-    for item in enabled_dir.glob("*.conf"):
+if site_enabled.exists():
+    for item in site_enabled.glob("*.conf"):
         try:
             candidate_paths.append(item.resolve())
         except Exception:
@@ -1252,18 +1280,31 @@ for path in paths:
         skipped.append(f"{path}: could not read file: {exc}")
         continue
 
-    if expr_line in text:
-        continue
+    lines = text.splitlines(keepends=True)
+    new_lines = []
+    file_changed = False
 
-    replacement = None
-    for candidate in replace_candidates:
-        if candidate in text:
-            replacement = candidate
-            break
+    for line in lines:
+        if "CustomLog" in line and "access.log" in line:
+            if line_has_alltune_filter(line):
+                new_lines.append(line)
+                continue
 
-    if replacement is None:
-        if "CustomLog" in text and "access.log" in text:
-            skipped.append(f"{path}: CustomLog access.log format not recognized; left unchanged")
+            replacement = replacement_for_line(line)
+            if replacement is not None:
+                ending = "\\n" if line.endswith("\\n") else ""
+                new_lines.append(replacement + ending)
+                file_changed = True
+                continue
+
+            if "expr=" in line:
+                skipped.append(f"{path}: CustomLog access.log already has a custom expr= clause; left unchanged")
+            else:
+                skipped.append(f"{path}: CustomLog access.log format not recognized; left unchanged")
+
+        new_lines.append(line)
+
+    if not file_changed:
         continue
 
     backup_dir.mkdir(parents=True, exist_ok=True)
@@ -1271,10 +1312,9 @@ for path in paths:
     backup_path = backup_dir / backup_name
     shutil.copy2(path, backup_path)
 
-    text = text.replace(replacement, expr_line, 1)
-    path.write_text(text)
+    path.write_text("".join(new_lines))
     changed.append(str(path))
-    manifest_entries.append(f"{path}\t{backup_path}\n")
+    manifest_entries.append(f"{path}\\t{backup_path}\\n")
 
 if manifest_entries:
     (backup_dir / manifest_name).write_text("".join(manifest_entries))
