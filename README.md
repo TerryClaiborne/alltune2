@@ -48,7 +48,17 @@ With it, you can:
 AllTune2 does not replace ASL3, DVSwitch, Analog_Bridge, or MMDVM_Bridge. It controls them from one cleaner dashboard.
 
 ---
+<p align="center">
+  <a href="screenshot.png">
+    <img src="screenshot.png" alt="AllTune2 dashboard screenshot" width="850">
+  </a>
+</p>
 
+<p align="center">
+  <em>AllTune2 dashboard with multi-network control, Live Status, Favorites, and connected-node tools.</em>
+</p>
+
+---
 ## 🆕 RECENT UI AND CONTROL IMPROVEMENTS
 
 Recent versions added several important improvements:
