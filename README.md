@@ -77,6 +77,12 @@ Recent versions added several important improvements:
 - optional web login for public or shared dashboards
 - View Only mode when logged out
 - disabled Control Center, Favorites actions, and Live Status disconnect buttons while logged out
+- friendlier Live Status labels using Saved Favorites and local AllStarLink description data when available
+- compact connected-node Favorite star for saving or editing AllStarLink and EchoLink nodes directly from Live Status
+- improved Favorites page with sortable columns, row-click editing, visible Edit buttons, and per-row Remove buttons
+- Favorites page now preserves the active sort when editing, saving, or removing entries
+- improved update lightning bolt that flashes when a newer GitHub version is available
+- hardened Apache access-log filter setup so updates safely handle combined AllTune2 + DVSwitch Cockpit polling filters
 
 The dashboard is designed so you can pick a network, enter or load a target, choose Local Monitor or Transceive, and press **Connect**.
 
