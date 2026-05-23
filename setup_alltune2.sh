@@ -560,14 +560,55 @@ check_helper_local_paths() {
     log "BM receive helper local STFU paths look correct."
 }
 
+mmdvm_ini_dmr_value() {
+    local file="$1"
+    local key="$2"
+
+    awk -F= -v key="$key" '
+        /^[[:space:]]*\[.*\][[:space:]]*$/ {
+            in_dmr = ($0 ~ /^[[:space:]]*\[DMR Network\][[:space:]]*$/)
+            next
+        }
+
+        in_dmr && $1 ~ "^[[:space:]]*" key "[[:space:]]*$" {
+            value = $2
+            sub(/^[[:space:]]+/, "", value)
+            sub(/[[:space:]]+$/, "", value)
+            print value
+            exit
+        }
+    ' "$file"
+}
+
+mmdvm_ini_is_hblink_local() {
+    local file="$1"
+    local address
+    local port
+
+    [[ -f "$file" ]] || return 1
+
+    address="$(mmdvm_ini_dmr_value "$file" "Address")"
+    port="$(mmdvm_ini_dmr_value "$file" "Port")"
+
+    [[ "$address" == "127.0.0.1" && "$port" == "62033" ]]
+}
+
 ensure_tgif_runtime_local_files() {
     log "Ensuring TGIF/HBLink local runtime files exist..."
 
     if [[ ! -f "$TGIF_MMDVM_PRE_HBLINK_INI" ]]; then
+        if mmdvm_ini_is_hblink_local "$MMDVM_BRIDGE_INI"; then
+            fail "Cannot create MMDVM_Bridge.pre-hblink.ini from the live MMDVM_Bridge.ini because the live file is already the HBLink-local profile (Address=127.0.0.1 Port=62033). Restore a normal MMDVM_Bridge.ini first, then rerun setup."
+        fi
+
         log "Creating initial MMDVM_Bridge.pre-hblink.ini from current system MMDVM_Bridge.ini..."
         cp -f "$MMDVM_BRIDGE_INI" "$TGIF_MMDVM_PRE_HBLINK_INI"
     else
-        log "MMDVM_Bridge.pre-hblink.ini already exists. Preserving current file."
+        if mmdvm_ini_is_hblink_local "$TGIF_MMDVM_PRE_HBLINK_INI"; then
+            fail "MMDVM_Bridge.pre-hblink.ini appears to be the HBLink-local profile (Address=127.0.0.1 Port=62033). This file must be the normal restore profile. Restore or repair it before running setup."
+        fi
+
+        log "MMDVM_Bridge.pre-hblink.ini already exists and is not HBLink-local. Preserving current file."
     fi
 
     chmod 0644 "$TGIF_MMDVM_PRE_HBLINK_INI"

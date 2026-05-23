@@ -338,10 +338,54 @@ require_file() {
     [[ -e "$file" ]] || fail_json "check" "Required file not found: $file"
 }
 
+mmdvm_ini_dmr_value() {
+    local file="$1"
+    local key="$2"
+
+    awk -F= -v key="$key" '
+        /^[[:space:]]*\[.*\][[:space:]]*$/ {
+            in_dmr = ($0 ~ /^[[:space:]]*\[DMR Network\][[:space:]]*$/)
+            next
+        }
+
+        in_dmr && $1 ~ "^[[:space:]]*" key "[[:space:]]*$" {
+            value = $2
+            sub(/^[[:space:]]+/, "", value)
+            sub(/[[:space:]]+$/, "", value)
+            print value
+            exit
+        }
+    ' "$file"
+}
+
+mmdvm_ini_is_hblink_local() {
+    local file="$1"
+    local address
+    local port
+
+    [[ -f "$file" ]] || return 1
+
+    address="$(mmdvm_ini_dmr_value "$file" "Address")"
+    port="$(mmdvm_ini_dmr_value "$file" "Port")"
+
+    [[ "$address" == "127.0.0.1" && "$port" == "62033" ]]
+}
+
 ensure_backup_ini() {
-    if [[ ! -f "$ORIG_INI" ]]; then
-        cp -f "$MMDVM_INI" "$ORIG_INI" || fail_json "start" "Failed to save original MMDVM_Bridge.ini"
+    local action="${1:-start}"
+
+    if [[ -f "$ORIG_INI" ]]; then
+        if mmdvm_ini_is_hblink_local "$ORIG_INI"; then
+            fail_json "$action" "Refusing to use MMDVM_Bridge.pre-hblink.ini because it is the HBLink-local profile (Address=127.0.0.1 Port=62033). Repair the normal restore profile first."
+        fi
+        return 0
     fi
+
+    if mmdvm_ini_is_hblink_local "$MMDVM_INI"; then
+        fail_json "$action" "Refusing to save the live MMDVM_Bridge.ini as the pre-HBLink backup because the live file is already the HBLink-local profile (Address=127.0.0.1 Port=62033). Restore a normal MMDVM_Bridge.ini first."
+    fi
+
+    cp -f "$MMDVM_INI" "$ORIG_INI" || fail_json "$action" "Failed to save original MMDVM_Bridge.ini"
 }
 
 
@@ -433,7 +477,7 @@ start_mode() {
     require_file "$HB_DIR/bridge.py"
 
     "$HB_DIR/set_hblink_tg.sh" "$tg" "$HB_DIR" >/dev/null 2>&1 || fail_json "start" "Failed to write rules.py" "$tg"
-    ensure_backup_ini
+    ensure_backup_ini "start"
 
     if is_running; then
         current_target="$(read_state_target)"
@@ -475,7 +519,7 @@ tune_mode() {
     fi
 
     "$HB_DIR/set_hblink_tg.sh" "$tg" "$HB_DIR" >/dev/null 2>&1 || fail_json "tune" "Failed to write rules.py" "$tg"
-    ensure_backup_ini
+    ensure_backup_ini "tune"
     restart_bridge_stack "$tg"
 
     pid="$(cat "$PID_FILE" 2>/dev/null || true)"
@@ -495,13 +539,19 @@ stop_mode() {
     target="$(read_state_target)"
     pid="$(cat "$PID_FILE" 2>/dev/null || true)"
 
+    if [[ ! -f "$ORIG_INI" ]]; then
+        fail_json "stop" "Cannot return to normal MMDVM_Bridge mode because MMDVM_Bridge.pre-hblink.ini is missing."
+    fi
+
+    if mmdvm_ini_is_hblink_local "$ORIG_INI"; then
+        fail_json "stop" "Refusing to restore MMDVM_Bridge.pre-hblink.ini because it is the HBLink-local profile (Address=127.0.0.1 Port=62033). Repair the normal restore profile first."
+    fi
+
     systemctl stop mmdvm_bridge >/dev/null 2>&1 || true
     kill_bridge_pids
     sudo fuser -k -n udp ${HB_PORT} >/dev/null 2>&1 || true
     wait_port_clear || true
-    if [[ -f "$ORIG_INI" ]]; then
-        cp -f "$ORIG_INI" "$MMDVM_INI" || true
-    fi
+    cp -f "$ORIG_INI" "$MMDVM_INI" || true
     systemctl start mmdvm_bridge >/dev/null 2>&1 || true
     clear_state
 
