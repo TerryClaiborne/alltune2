@@ -34,6 +34,7 @@ TGIF_RULES_FILE="$TGIF_DIR/rules.py"
 TGIF_MMDVM_HBLINK_INI="$TGIF_DIR/MMDVM_Bridge.hblink.ini"
 TGIF_MMDVM_HBLINK_INI_EXAMPLE="$TGIF_DIR/MMDVM_Bridge.hblink.ini.example"
 TGIF_MMDVM_PRE_HBLINK_INI="$TGIF_DIR/MMDVM_Bridge.pre-hblink.ini"
+TGIF_MMDVM_PRE_HBLINK_KEEP="$TGIF_DIR/MMDVM_Bridge.pre-hblink.ini.keepdonotdelete"
 TGIF_REQUIREMENTS="$TGIF_DIR/requirements.txt"
 TGIF_VENV_DIR="$TGIF_DIR/venv"
 TGIF_VENV_PYTHON="$TGIF_VENV_DIR/bin/python"
@@ -593,26 +594,62 @@ mmdvm_ini_is_hblink_local() {
     [[ "$address" == "127.0.0.1" && "$port" == "62033" ]]
 }
 
+mmdvm_ini_is_valid_normal_restore() {
+    local file="$1"
+    local address
+    local port
+
+    [[ -f "$file" ]] || return 1
+
+    address="$(mmdvm_ini_dmr_value "$file" "Address")"
+    port="$(mmdvm_ini_dmr_value "$file" "Port")"
+
+    [[ -n "$address" && -n "$port" ]] || return 1
+
+    if [[ "$address" == "127.0.0.1" && "$port" == "62033" ]]; then
+        return 1
+    fi
+
+    return 0
+}
+
+save_tgif_pre_hblink_keep() {
+    if ! mmdvm_ini_is_valid_normal_restore "$TGIF_MMDVM_PRE_HBLINK_INI"; then
+        fail "Refusing to save MMDVM_Bridge.pre-hblink.ini.keepdonotdelete because MMDVM_Bridge.pre-hblink.ini is not a valid normal restore profile."
+    fi
+
+    log "Saving verified MMDVM_Bridge.pre-hblink.ini safety copy as MMDVM_Bridge.pre-hblink.ini.keepdonotdelete..."
+    cp -f "$TGIF_MMDVM_PRE_HBLINK_INI" "$TGIF_MMDVM_PRE_HBLINK_KEEP"
+    chmod 0644 "$TGIF_MMDVM_PRE_HBLINK_KEEP"
+    chown root:root "$TGIF_MMDVM_PRE_HBLINK_KEEP"
+}
+
 ensure_tgif_runtime_local_files() {
     log "Ensuring TGIF/HBLink local runtime files exist..."
 
     if [[ ! -f "$TGIF_MMDVM_PRE_HBLINK_INI" ]]; then
-        if mmdvm_ini_is_hblink_local "$MMDVM_BRIDGE_INI"; then
-            fail "Cannot create MMDVM_Bridge.pre-hblink.ini from the live MMDVM_Bridge.ini because the live file is already the HBLink-local profile (Address=127.0.0.1 Port=62033). Restore a normal MMDVM_Bridge.ini first, then rerun setup."
+        if ! mmdvm_ini_is_valid_normal_restore "$MMDVM_BRIDGE_INI"; then
+            fail "Cannot create MMDVM_Bridge.pre-hblink.ini from the live MMDVM_Bridge.ini because the live file does not appear to be a valid normal restore profile. Restore a normal MMDVM_Bridge.ini first, then rerun setup."
         fi
 
         log "Creating initial MMDVM_Bridge.pre-hblink.ini from current system MMDVM_Bridge.ini..."
         cp -f "$MMDVM_BRIDGE_INI" "$TGIF_MMDVM_PRE_HBLINK_INI"
     else
-        if mmdvm_ini_is_hblink_local "$TGIF_MMDVM_PRE_HBLINK_INI"; then
-            fail "MMDVM_Bridge.pre-hblink.ini appears to be the HBLink-local profile (Address=127.0.0.1 Port=62033). This file must be the normal restore profile. Restore or repair it before running setup."
+        if ! mmdvm_ini_is_valid_normal_restore "$TGIF_MMDVM_PRE_HBLINK_INI"; then
+            if mmdvm_ini_is_valid_normal_restore "$TGIF_MMDVM_PRE_HBLINK_KEEP"; then
+                fail "MMDVM_Bridge.pre-hblink.ini is not a valid normal restore profile. A valid safety copy exists at MMDVM_Bridge.pre-hblink.ini.keepdonotdelete. Restore it to MMDVM_Bridge.pre-hblink.ini, then rerun setup."
+            fi
+
+            fail "MMDVM_Bridge.pre-hblink.ini is not a valid normal restore profile, and no valid MMDVM_Bridge.pre-hblink.ini.keepdonotdelete safety copy exists. Repair the normal restore profile before running setup."
         fi
 
-        log "MMDVM_Bridge.pre-hblink.ini already exists and is not HBLink-local. Preserving current file."
+        log "MMDVM_Bridge.pre-hblink.ini already exists and is valid. Preserving current file."
     fi
 
     chmod 0644 "$TGIF_MMDVM_PRE_HBLINK_INI"
     chown root:root "$TGIF_MMDVM_PRE_HBLINK_INI"
+
+    save_tgif_pre_hblink_keep
 
     if [[ ! -f "$TGIF_RULES_FILE" ]]; then
         log "rules.py not found. Generating an initial rules.py from rules.py.template if possible..."

@@ -7,6 +7,10 @@ tgif-hblink/MMDVM_Bridge.hblink.ini
 
 # Runtime-local TGIF/HBLink files
 tgif-hblink/MMDVM_Bridge.pre-hblink.ini
+tgif-hblink/*.bak
+tgif-hblink/MMDVM_Bridge.pre-hblink.ini.lastgood
+tgif-hblink/MMDVM_Bridge.pre-hblink.ini.bak
+tgif-hblink/MMDVM_Bridge.pre-hblink.ini.keepdonotdelete
 tgif-hblink/rules.py
 tgif-hblink/peer_ids.json
 tgif-hblink/subscriber_ids.json
