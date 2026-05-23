@@ -455,6 +455,31 @@ TGIF and BrandMeister are separate networks. A talkgroup number existing on TGIF
 
 Use BrandMeister in AllTune2 when you want the BrandMeister side. Use TGIF when you want the TGIF side.
 
+### TGIF/HBLink MMDVM profile safety
+
+AllTune2 uses two local MMDVM_Bridge profile files for TGIF/HBLink.
+
+The normal restore file is:
+
+/var/www/html/alltune2/tgif-hblink/MMDVM_Bridge.pre-hblink.ini
+
+This is the file AllTune2 restores after TGIF/HBLink stops. If you make a normal MMDVM_Bridge change that should stay after TGIF starts or stops, make sure the change is also in this file.
+
+The TGIF/HBLink local file is:
+
+/var/www/html/alltune2/tgif-hblink/MMDVM_Bridge.hblink.ini
+
+This file is only for the local HBLink path while TGIF/HBLink is active. It normally uses Address=127.0.0.1 and Port=62033.
+
+Do not copy MMDVM_Bridge.hblink.ini over MMDVM_Bridge.pre-hblink.ini.
+
+Setup now checks this and also saves a local safety copy:
+
+/var/www/html/alltune2/tgif-hblink/MMDVM_Bridge.pre-hblink.ini.keepdonotdelete
+
+That safety copy is ignored by Git and should not be deleted.
+
+
 ---
 
 ## 🟠 OPTIONAL D-STAR / P25 / NXDN
