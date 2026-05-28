@@ -33,7 +33,7 @@ AllTune2 is meant to be a one-screen radio control center.
 With it, you can:
 
 - connect to BrandMeister talkgroups
-- connect to TGIF talkgroups
+- connect to TGIF talkgroups through the native TGIFD backend
 - connect to YSF rooms / reflectors
 - connect to D-Star, P25, and NXDN when those modes are enabled and already working on your system
 - connect to AllStarLink nodes
@@ -48,6 +48,7 @@ With it, you can:
 AllTune2 does not replace ASL3, DVSwitch, Analog_Bridge, or MMDVM_Bridge. It controls them from one cleaner dashboard.
 
 ---
+
 <p align="center">
   <a href="screenshot.png">
     <img src="screenshot.png" alt="AllTune2 dashboard screenshot" width="850">
@@ -59,6 +60,7 @@ AllTune2 does not replace ASL3, DVSwitch, Analog_Bridge, or MMDVM_Bridge. It con
 </p>
 
 ---
+
 ## 🆕 RECENT UI AND CONTROL IMPROVEMENTS
 
 Recent versions added several important improvements:
@@ -83,6 +85,7 @@ Recent versions added several important improvements:
 - Favorites page now preserves the active sort when editing, saving, or removing entries
 - improved update lightning bolt that flashes when a newer GitHub version is available
 - hardened Apache access-log filter setup so updates safely handle combined AllTune2 + DVSwitch Cockpit polling filters
+- native TGIFD backend for TGIF, replacing the older TGIF/HBLink sidecar path
 
 The dashboard is designed so you can pick a network, enter or load a target, choose Local Monitor or Transceive, and press **Connect**.
 
@@ -111,12 +114,12 @@ Use this only for a brand-new install:
 
 ```bash
 cd /var/www/html
-git clone https://github.com/TerryClaiborne/alltune2.git
+sudo git clone https://github.com/TerryClaiborne/alltune2.git alltune2
 cd alltune2
 sudo ./setup_alltune2.sh
 ```
 
-The installer may take a little while during dependency checks or TGIF/HBLink setup, especially on slower hardware. Wait for the final setup summary before assuming it is stuck.
+The installer may take a little while during dependency checks or while building TGIFD, especially on slower hardware. Wait for the final setup summary before assuming it is stuck.
 
 ### What setup does
 
@@ -124,7 +127,7 @@ The setup script helps with:
 
 - permissions
 - sudoers rules
-- TGIF/HBLink Python environment
+- TGIFD build and setup
 - config examples
 - preserving existing local config files
 - helper permissions
@@ -132,6 +135,13 @@ The setup script helps with:
 - Apache security hardening
 
 The setup script preserves your local config files when they already exist.
+
+A brand-new install may still need you to review and edit:
+
+```text
+/var/www/html/alltune2/config.ini
+/var/www/html/alltune2/tgif/config/tgifd.ini
+```
 
 ---
 
@@ -148,7 +158,7 @@ git pull origin main
 
 ### Update that needs setup
 
-Run setup after pulling when the update includes installer, permissions, sudoers, Apache security, or other system-level changes:
+Run setup after pulling when the update includes installer, permissions, sudoers, Apache security, TGIFD, or other system-level changes:
 
 ```bash
 cd /var/www/html/alltune2
@@ -156,9 +166,23 @@ git pull origin main
 sudo ./setup_alltune2.sh
 ```
 
+### Updating from older TGIF/HBLink releases
+
+AllTune2 now uses TGIFD for TGIF.
+
+When updating from an older AllTune2 release that used the TGIF/HBLink sidecar, run setup after pulling:
+
+```bash
+cd /var/www/html/alltune2
+git pull origin main
+sudo ./setup_alltune2.sh
+```
+
+Setup will archive old TGIF/HBLink artifacts out of the live application path and install TGIFD as the active TGIF backend.
+
 ### Reboot when needed
 
-A reboot is recommended after updates that affect long-running runtime pieces such as TGIF/HBLink.
+A reboot is recommended after updates that affect long-running runtime pieces such as TGIFD, Analog_Bridge, MMDVM_Bridge, or system service behavior.
 
 Do **not** assume every update needs setup. Many updates only need `git pull`.
 
@@ -331,45 +355,103 @@ Normal setup/update does **not** ask for a password and does **not** change the 
 
 ## 🟢 TGIF CONFIG
 
+AllTune2 now uses **TGIFD** for TGIF.
+
+TGIFD replaces the older TGIF/HBLink sidecar path. In testing, TGIFD reduced the TGIF runtime footprint, removed the local Python/HBLink stack, reduced disk usage, reduced CPU load compared with the previous sidecar approach, and provided cleaner TGIF audio.
+
 Edit:
 
 ```text
-/var/www/html/alltune2/tgif-hblink/hblink.cfg
+/var/www/html/alltune2/tgif/config/tgifd.ini
 ```
-
-Look in the `[REPEATER-1]` section.
 
 Example:
 
 ```ini
-PASSPHRASE: your_tgif_key
-CALLSIGN: YOURCALL
-RADIO_ID: 330000812
-OPTIONS: StartRef=19750;RelinkTime=60
+[general]
+log_file=./tgifd.log
+
+[identity]
+callsign=YOURCALL
+dmr_id=YOUR_DMR_ID
+hotspot_radio_id=YOUR_HOTSPOT_ID_PLUS_1
+
+[tgif]
+host=tgif.network
+port=62031
+security_key=YOUR_TGIF_SECURITY_KEY
+startup_tg=9990
+options=StartRef=9990;RelinkTime=60
+
+[behavior]
+receive_timeout_ms=1000
+keepalive_seconds=5
+protocol_assert_seconds=30
+soft_refresh_trigger_missed=2
+max_missed=5
+reconnect_delay_seconds=5
+
+[network]
+local_bind_port=0
+
+[tlv]
+rx_port=31103
+tx_host=127.0.0.1
+tx_port=31100
+timeout_ms=500
+inbound_slot=2
+
+[private_node]
+enabled=true
+asterisk_bin=/usr/sbin/asterisk
+mynode=YOUR_ALLSTAR_NODE
+private_node=YOUR_DVSWITCH_NODE
+autoload_mode=transceive
+
+[mmdvm]
+rx_frequency=0
+tx_frequency=0
+power=5
+color_code=1
+latitude=0.000000
+longitude=0.000000
+height=0
+location=Your Location
+description=TGIFD via AllTune2
+slots=2
+url=https://github.com/TerryClaiborne/alltune2
+version=alltune2-tgifd
+software=TGIFD
 ```
 
-### TGIF values
+### TGIFD values
 
-**PASSPHRASE**  
-Your TGIF Hotspot Security Key.
-
-This is **not** your TGIF website login password.
-
-**CALLSIGN**  
+**callsign**  
 Your ham callsign.
 
 Example:
 
 ```text
-CALLSIGN: KC3KMV
+callsign=YOURCALL
 ```
 
-**RADIO_ID**  
-Usually your DMR / hotspot ID with a suffix. Many setups use the hotspot ID plus 1.
+**dmr_id**  
+Your gateway/base DMR ID.
 
-This part is very important.
+On many DVSwitch systems this is the same DMR ID used by Analog_Bridge as the gateway DMR ID.
 
-Real example:
+Example:
+
+```ini
+dmr_id=3101234
+```
+
+**hotspot_radio_id**  
+Your TGIF hotspot/radio ID for this bridge.
+
+For the AllTune2 TGIFD path, this is usually your hotspot ID plus 1.
+
+Example:
 
 ```text
 Your hotspot ID: 330000811
@@ -383,71 +465,72 @@ Your hotspot ID: 3101234
 Use:             3101235
 ```
 
-Do **not** use your original hotspot ID unchanged unless your setup specifically requires that.
+Do **not** blindly use your original hotspot ID unchanged unless your setup specifically requires that. Use the ID pattern that is correct for your DVSwitch / TGIF setup.
 
-Do not guess this value. Use what is correct for your DVSwitch / TGIF setup.
+**security_key**  
+Your TGIF Hotspot Security Key.
 
-**OPTIONS**  
-Optional TGIF startup options, such as a startup talkgroup.
+This is **not** your TGIF website login password.
 
-Example:
+This should match the TGIF key you set in `config.ini`:
 
-```text
-StartRef=19750;RelinkTime=60
+```ini
+TGIF_HotspotSecurityKey="CHANGE_ME"
 ```
 
-If you want TGIF to start on a certain talkgroup, that is where you set it.
-
-### Review this TGIF file too
-
-Review:
-
-```text
-/var/www/html/alltune2/tgif-hblink/MMDVM_Bridge.hblink.ini
-```
+**startup_tg**  
+The TGIF talkgroup TGIFD should start on when launched directly.
 
 Example:
 
 ```ini
-Callsign=YOURCALL
-Id=330000812
+startup_tg=9990
 ```
 
-### What these mean
-
-**Callsign**  
-Your ham callsign.
+**options**  
+TGIF startup options.
 
 Example:
 
-```text
-Callsign=KC3KMV
+```ini
+options=StartRef=9990;RelinkTime=60
 ```
 
-**Id**  
-Your DMR / BrandMeister Hotspot ID with the same suffix logic used above.
-
-Real example:
-
-```text
-Your hotspot ID: 330000811
-Use:             330000812
-```
-
-Do **not** use your original hotspot ID unchanged unless your setup specifically requires that.
-
-### Optional values
-
-Most users can leave these as `0`:
+For another startup talkgroup:
 
 ```ini
-RXFrequency=0
-TXFrequency=0
+startup_tg=9050
+options=StartRef=9050;RelinkTime=60
 ```
 
-These only matter if you run a repeater.
+**inbound_slot**  
+This must stay set to `2`:
 
-If you do not run a repeater, leaving them at `0` is fine and has no effect on normal operation.
+```ini
+inbound_slot=2
+```
+
+AllTune2/TGIFD uses this for reliable inbound TGIF audio through the TLV/DVSwitch path. Do not remove it.
+
+**mynode**  
+Your main AllStar node number. This should match `MYNODE` in `config.ini`.
+
+**private_node**  
+Your private DVSwitch audio node. This should match `DVSWITCH_NODE` in `config.ini`.
+
+**autoload_mode**  
+Controls how TGIFD links the private DVSwitch node.
+
+Typical value:
+
+```ini
+autoload_mode=transceive
+```
+
+**rx_frequency / tx_frequency / latitude / longitude / height / location / description**  
+These are MMDVM/TGIF descriptive values.
+
+If your existing MMDVM_Bridge configuration has valid values, setup may copy some of them. If you are not running a repeater, frequency values of `0` are usually fine.
 
 ### Important TGIF note
 
@@ -455,30 +538,27 @@ TGIF and BrandMeister are separate networks. A talkgroup number existing on TGIF
 
 Use BrandMeister in AllTune2 when you want the BrandMeister side. Use TGIF when you want the TGIF side.
 
-### TGIF/HBLink MMDVM profile safety
+### TGIFD backend notes
 
-AllTune2 uses two local MMDVM_Bridge profile files for TGIF/HBLink.
+TGIFD is the AllTune2 TGIF backend.
 
-The normal restore file is:
+The old TGIF/HBLink sidecar path has been removed from the release tree. During an update from an older AllTune2 release, setup archives old TGIF/HBLink artifacts out of the live application path before installing TGIFD.
 
-/var/www/html/alltune2/tgif-hblink/MMDVM_Bridge.pre-hblink.ini
+TGIFD runtime files are local-only and should not be committed:
 
-This is the file AllTune2 restores after TGIF/HBLink stops. If you make a normal MMDVM_Bridge change that should stay after TGIF starts or stops, make sure the change is also in this file.
+```text
+/var/www/html/alltune2/tgif/config/tgifd.ini
+/var/www/html/alltune2/tgif/build/
+/var/www/html/alltune2/tgif/*.log
+/var/www/html/alltune2/logs/tgifd-helper.log
+/var/www/html/alltune2/run/
+```
 
-The TGIF/HBLink local file is:
+The public example file is:
 
-/var/www/html/alltune2/tgif-hblink/MMDVM_Bridge.hblink.ini
-
-This file is only for the local HBLink path while TGIF/HBLink is active. It normally uses Address=127.0.0.1 and Port=62033.
-
-Do not copy MMDVM_Bridge.hblink.ini over MMDVM_Bridge.pre-hblink.ini.
-
-Setup now checks this and also saves a local safety copy:
-
-/var/www/html/alltune2/tgif-hblink/MMDVM_Bridge.pre-hblink.ini.keepdonotdelete
-
-That safety copy is ignored by Git and should not be deleted.
-
+```text
+/var/www/html/alltune2/tgif/config/tgifd.ini.example
+```
 
 ---
 
@@ -620,7 +700,7 @@ To change TGIF talkgroups:
 - enter a new talkgroup **or choose another TGIF Favorite**
 - press Connect again
 
-TGIF can take longer than BrandMeister to connect or disconnect. That is normal because TGIF/HBLink has more runtime pieces involved.
+TGIF may take a little longer than BrandMeister to connect or disconnect. TGIFD starts, links the private DVSwitch audio node when needed, tunes TGIF, and then reports status back to the dashboard.
 
 ---
 
@@ -673,7 +753,7 @@ Typical workflow:
 
 - make sure `NXDN_ENABLED=1` is set in `config.ini`
 - choose NXDN
-- enter the NXDN target or choose an NXDN Favorite
+- enter the NXDN target or choose a NXDN Favorite
 - press Connect
 - watch Live Status
 
@@ -737,6 +817,24 @@ Use it when you manually type a target and want to save it.
 If the same target and mode already exist, AllTune2 shows that it found an existing Favorite and lets you update it instead of creating a duplicate.
 
 When web login is enabled and you are logged out, Favorites are visible but view-only. Clicking a dashboard Favorite does not load it into the Control Center until you sign in.
+
+### Favorites file
+
+Your live Favorites file is local user data:
+
+```text
+/var/www/html/alltune2/data/favorites.txt
+```
+
+This file is intentionally ignored by Git.
+
+A neutral example file is included for reference:
+
+```text
+/var/www/html/alltune2/data/favorites.example.txt
+```
+
+Do not commit your live `favorites.txt`.
 
 ---
 
@@ -810,10 +908,42 @@ sudo systemctl restart analog_bridge
 Check:
 
 - `/var/www/html/alltune2/config.ini`
-- `/var/www/html/alltune2/tgif-hblink/hblink.cfg`
-- `/var/www/html/alltune2/tgif-hblink/MMDVM_Bridge.hblink.ini`
+- `/var/www/html/alltune2/tgif/config/tgifd.ini`
+- `/var/www/html/alltune2/logs/tgifd-helper.log`
+- `/var/www/html/alltune2/tgif/tgifd.log`
 
-TGIF may take longer than other modes to start or stop. Wait for status to finish before clicking repeatedly.
+Check TGIFD helper status:
+
+```bash
+sudo /var/www/html/alltune2/tgif/alltune2-tgifd-helper.sh status
+```
+
+TGIF may take longer than some other modes to start or stop. Wait for status to finish before clicking repeatedly.
+
+### If TGIF connects but inbound audio is unreliable
+
+Check that this line exists under `[tlv]` in:
+
+```text
+/var/www/html/alltune2/tgif/config/tgifd.ini
+```
+
+Required value:
+
+```ini
+inbound_slot=2
+```
+
+Also confirm your TGIFD identity values are correct:
+
+```ini
+callsign=YOURCALL
+dmr_id=YOUR_DMR_ID
+hotspot_radio_id=YOUR_HOTSPOT_ID_PLUS_1
+security_key=YOUR_TGIF_SECURITY_KEY
+```
+
+The `hotspot_radio_id` is usually your hotspot ID plus 1.
 
 ### If D-Star, P25, or NXDN does not show up
 
@@ -851,35 +981,18 @@ Make sure you are browsing to the same hostname used by the certificate.
 For example, if your AllTune2 address is:
 
 ```text
-https://kc3kmv.mywire.org/alltune2/public/
+https://my-node.ddns.net/alltune2/public/
 ```
 
 then the hostname is:
 
 ```text
-kc3kmv.mywire.org
+my-node.ddns.net
 ```
 
 Check the certificate with `openssl`.
 
 For the example above, you would run:
-
-```bash
-openssl s_client -connect kc3kmv.mywire.org:443 -servername kc3kmv.mywire.org </dev/null 2>/dev/null \
-  | openssl x509 -noout -subject -issuer -dates -ext subjectAltName
-```
-
-For your own system, replace `kc3kmv.mywire.org` with the real DDNS/domain name you use in the browser.
-
-Example:
-
-If your browser address is:
-
-```text
-https://my-node.ddns.net/alltune2/public/
-```
-
-then run:
 
 ```bash
 openssl s_client -connect my-node.ddns.net:443 -servername my-node.ddns.net </dev/null 2>/dev/null \
@@ -895,9 +1008,9 @@ X509v3 Subject Alternative Name:
     DNS:my-node.ddns.net
 ```
 
-If the certificate says `node.local`, `node67040.local`, or `snakeoil`, Apache is still serving a self-signed certificate and the browser will show a warning.
+If the certificate says `node.local`, `node.example.local`, or `snakeoil`, Apache is still serving a self-signed certificate and the browser will show a warning.
 
-If the certificate says your router brand name, such as `linksyssmartwifi.com`, your router is probably answering ports 80/443 instead of forwarding them to the node.
+If the certificate says your router brand name, your router is probably answering ports 80/443 instead of forwarding them to the node.
 
 Use a DDNS/domain hostname with a trusted certificate, or use Tailscale/VPN.
 
@@ -905,14 +1018,14 @@ Use a DDNS/domain hostname with a trusted certificate, or use Tailscale/VPN.
 
 For code-only updates, `git pull` is usually enough.
 
-If setup, permissions, sudoers, Apache security, or runtime helpers changed, run:
+If setup, permissions, sudoers, Apache security, TGIFD, or runtime helpers changed, run:
 
 ```bash
 cd /var/www/html/alltune2
 sudo ./setup_alltune2.sh
 ```
 
-If TGIF/HBLink runtime code changed, rebooting once after the update is recommended.
+If TGIFD runtime code changed, rebooting once after the update is recommended.
 
 ---
 
@@ -921,11 +1034,12 @@ If TGIF/HBLink runtime code changed, rebooting once after the update is recommen
 Edit these:
 
 - `/var/www/html/alltune2/config.ini`
-- `/var/www/html/alltune2/tgif-hblink/hblink.cfg`
+- `/var/www/html/alltune2/tgif/config/tgifd.ini`
 
-Review this if TGIF needs troubleshooting:
+Review these if TGIF needs troubleshooting:
 
-- `/var/www/html/alltune2/tgif-hblink/MMDVM_Bridge.hblink.ini`
+- `/var/www/html/alltune2/logs/tgifd-helper.log`
+- `/var/www/html/alltune2/tgif/tgifd.log`
 
 Leave these alone unless you know why:
 
@@ -939,6 +1053,8 @@ Remember:
 - do not paste passwords publicly
 - do not commit `config.ini`
 - do not commit `data/favorites.txt`
+- do not commit `tgif/config/tgifd.ini`
+- do not commit `tgif/build/`
 - do not assume every update needs setup
 - use `--set-admin-password` to change the web login password
 - use `--disable-auth` to turn web login off
@@ -946,6 +1062,8 @@ Remember:
 - prefer Tailscale/VPN for outside access
 - use DDNS/domain plus trusted HTTPS for public browser access
 - enable D-Star, P25, or NXDN only when those modes already work on your base system
+- keep `[tlv] inbound_slot=2` in `tgifd.ini`
+- set `hotspot_radio_id` correctly for your TGIF/DVSwitch identity
 
 ---
 
@@ -974,7 +1092,13 @@ Recent release series highlights:
 - Live Status improvements
 - managed Local Monitor / Transceive link-mode fixes
 - D-Star/P25/NXDN audio-alert improvements
-- TGIF/HBLink stability and retune improvements
+- native TGIFD backend replacing the older TGIF/HBLink path
+- lower TGIF runtime footprint by removing the Python/HBLink sidecar stack
+- reduced CPU load and disk usage for the TGIF path compared with the old sidecar approach
+- improved TGIF audio quality in testing
+- TGIFD installer/build support
+- TGIFD log rotation and runtime config protection
+- TGIF inbound audio reliability fix using `[tlv] inbound_slot=2`
 
 For most updates:
 
@@ -983,9 +1107,17 @@ cd /var/www/html/alltune2
 git pull origin main
 ```
 
-Run setup only when the release includes install/setup/system-level changes:
+Run setup when the release includes install/setup/system-level changes:
 
 ```bash
+sudo ./setup_alltune2.sh
+```
+
+For this TGIFD release, run setup after pulling:
+
+```bash
+cd /var/www/html/alltune2
+git pull origin main
 sudo ./setup_alltune2.sh
 ```
 
@@ -1002,4 +1134,3 @@ sudo /var/www/html/alltune2/setup_alltune2.sh --disable-auth
 ```
 
 Normal setup/update preserves existing web login settings and does not ask for a web password.
-
