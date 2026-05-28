@@ -14,7 +14,11 @@ DOCS_DIR="$APP_DIR/docs"
 LOGS_DIR="$APP_DIR/logs"
 RUN_DIR="$APP_DIR/run"
 LOCAL_STFU_DIR="$APP_DIR/stfu"
-TGIF_DIR="$APP_DIR/tgif-hblink"
+TGIF_DIR="$APP_DIR/tgif"
+TGIF_CONFIG_DIR="$TGIF_DIR/config"
+TGIF_BUILD_DIR="$TGIF_DIR/build"
+TGIF_DOCS_DIR="$TGIF_DIR/docs"
+OLD_TGIF_HBLINK_DIR="$APP_DIR/tgif-hblink"
 TOOLS_DIR="$APP_DIR/tools"
 
 CONFIG_FILE="$APP_DIR/config.ini"
@@ -25,25 +29,25 @@ VERSION_FILE="$APP_DIR/VERSION"
 BM_RECEIVE_HELPER="$APP_DIR/alltune2-bm-receive.sh"
 LOCAL_STFU_BIN="$LOCAL_STFU_DIR/STFU"
 
-TGIF_HELPER="$TGIF_DIR/alltune2-hblink-audio-helper.sh"
-TGIF_SET_TG="$TGIF_DIR/set_hblink_tg.sh"
-TGIF_HBLINK_CFG="$TGIF_DIR/hblink.cfg"
-TGIF_HBLINK_CFG_EXAMPLE="$TGIF_DIR/hblink.cfg.example"
-TGIF_RULES_TEMPLATE="$TGIF_DIR/rules.py.template"
-TGIF_RULES_FILE="$TGIF_DIR/rules.py"
-TGIF_MMDVM_HBLINK_INI="$TGIF_DIR/MMDVM_Bridge.hblink.ini"
-TGIF_MMDVM_HBLINK_INI_EXAMPLE="$TGIF_DIR/MMDVM_Bridge.hblink.ini.example"
-TGIF_MMDVM_PRE_HBLINK_INI="$TGIF_DIR/MMDVM_Bridge.pre-hblink.ini"
-TGIF_MMDVM_PRE_HBLINK_KEEP="$TGIF_DIR/MMDVM_Bridge.pre-hblink.ini.keepdonotdelete"
-TGIF_REQUIREMENTS="$TGIF_DIR/requirements.txt"
-TGIF_VENV_DIR="$TGIF_DIR/venv"
-TGIF_VENV_PYTHON="$TGIF_VENV_DIR/bin/python"
-TGIF_VENV_PIP="$TGIF_VENV_DIR/bin/pip"
-TGIF_REQUIREMENTS_STATE_FILE="$TGIF_VENV_DIR/.alltune2_requirements.sha256"
+TGIF_HELPER="$TGIF_DIR/alltune2-tgifd-helper.sh"
+TGIF_CONFIG_FILE="$TGIF_CONFIG_DIR/tgifd.ini"
+TGIF_CONFIG_EXAMPLE="$TGIF_CONFIG_DIR/tgifd.ini.example"
+TGIF_BINARY="$TGIF_BUILD_DIR/tgifd"
+TGIF_COPYRIGHT_NOTICE="$TGIF_DOCS_DIR/TGIFD-COPYRIGHT-NOTICE.md"
+TGIF_LOG_FILE="$TGIF_DIR/tgifd.log"
+TGIF_HELPER_LOG_FILE="$LOGS_DIR/tgifd-helper.log"
+TGIF_ACTIVITY_LOG_FILE="$LOGS_DIR/tgif-activity.jsonl"
+RADIO_LOG_PRUNE_SCRIPT="/usr/local/sbin/radio-log-prune.sh"
+RADIO_LOG_PRUNE_CRON="/etc/cron.d/radio-log-prune"
+MIGRATION_BACKUP_DIR=""
+TGIFD_CONFIG_HAS_PLACEHOLDERS=0
+SETUP_COMPLETED=0
+SKIP_APT="${ALLTUNE2_SKIP_APT:-0}"
 
 WEB_USER="www-data"
 WEB_GROUP="www-data"
 INSTALLER_MODE="${INSTALLER_MODE:-quiet}"
+QUIET_COMMAND_LOG="${QUIET_COMMAND_LOG:-/tmp/alltune2-setup-command-output.log}"
 AUTH_ACTION="normal"
 
 case "${1:-}" in
@@ -62,6 +66,8 @@ case "${1:-}" in
         echo "  sudo /var/www/html/alltune2/setup_alltune2.sh --disable-auth"
         echo
         echo "Normal setup/update preserves existing config.ini and auth settings."
+        echo "Normal setup/update retires the old TGIF/HBLink backend from the live app path after backing it up."
+        echo "Set ALLTUNE2_SKIP_APT=1 to skip automatic apt package installation."
         echo "--set-admin-password changes only the AllTune2 web login password."
         echo "--disable-auth sets ALLTUNE2_AUTH_ENABLED=0 and keeps the saved hash."
         exit 0
@@ -83,19 +89,21 @@ ANALOG_BRIDGE_INI="/opt/Analog_Bridge/Analog_Bridge.ini"
 
 ASTERISK_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk"
 BM_RECEIVE_SUDOERS_FILE="/etc/sudoers.d/alltune2-bm-receive"
-TGIF_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-hblink"
+TGIF_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-tgifd"
+OLD_TGIF_HBLINK_SUDOERS_FILE="/etc/sudoers.d/alltune2-hblink"
 
 BM_RECEIVE_LOG_FILE="/var/log/alltune2-bm-receive.log"
 BM_RECEIVE_LOGROTATE_FILE="/etc/logrotate.d/alltune2-bm-receive"
 STFU_LOG_FILE="/var/log/STFU.log"
 BM_STFU_LOG_FILE="/var/log/bm-stfu.log"
 STFU_LOGROTATE_FILE="/etc/logrotate.d/alltune2-stfu"
+TGIF_LOGROTATE_FILE="/etc/logrotate.d/alltune2-tgifd"
 APACHE_SECURITY_CONF_NAME="alltune2-security"
 APACHE_SECURITY_CONF_FILE="/etc/apache2/conf-available/${APACHE_SECURITY_CONF_NAME}.conf"
 
 EXPECTED_ASTERISK_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${ASTERISK_BIN}"
 EXPECTED_BM_RECEIVE_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${BM_RECEIVE_HELPER}"
-EXPECTED_TGIF_HELPER_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${TGIF_HELPER}"
+EXPECTED_TGIF_HELPER_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${TGIF_HELPER} *"
 
 validate_installer_mode() {
     case "$INSTALLER_MODE" in
@@ -122,8 +130,58 @@ warn() {
 
 fail() {
     echo "[ERROR] $*" >&2
+    if [[ "${SETUP_COMPLETED:-0}" != "1" && -n "${MIGRATION_BACKUP_DIR:-}" ]]; then
+        echo "[INFO] Migration backup is here: ${MIGRATION_BACKUP_DIR}" >&2
+        echo "[INFO] Review the error before rerunning setup repeatedly." >&2
+    fi
     exit 1
 }
+
+run_quiet_command() {
+    local label="$1"
+    shift
+
+    if [[ "$INSTALLER_MODE" == "verbose" ]]; then
+        "$@"
+        return
+    fi
+
+    {
+        echo
+        echo "===== ${label} ====="
+        printf 'Command:'
+        printf ' %q' "$@"
+        echo
+    } >> "$QUIET_COMMAND_LOG"
+
+    if ! "$@" >> "$QUIET_COMMAND_LOG" 2>&1; then
+        warn "${label} failed. Last command output:"
+        tail -n 80 "$QUIET_COMMAND_LOG" >&2 || true
+        return 1
+    fi
+}
+
+on_error() {
+    local exit_code="$?"
+    local line_no="${1:-unknown}"
+
+    trap - ERR
+
+    if [[ "${SETUP_COMPLETED:-0}" == "1" ]]; then
+        exit "$exit_code"
+    fi
+
+    echo >&2
+    echo "[ERROR] AllTune2 setup failed near line ${line_no}." >&2
+    if [[ -n "${MIGRATION_BACKUP_DIR:-}" ]]; then
+        echo "[INFO] Migration backup is here: ${MIGRATION_BACKUP_DIR}" >&2
+    fi
+    echo "[INFO] Review the error before rerunning setup repeatedly." >&2
+
+    exit "$exit_code"
+}
+
+trap 'on_error $LINENO' ERR
 
 require_root() {
     if [[ "${EUID}" -ne 0 ]]; then
@@ -273,18 +331,56 @@ run_auth_disable() {
     echo "- Run sudo /var/www/html/alltune2/setup_alltune2.sh --set-admin-password to set a new password."
 }
 
+install_minimum_packages_if_possible() {
+    log "Ensuring minimum runtime/build packages are installed when apt is available..."
+
+    if [[ "$SKIP_APT" == "1" ]]; then
+        warn "ALLTUNE2_SKIP_APT=1 set. Skipping automatic package installation; required tools will be checked next."
+        return
+    fi
+
+    if ! command -v apt-get >/dev/null 2>&1; then
+        warn "apt-get not found. Skipping automatic package installation; required tools will be checked next."
+        return
+    fi
+
+    local packages=(
+        apache2
+        php
+        libapache2-mod-php
+        php-cli
+        sudo
+        git
+        ca-certificates
+        python3
+        cron
+        logrotate
+        build-essential
+        cmake
+        libssl-dev
+    )
+
+    export DEBIAN_FRONTEND=noninteractive
+    : > "$QUIET_COMMAND_LOG"
+    run_quiet_command "apt package index update" apt-get update
+    run_quiet_command "apt package installation" apt-get install -y "${packages[@]}"
+}
+
+
+check_auth_runtime_tools() {
+    log "Checking runtime tools for auth-only action..."
+    command -v php >/dev/null 2>&1 || fail "php is not installed or not in PATH."
+    command -v sudo >/dev/null 2>&1 || fail "sudo is not installed or not in PATH."
+    command -v python3 >/dev/null 2>&1 || fail "python3 is not installed or not in PATH."
+}
+
 check_runtime_tools() {
     log "Checking runtime tools..."
     command -v php >/dev/null 2>&1 || fail "php is not installed or not in PATH."
     command -v sudo >/dev/null 2>&1 || fail "sudo is not installed or not in PATH."
     command -v visudo >/dev/null 2>&1 || fail "visudo is not installed or not in PATH."
     command -v python3 >/dev/null 2>&1 || fail "python3 is not installed or not in PATH."
-
-    if python3 -m venv --help >/dev/null 2>&1; then
-        log "python3 venv support found."
-    else
-        fail "python3 venv support is not available. Install python3-venv first."
-    fi
+    command -v cmake >/dev/null 2>&1 || fail "cmake is not installed or not in PATH. Install cmake before building TGIFD."
 
     if command -v apache2ctl >/dev/null 2>&1; then
         log "apache2ctl found."
@@ -304,7 +400,7 @@ check_web_user() {
 make_dirs() {
     log "Ensuring required directories exist..."
     mkdir -p "$PUBLIC_DIR" "$ASSETS_DIR" "$CSS_DIR" "$JS_DIR" "$API_DIR" "$APP_CODE_DIR"
-    mkdir -p "$DATA_DIR" "$DOCS_DIR" "$LOGS_DIR" "$RUN_DIR" "$LOCAL_STFU_DIR" "$TGIF_DIR" "$TOOLS_DIR"
+    mkdir -p "$DATA_DIR" "$DOCS_DIR" "$LOGS_DIR" "$RUN_DIR" "$LOCAL_STFU_DIR" "$TGIF_DIR" "$TGIF_CONFIG_DIR" "$TGIF_DOCS_DIR" "$TOOLS_DIR"
 }
 
 create_config_example() {
@@ -355,11 +451,7 @@ create_favorites_if_missing() {
 9990|Parrot|TGIF Parrot|TGIF
 9050|East Coast Reflector|East Coast TGIF|TGIF
 23510|CQ-UK World Wide|CQ-World Wide TGIF|TGIF
-311630|AA9JR Repeater Link|Morning Net|TGIF
-19570|Example TGIF|Example Favorite|TGIF
-3220008|Example BM|Example Favorite|BM
-68064|Example AllStar|Example AllStar Node|ASL
-parrot.ysfreflector.de:42020|Fusion|Parrot For Fusion|YSF
+parrot.ysfreflector.de:42020|Fusion Parrot|YSF Parrot|YSF
 EOF
     else
         log "favorites.txt already exists. Preserving current contents."
@@ -369,95 +461,601 @@ EOF
     chown "$WEB_USER":"$WEB_GROUP" "$FAVORITES_FILE"
 }
 
-create_tgif_hblink_cfg_example() {
-    if [[ -f "$TGIF_HBLINK_CFG_EXAMPLE" ]]; then
-        log "hblink.cfg.example already exists. Preserving repo example file."
-        chmod 0644 "$TGIF_HBLINK_CFG_EXAMPLE"
-        chown root:root "$TGIF_HBLINK_CFG_EXAMPLE"
-        return
-    fi
+strip_quotes() {
+    local value="$1"
+    value="${value#\"}"
+    value="${value%\"}"
+    printf '%s\n' "$value"
+}
 
-    if [[ -f "$TGIF_HBLINK_CFG" ]]; then
-        log "Creating hblink.cfg.example from current hblink.cfg..."
-        cp -f "$TGIF_HBLINK_CFG" "$TGIF_HBLINK_CFG_EXAMPLE"
+config_value_or_empty() {
+    local key="$1"
+    [[ -f "$CONFIG_FILE" ]] || return 0
+    awk -F= -v key="$key" '
+        $1 ~ "^[[:space:]]*" key "[[:space:]]*$" {
+            value = $2
+            sub(/^[[:space:]]+/, "", value)
+            sub(/[[:space:]]+$/, "", value)
+            gsub(/^"|"$/, "", value)
+            print value
+            exit
+        }
+    ' "$CONFIG_FILE"
+}
 
-        python3 - "$TGIF_HBLINK_CFG_EXAMPLE" <<'PY'
+ini_value_any_section() {
+    local file="$1"
+    local key="$2"
+    [[ -f "$file" ]] || return 0
+    awk -F= -v key="$key" '
+        $1 ~ "^[[:space:]]*" key "[[:space:]]*$" {
+            value = $2
+            # Strip inline comments used in DVSwitch/MMDVM INI files.
+            sub(/[[:space:]]*[;#].*$/, "", value)
+            sub(/^[[:space:]]+/, "", value)
+            sub(/[[:space:]]+$/, "", value)
+            gsub(/^"|"$/, "", value)
+            print value
+            exit
+        }
+    ' "$file"
+}
+
+is_placeholder_value() {
+    local value="$1"
+    [[ -z "$value" ]] && return 0
+    [[ "$value" =~ YOUR|Your|CHANGE_ME|PLACEHOLDER|YOURCALL|YOUR_DMR_ID|YOUR_HOTSPOT|YOUR_TGIF_SECURITY_KEY|000000000 ]] && return 0
+    return 1
+}
+
+tgifd_ini_set_if_placeholder_or_missing() {
+    local section="$1"
+    local key="$2"
+    local value="$3"
+
+    [[ -n "$value" ]] || return 0
+    is_placeholder_value "$value" && return 0
+
+    python3 - "$TGIF_CONFIG_FILE" "$section" "$key" "$value" <<'PYTGIFDINI'
 import pathlib
-import re
 import sys
 
 path = pathlib.Path(sys.argv[1])
-text = path.read_text()
+section = sys.argv[2]
+key = sys.argv[3]
+value = sys.argv[4]
 
-patterns = [
-    (r'(^\s*PASSPHRASE\s*=\s*).*$' , r'\1CHANGE_ME', re.MULTILINE),
-    (r'(^\s*PASSWORD\s*=\s*).*$'   , r'\1CHANGE_ME', re.MULTILINE),
-    (r'(^\s*TGID_TS2_[0-9]+\s*=\s*).*$' , r'\1CHANGE_ME', re.MULTILINE),
-]
+text = path.read_text() if path.exists() else ""
+lines = text.splitlines()
 
-for pattern, repl, flags in patterns:
-    text = re.sub(pattern, repl, text, flags=flags)
+placeholder_tokens = (
+    "", "YOUR", "Your", "CHANGE_ME", "PLACEHOLDER", "YOURCALL",
+    "YOUR_DMR_ID", "YOUR_HOTSPOT", "YOUR_TGIF_SECURITY_KEY", "000000000"
+)
 
-path.write_text(text)
-PY
-        warn "Created $TGIF_HBLINK_CFG_EXAMPLE from live hblink.cfg. Review and sanitize it before pushing to GitHub."
-    else
-        log "Creating starter hblink.cfg.example..."
-        cat > "$TGIF_HBLINK_CFG_EXAMPLE" <<'EOF'
-# Review this file and replace all placeholder values before using TGIF/HBLink.
-# The exact keys/sections here must match your local HBLink runtime files.
-#
-# Important:
-# - Set the correct callsign / repeater / radio ID fields.
-# - Set the correct hotspot / repeater-style DMR ID where required.
-# - Set the TGIF/HBLink passphrase / password fields.
-# - Verify ports and addresses match your system.
+def is_placeholder(v: str) -> bool:
+    raw = v.strip().strip('"')
+    if raw == "":
+        return True
+    return any(token in raw for token in placeholder_tokens if token)
 
-[GLOBAL]
-PATH=.
+start = None
+end = len(lines)
+for i, line in enumerate(lines):
+    if line.strip().lower() == f"[{section}]".lower():
+        start = i
+        for j in range(i + 1, len(lines)):
+            if lines[j].strip().startswith("[") and lines[j].strip().endswith("]"):
+                end = j
+                break
+        break
 
-[REPORTS]
-REPORT=False
-REPORT_INTERVAL=60
-REPORT_PORT=4321
-REPORT_CLIENTS=127.0.0.1
+if start is None:
+    if lines and lines[-1].strip():
+        lines.append("")
+    lines.extend([f"[{section}]", f"{key} = {value}"])
+else:
+    key_line = None
+    for i in range(start + 1, end):
+        if "=" not in lines[i]:
+            continue
+        left, right = lines[i].split("=", 1)
+        if left.strip().lower() == key.lower():
+            key_line = i
+            if is_placeholder(right):
+                lines[i] = f"{key} = {value}"
+            break
+    if key_line is None:
+        lines.insert(end, f"{key} = {value}")
 
-# Replace all CHANGE_ME values below with your real local settings.
-EOF
-    fi
-
-    chmod 0644 "$TGIF_HBLINK_CFG_EXAMPLE"
-    chown root:root "$TGIF_HBLINK_CFG_EXAMPLE"
+path.write_text("\n".join(lines).rstrip() + "\n")
+PYTGIFDINI
 }
 
-create_tgif_hblink_cfg_if_missing() {
-    if [[ -f "$TGIF_HBLINK_CFG" ]]; then
-        log "Live hblink.cfg already exists. Preserving current values."
-    elif [[ -f "$TGIF_HBLINK_CFG_EXAMPLE" ]]; then
-        log "Creating starter hblink.cfg from hblink.cfg.example..."
-        cp -f "$TGIF_HBLINK_CFG_EXAMPLE" "$TGIF_HBLINK_CFG"
-        warn "Created $TGIF_HBLINK_CFG with placeholder values. Edit it before using TGIF/HBLink."
-    else
-        fail "Neither $TGIF_HBLINK_CFG nor $TGIF_HBLINK_CFG_EXAMPLE exists."
-    fi
+tgifd_ini_set_value() {
+    local section="$1"
+    local key="$2"
+    local value="$3"
 
-    chmod 0640 "$TGIF_HBLINK_CFG"
-    chown root:"$WEB_GROUP" "$TGIF_HBLINK_CFG"
+    [[ -n "$value" ]] || return 0
+
+    python3 - "$TGIF_CONFIG_FILE" "$section" "$key" "$value" <<'PYTGIFDSET'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+section = sys.argv[2]
+key = sys.argv[3]
+value = sys.argv[4]
+
+text = path.read_text() if path.exists() else ""
+lines = text.splitlines()
+
+start = None
+end = len(lines)
+for i, line in enumerate(lines):
+    if line.strip().lower() == f"[{section}]".lower():
+        start = i
+        for j in range(i + 1, len(lines)):
+            if lines[j].strip().startswith("[") and lines[j].strip().endswith("]"):
+                end = j
+                break
+        break
+
+if start is None:
+    if lines and lines[-1].strip():
+        lines.append("")
+    lines.extend([f"[{section}]", f"{key} = {value}"])
+else:
+    key_line = None
+    for i in range(start + 1, end):
+        if "=" not in lines[i]:
+            continue
+        left, _right = lines[i].split("=", 1)
+        if left.strip().lower() == key.lower():
+            key_line = i
+            lines[i] = f"{key} = {value}"
+            break
+    if key_line is None:
+        lines.insert(end, f"{key} = {value}")
+
+path.write_text("\n".join(lines).rstrip() + "\n")
+PYTGIFDSET
 }
 
-create_tgif_mmdvm_hblink_ini_if_missing() {
-    if [[ -f "$TGIF_MMDVM_HBLINK_INI" ]]; then
-        log "Live MMDVM_Bridge.hblink.ini already exists. Preserving current values."
-    elif [[ -f "$TGIF_MMDVM_HBLINK_INI_EXAMPLE" ]]; then
-        log "Creating starter MMDVM_Bridge.hblink.ini from MMDVM_Bridge.hblink.ini.example..."
-        cp -f "$TGIF_MMDVM_HBLINK_INI_EXAMPLE" "$TGIF_MMDVM_HBLINK_INI"
-        warn "Created $TGIF_MMDVM_HBLINK_INI with placeholder/example values. Review it before using TGIF/HBLink."
-    else
-        fail "Neither $TGIF_MMDVM_HBLINK_INI nor $TGIF_MMDVM_HBLINK_INI_EXAMPLE exists."
+create_tgifd_config_example_if_missing() {
+    if [[ -f "$TGIF_CONFIG_EXAMPLE" ]]; then
+        log "tgifd.ini.example already exists. Preserving repo example file."
+        chmod 0644 "$TGIF_CONFIG_EXAMPLE"
+        chown root:root "$TGIF_CONFIG_EXAMPLE"
+        return
     fi
 
-    chmod 0640 "$TGIF_MMDVM_HBLINK_INI"
-    chown root:"$WEB_GROUP" "$TGIF_MMDVM_HBLINK_INI"
+    log "Creating starter tgifd.ini.example..."
+    mkdir -p "$TGIF_CONFIG_DIR"
+    cat > "$TGIF_CONFIG_EXAMPLE" <<'EOFTGIFDINIEXAMPLE'
+[general]
+log_file = ./tgifd.log
+
+[identity]
+callsign = YOURCALL
+dmr_id = YOUR_DMR_ID
+hotspot_radio_id = YOUR_HOTSPOT_ID_PLUS_1
+
+[tgif]
+host = tgif.network
+port = 62031
+security_key = YOUR_TGIF_SECURITY_KEY
+startup_tg = 9990
+options = StartRef=9990;RelinkTime=60
+
+[behavior]
+receive_timeout_ms = 1000
+keepalive_seconds = 5
+protocol_assert_seconds = 30
+soft_refresh_trigger_missed = 2
+max_missed = 5
+reconnect_delay_seconds = 5
+rx_idle_end_ms = 1500
+
+[network]
+local_bind_port = 0
+
+[tlv]
+rx_port = 31103
+tx_host = 127.0.0.1
+tx_port = 31100
+timeout_ms = 500
+inbound_slot = 2
+
+[private_node]
+enabled = true
+asterisk_bin = /usr/sbin/asterisk
+mynode = YOUR_NODE
+private_node = YOUR_DVSWITCH_NODE
+autoload_mode = transceive
+
+[mmdvm]
+rx_frequency = 000000000
+tx_frequency = 000000000
+power = 5
+color_code = 1
+latitude = 0.0
+longitude = 0.0
+height = 0
+location = Your Location
+description = AllTune2 TGIFD
+slots = 2
+url = https://github.com/TerryClaiborne/alltune2
+version = alltune2-tgifd
+software = TGIFD
+EOFTGIFDINIEXAMPLE
+
+    chmod 0644 "$TGIF_CONFIG_EXAMPLE"
+    chown root:root "$TGIF_CONFIG_EXAMPLE"
+}
+
+create_tgifd_config_if_missing() {
+    mkdir -p "$TGIF_CONFIG_DIR"
+
+    if [[ -f "$TGIF_CONFIG_FILE" ]]; then
+        log "Live tgifd.ini already exists. Preserving current values."
+    elif [[ -f "$TGIF_CONFIG_EXAMPLE" ]]; then
+        log "Creating starter tgifd.ini from tgifd.ini.example..."
+        cp -f "$TGIF_CONFIG_EXAMPLE" "$TGIF_CONFIG_FILE"
+        warn "Created $TGIF_CONFIG_FILE with placeholder values. Review it before using TGIFD."
+    else
+        fail "Neither $TGIF_CONFIG_FILE nor $TGIF_CONFIG_EXAMPLE exists."
+    fi
+
+    chmod 0640 "$TGIF_CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$TGIF_CONFIG_FILE"
+}
+
+sync_tgifd_config_from_system_if_safe() {
+    log "Syncing TGIFD config placeholders from existing AllTune2/DVSwitch settings when safe..."
+
+    local mynode=""
+    local dvswitch_node=""
+    local tgif_key=""
+    local gateway_dmr_id=""
+    local repeater_id=""
+    local hotspot_radio_id=""
+    local callsign=""
+    local rx_frequency=""
+    local tx_frequency=""
+    local latitude=""
+    local longitude=""
+    local height=""
+    local location=""
+    local description=""
+
+    mynode="$(config_value_or_empty MYNODE || true)"
+    dvswitch_node="$(config_value_or_empty DVSWITCH_NODE || true)"
+    tgif_key="$(config_value_or_empty TGIF_HotspotSecurityKey || true)"
+    gateway_dmr_id="$(ini_value_any_section "$ANALOG_BRIDGE_INI" gatewayDmrId || true)"
+    repeater_id="$(ini_value_any_section "$ANALOG_BRIDGE_INI" repeaterID || true)"
+    callsign="$(ini_value_any_section "$ANALOG_BRIDGE_INI" gatewayCallsign || true)"
+    if [[ -z "$callsign" ]]; then
+        callsign="$(ini_value_any_section "$DVSWITCH_INI" gatewayCallsign || true)"
+    fi
+    if [[ -z "$callsign" ]]; then
+        callsign="$(ini_value_any_section "$DVSWITCH_INI" callsign || true)"
+    fi
+    if [[ -z "$callsign" ]]; then
+        callsign="$(ini_value_any_section "$MMDVM_BRIDGE_INI" Callsign || true)"
+    fi
+
+    rx_frequency="$(ini_value_any_section "$MMDVM_BRIDGE_INI" RXFrequency || true)"
+    tx_frequency="$(ini_value_any_section "$MMDVM_BRIDGE_INI" TXFrequency || true)"
+    latitude="$(ini_value_any_section "$MMDVM_BRIDGE_INI" Latitude || true)"
+    longitude="$(ini_value_any_section "$MMDVM_BRIDGE_INI" Longitude || true)"
+    height="$(ini_value_any_section "$MMDVM_BRIDGE_INI" Height || true)"
+    location="$(ini_value_any_section "$MMDVM_BRIDGE_INI" Location || true)"
+    description="$(ini_value_any_section "$MMDVM_BRIDGE_INI" Description || true)"
+
+    if [[ "$repeater_id" =~ ^[0-9]+$ ]]; then
+        hotspot_radio_id="$((repeater_id + 1))"
+    fi
+
+    tgifd_ini_set_if_placeholder_or_missing "identity" "callsign" "$callsign"
+    tgifd_ini_set_if_placeholder_or_missing "identity" "dmr_id" "$gateway_dmr_id"
+    tgifd_ini_set_if_placeholder_or_missing "identity" "hotspot_radio_id" "$hotspot_radio_id"
+    tgifd_ini_set_if_placeholder_or_missing "tgif" "security_key" "$tgif_key"
+    tgifd_ini_set_if_placeholder_or_missing "private_node" "mynode" "$mynode"
+    tgifd_ini_set_if_placeholder_or_missing "private_node" "private_node" "$dvswitch_node"
+
+    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "rx_frequency" "$rx_frequency"
+    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "tx_frequency" "$tx_frequency"
+    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "latitude" "$latitude"
+    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "longitude" "$longitude"
+    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "height" "$height"
+    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "location" "$location"
+    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "description" "$description"
+
+    # AllTune2 TGIFD is a TS2 path. This must be present for reliable inbound TGIF audio.
+    tgifd_ini_set_value "tlv" "inbound_slot" "2"
+
+    chmod 0640 "$TGIF_CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$TGIF_CONFIG_FILE"
+}
+
+check_tgifd_config_content() {
+    log "Checking TGIFD config content..."
+
+    local placeholders_regex='YOUR|Your|YOURCALL|CHANGE_ME|PLACEHOLDER|000000000'
+
+    TGIFD_CONFIG_HAS_PLACEHOLDERS=0
+    if grep -Eq "$placeholders_regex" "$TGIF_CONFIG_FILE"; then
+        TGIFD_CONFIG_HAS_PLACEHOLDERS=1
+        warn "tgifd.ini still contains placeholder values. TGIFD may not work until it is reviewed."
+    fi
+
+    if ! grep -qE '^[[:space:]]*hotspot_radio_id[[:space:]]*=' "$TGIF_CONFIG_FILE"; then
+        warn "tgifd.ini does not define hotspot_radio_id. TGIFD may not stay connected to TGIF."
+    fi
+
+    if ! grep -qE '^[[:space:]]*security_key[[:space:]]*=' "$TGIF_CONFIG_FILE"; then
+        warn "tgifd.ini does not define security_key. TGIFD authentication may fail."
+    fi
+
+    if ! awk -F= '
+        /^[[:space:]]*\[tlv\][[:space:]]*$/ {in_tlv=1; next}
+        /^[[:space:]]*\[/ {in_tlv=0}
+        in_tlv && $1 ~ /^[[:space:]]*inbound_slot[[:space:]]*$/ {v=$2; gsub(/[[:space:]]/, "", v); found=(v=="2")}
+        END {exit(found ? 0 : 1)}
+    ' "$TGIF_CONFIG_FILE"; then
+        warn "tgifd.ini [tlv] inbound_slot is not 2. Inbound TGIF audio may be unreliable."
+    fi
+}
+
+build_tgifd_binary() {
+    log "Building TGIFD..."
+
+    [[ -f "$TGIF_DIR/CMakeLists.txt" ]] || fail "TGIFD CMakeLists.txt not found: $TGIF_DIR/CMakeLists.txt"
+    [[ -f "$TGIF_HELPER" ]] || fail "TGIFD helper not found: $TGIF_HELPER"
+
+    run_quiet_command "TGIFD cmake configure" cmake -S "$TGIF_DIR" -B "$TGIF_BUILD_DIR"
+    run_quiet_command "TGIFD build" cmake --build "$TGIF_BUILD_DIR" -j
+
+    if [[ -f "$TGIF_BINARY" ]]; then
+        chmod 0755 "$TGIF_BINARY"
+        chown root:root "$TGIF_BINARY"
+    fi
+
+    [[ -x "$TGIF_BINARY" ]] || fail "TGIFD binary was not built or is not executable: $TGIF_BINARY"
+}
+
+check_tgifd_binary() {
+    [[ -x "$TGIF_BINARY" ]] || fail "TGIFD binary missing or not executable: $TGIF_BINARY"
+    log "TGIFD binary exists: $TGIF_BINARY"
+}
+
+check_tgifd_repo_preflight_before_hblink_retirement() {
+    log "Running TGIFD repo preflight before retiring HBLink..."
+
+    local missing=0
+
+    local required_tgifd_files=(
+        "$TGIF_HELPER"
+        "$TGIF_DIR/CMakeLists.txt"
+        "$TGIF_CONFIG_EXAMPLE"
+        "$TGIF_COPYRIGHT_NOTICE"
+    )
+
+    local file
+    for file in "${required_tgifd_files[@]}"; do
+        if [[ ! -f "$file" ]]; then
+            warn "Missing TGIFD required file before HBLink retirement: $file"
+            missing=1
+        fi
+    done
+
+    if ! compgen -G "$TGIF_DIR/src/*.cpp" >/dev/null; then
+        warn "Missing TGIFD source files before HBLink retirement: $TGIF_DIR/src/*.cpp"
+        missing=1
+    fi
+
+    if ! compgen -G "$TGIF_DIR/include/*.hpp" >/dev/null; then
+        warn "Missing TGIFD header files before HBLink retirement: $TGIF_DIR/include/*.hpp"
+        missing=1
+    fi
+
+    if ! grep -qE 'alltune2-tgifd-helper\.sh|/tgif/' "$APP_DIR/api/connect.php" || ! grep -q 'tgifd_' "$APP_DIR/api/connect.php"; then
+        warn "api/connect.php does not appear to be updated for TGIFD naming/helper usage. Refusing to retire HBLink."
+        missing=1
+    fi
+
+    if grep -qE 'hblink_tgif|tgif_hblink|TGIF HBLINK|FAILED TO STOP TGIF HBLINK' "$APP_DIR/api/connect.php"; then
+        warn "api/connect.php still contains old TGIF/HBLink runtime naming. Refusing to retire HBLink."
+        missing=1
+    fi
+
+    if ! grep -qE "'tgifd'[[:space:]]*=>|TGIFD|alltune2-tgifd|/tgif/" "$APP_DIR/api/status.php"; then
+        warn "api/status.php does not appear to expose TGIFD status. Refusing to retire HBLink."
+        missing=1
+    fi
+
+    if grep -qE 'hblink_tgif|tgif_hblink|read_hblink|hblinkTgif|TGIF HBLINK|FAILED TO STOP TGIF HBLINK' "$APP_DIR/api/status.php"; then
+        warn "api/status.php still contains old TGIF/HBLink runtime naming. Refusing to retire HBLink."
+        missing=1
+    fi
+
+    if grep -qE 'systemctl[[:space:]]+start[[:space:]]+mmdvm_bridge' "$TGIF_HELPER"; then
+        warn "TGIFD helper still restarts mmdvm_bridge. Stable TGIFD stop must leave mmdvm_bridge inactive. Refusing to retire HBLink."
+        missing=1
+    fi
+
+    if grep -q 'TGIFD retuned' "$TGIF_HELPER"; then
+        warn "TGIFD helper appears to contain the failed fast-retune experiment. Refusing to retire HBLink."
+        missing=1
+    fi
+
+    if ! grep -qE '^[[:space:]]*inbound_slot[[:space:]]*=[[:space:]]*2[[:space:]]*$' "$TGIF_CONFIG_EXAMPLE"; then
+        warn "tgifd.ini.example must include [tlv] inbound_slot = 2 for reliable TGIF inbound audio."
+        missing=1
+    fi
+
+    if [[ "$missing" -ne 0 ]]; then
+        fail "TGIFD repo/API preflight failed. HBLink was not retired."
+    fi
+
+    log "TGIFD repo/API preflight passed."
+}
+
+backup_app_path_if_exists() {
+    local path="$1"
+    local rel=""
+
+    [[ -n "$MIGRATION_BACKUP_DIR" ]] || fail "MIGRATION_BACKUP_DIR is not set."
+    [[ -e "$path" ]] || return 0
+
+    rel="${path#$APP_DIR/}"
+    mkdir -p "$MIGRATION_BACKUP_DIR/app/$(dirname "$rel")"
+    cp -a "$path" "$MIGRATION_BACKUP_DIR/app/$rel"
+}
+
+backup_abs_path_if_exists() {
+    local path="$1"
+    local dest=""
+
+    [[ -n "$MIGRATION_BACKUP_DIR" ]] || fail "MIGRATION_BACKUP_DIR is not set."
+    [[ -e "$path" ]] || return 0
+
+    dest="$MIGRATION_BACKUP_DIR/rootfs${path}"
+    mkdir -p "$(dirname "$dest")"
+    cp -a "$path" "$dest"
+}
+
+create_tgifd_migration_backup() {
+    local timestamp
+    timestamp="$(date +%Y%m%d-%H%M%S)"
+    MIGRATION_BACKUP_DIR="/root/alltune2-backups/setup-pre-tgifd-migration-${timestamp}"
+
+    log "Creating TGIFD migration preflight backup: $MIGRATION_BACKUP_DIR"
+    mkdir -p "$MIGRATION_BACKUP_DIR/app" "$MIGRATION_BACKUP_DIR/rootfs"
+
+    backup_app_path_if_exists "$CONFIG_FILE"
+    backup_app_path_if_exists "$CONFIG_EXAMPLE_FILE"
+    backup_app_path_if_exists "$FAVORITES_FILE"
+    backup_app_path_if_exists "$VERSION_FILE"
+    backup_app_path_if_exists "$APP_DIR/.gitignore"
+    backup_app_path_if_exists "$APP_DIR/setup_alltune2.sh"
+    backup_app_path_if_exists "$BM_RECEIVE_HELPER"
+    backup_app_path_if_exists "$APP_DIR/api/connect.php"
+    backup_app_path_if_exists "$APP_DIR/api/status.php"
+    backup_app_path_if_exists "$TGIF_DIR"
+    backup_app_path_if_exists "$OLD_TGIF_HBLINK_DIR"
+
+    backup_app_path_if_exists "$RUN_DIR/alltune2-tgif-hblink.state"
+    backup_app_path_if_exists "$RUN_DIR/alltune2-tgif-hblink.pid"
+    backup_app_path_if_exists "$RUN_DIR/alltune2-tgifd.state"
+    backup_app_path_if_exists "$RUN_DIR/alltune2-tgifd.pid"
+
+    backup_app_path_if_exists "$LOGS_DIR/hblink-bridge.log"
+    backup_app_path_if_exists "$LOGS_DIR/hblink-bridge.out"
+    backup_app_path_if_exists "$LOGS_DIR/hblink4-bridge-console.out"
+    backup_app_path_if_exists "$LOGS_DIR/tgifd-helper.log"
+    backup_app_path_if_exists "$TGIF_LOG_FILE"
+    backup_app_path_if_exists "$TGIF_ACTIVITY_LOG_FILE"
+
+    backup_abs_path_if_exists "$ASTERISK_SUDOERS_FILE"
+    backup_abs_path_if_exists "$BM_RECEIVE_SUDOERS_FILE"
+    backup_abs_path_if_exists "$TGIF_HELPER_SUDOERS_FILE"
+    backup_abs_path_if_exists "$OLD_TGIF_HBLINK_SUDOERS_FILE"
+    backup_abs_path_if_exists "$BM_RECEIVE_LOGROTATE_FILE"
+    backup_abs_path_if_exists "$STFU_LOGROTATE_FILE"
+    backup_abs_path_if_exists "$TGIF_LOGROTATE_FILE"
+    backup_abs_path_if_exists "$RADIO_LOG_PRUNE_SCRIPT"
+    backup_abs_path_if_exists "$RADIO_LOG_PRUNE_CRON"
+
+    printf '%s\n' "$MIGRATION_BACKUP_DIR" > "$MIGRATION_BACKUP_DIR/BACKUP_LOCATION.txt"
+    echo "[INFO] TGIFD migration preflight backup: $MIGRATION_BACKUP_DIR"
+}
+
+stop_old_hblink_processes_if_running() {
+    log "Checking for old TGIF/HBLink processes..."
+
+    local matches=""
+    matches="$(pgrep -af "$OLD_TGIF_HBLINK_DIR|alltune2-hblink-audio-helper|set_hblink_tg\.sh" 2>/dev/null || true)"
+
+    if [[ -z "$matches" ]]; then
+        log "No old TGIF/HBLink processes found."
+        return
+    fi
+
+    warn "Old TGIF/HBLink processes detected. Stopping them before migration."
+    echo "$matches" | sed 's/^/[INFO] /'
+
+    pkill -f "$OLD_TGIF_HBLINK_DIR" 2>/dev/null || true
+    pkill -f 'alltune2-hblink-audio-helper|set_hblink_tg\.sh' 2>/dev/null || true
+    sleep 1
+
+    matches="$(pgrep -af "$OLD_TGIF_HBLINK_DIR|alltune2-hblink-audio-helper|set_hblink_tg\.sh" 2>/dev/null || true)"
+    if [[ -n "$matches" ]]; then
+        warn "Some old TGIF/HBLink processes may still be running after stop attempt:"
+        echo "$matches" | sed 's/^/[WARN] /'
+    fi
+}
+
+stop_existing_tgifd_if_running() {
+    log "Stopping any active TGIFD instance before rebuild/config update..."
+
+    if [[ -x "$TGIF_HELPER" ]]; then
+        "$TGIF_HELPER" stop >/dev/null 2>&1 || true
+    fi
+
+    pkill -f "$TGIF_BINARY" >/dev/null 2>&1 || true
+    sleep 1
+
+    if pgrep -f "$TGIF_BINARY" >/dev/null 2>&1; then
+        fail "TGIFD process is still running after stop attempt. Stop it before continuing."
+    fi
+
+    log "No active TGIFD process remains."
+}
+
+
+retire_old_hblink_before_tgifd_install() {
+    log "Retiring old TGIF/HBLink artifacts from live AllTune2 path..."
+
+    [[ -n "$MIGRATION_BACKUP_DIR" ]] || fail "Migration backup was not created before HBLink retirement."
+
+    local retired_dir="$MIGRATION_BACKUP_DIR/hblink-retired"
+    mkdir -p "$retired_dir/app/run" "$retired_dir/app/logs" "$retired_dir/rootfs/etc/sudoers.d"
+
+    stop_old_hblink_processes_if_running
+
+    if [[ -f "$OLD_TGIF_HBLINK_SUDOERS_FILE" ]]; then
+        cp -a "$OLD_TGIF_HBLINK_SUDOERS_FILE" "$retired_dir/rootfs/etc/sudoers.d/"
+        rm -f "$OLD_TGIF_HBLINK_SUDOERS_FILE"
+        warn "Removed old TGIF/HBLink sudoers file from live system: $OLD_TGIF_HBLINK_SUDOERS_FILE"
+    fi
+
+    if [[ -d "$OLD_TGIF_HBLINK_DIR" ]]; then
+        mv "$OLD_TGIF_HBLINK_DIR" "$retired_dir/app/tgif-hblink"
+        warn "Moved old TGIF/HBLink directory out of live app path: $retired_dir/app/tgif-hblink"
+    fi
+
+    local file
+    for file in \
+        "$RUN_DIR/alltune2-tgif-hblink.state" \
+        "$RUN_DIR/alltune2-tgif-hblink.pid" \
+        "$LOGS_DIR/hblink-bridge.log" \
+        "$LOGS_DIR/hblink-bridge.out" \
+        "$LOGS_DIR/hblink4-bridge-console.out"
+    do
+        if [[ -e "$file" ]]; then
+            local rel="${file#$APP_DIR/}"
+            mkdir -p "$retired_dir/app/$(dirname "$rel")"
+            mv "$file" "$retired_dir/app/$rel"
+            warn "Moved old TGIF/HBLink artifact out of live app path: $file"
+        fi
+    done
+
+    # Keep $TGIF_ACTIVITY_LOG_FILE in place deliberately. It may contain current
+    # TGIFD/Cockpit activity history, not only old HBLink runtime state.
+    echo "[INFO] Old TGIF/HBLink artifacts retired to: $retired_dir"
 }
 
 check_required_repo_files() {
@@ -481,16 +1079,9 @@ check_required_repo_files() {
         "$CONFIG_EXAMPLE_FILE"
         "$LOCAL_STFU_BIN"
         "$TGIF_HELPER"
-        "$TGIF_SET_TG"
-        "$TGIF_DIR/bridge.py"
-        "$TGIF_DIR/hblink.py"
-        "$TGIF_DIR/config.py"
-        "$TGIF_DIR/const.py"
-        "$TGIF_DIR/log.py"
-        "$TGIF_DIR/reporting_const.py"
-        "$TGIF_MMDVM_HBLINK_INI_EXAMPLE"
-        "$TGIF_RULES_TEMPLATE"
-        "$TGIF_REQUIREMENTS"
+        "$TGIF_DIR/CMakeLists.txt"
+        "$TGIF_CONFIG_EXAMPLE"
+        "$TGIF_COPYRIGHT_NOTICE"
     )
 
     local missing=0
@@ -502,6 +1093,16 @@ check_required_repo_files() {
             missing=1
         fi
     done
+
+    if ! compgen -G "$TGIF_DIR/src/*.cpp" >/dev/null; then
+        warn "Missing TGIFD source files: $TGIF_DIR/src/*.cpp"
+        missing=1
+    fi
+
+    if ! compgen -G "$TGIF_DIR/include/*.hpp" >/dev/null; then
+        warn "Missing TGIFD header files: $TGIF_DIR/include/*.hpp"
+        missing=1
+    fi
 
     if [[ "$missing" -ne 0 ]]; then
         fail "Required AllTune2 repo files are missing."
@@ -520,8 +1121,6 @@ check_optional_files() {
         "$APP_DIR/app/Actions/BrandMeisterAction.php"
         "$APP_DIR/app/Actions/TGIFAction.php"
         "$APP_DIR/app/Actions/YSFAction.php"
-        "$TGIF_DIR/README.md"
-        "$TGIF_DIR/README_START.txt"
     )
 
     local file
@@ -559,318 +1158,6 @@ check_helper_local_paths() {
     fi
 
     log "BM receive helper local STFU paths look correct."
-}
-
-mmdvm_ini_dmr_value() {
-    local file="$1"
-    local key="$2"
-
-    awk -F= -v key="$key" '
-        /^[[:space:]]*\[.*\][[:space:]]*$/ {
-            in_dmr = ($0 ~ /^[[:space:]]*\[DMR Network\][[:space:]]*$/)
-            next
-        }
-
-        in_dmr && $1 ~ "^[[:space:]]*" key "[[:space:]]*$" {
-            value = $2
-            sub(/^[[:space:]]+/, "", value)
-            sub(/[[:space:]]+$/, "", value)
-            print value
-            exit
-        }
-    ' "$file"
-}
-
-mmdvm_ini_is_hblink_local() {
-    local file="$1"
-    local address
-    local port
-
-    [[ -f "$file" ]] || return 1
-
-    address="$(mmdvm_ini_dmr_value "$file" "Address")"
-    port="$(mmdvm_ini_dmr_value "$file" "Port")"
-
-    [[ "$address" == "127.0.0.1" && "$port" == "62033" ]]
-}
-
-mmdvm_ini_is_valid_normal_restore() {
-    local file="$1"
-    local address
-    local port
-
-    [[ -f "$file" ]] || return 1
-
-    address="$(mmdvm_ini_dmr_value "$file" "Address")"
-    port="$(mmdvm_ini_dmr_value "$file" "Port")"
-
-    [[ -n "$address" && -n "$port" ]] || return 1
-
-    if [[ "$address" == "127.0.0.1" && "$port" == "62033" ]]; then
-        return 1
-    fi
-
-    return 0
-}
-
-save_tgif_pre_hblink_keep() {
-    if ! mmdvm_ini_is_valid_normal_restore "$TGIF_MMDVM_PRE_HBLINK_INI"; then
-        fail "Refusing to save MMDVM_Bridge.pre-hblink.ini.keepdonotdelete because MMDVM_Bridge.pre-hblink.ini is not a valid normal restore profile."
-    fi
-
-    log "Saving verified MMDVM_Bridge.pre-hblink.ini safety copy as MMDVM_Bridge.pre-hblink.ini.keepdonotdelete..."
-    cp -f "$TGIF_MMDVM_PRE_HBLINK_INI" "$TGIF_MMDVM_PRE_HBLINK_KEEP"
-    chmod 0644 "$TGIF_MMDVM_PRE_HBLINK_KEEP"
-    chown root:root "$TGIF_MMDVM_PRE_HBLINK_KEEP"
-}
-
-ensure_tgif_runtime_local_files() {
-    log "Ensuring TGIF/HBLink local runtime files exist..."
-
-    if [[ ! -f "$TGIF_MMDVM_PRE_HBLINK_INI" ]]; then
-        if ! mmdvm_ini_is_valid_normal_restore "$MMDVM_BRIDGE_INI"; then
-            fail "Cannot create MMDVM_Bridge.pre-hblink.ini from the live MMDVM_Bridge.ini because the live file does not appear to be a valid normal restore profile. Restore a normal MMDVM_Bridge.ini first, then rerun setup."
-        fi
-
-        log "Creating initial MMDVM_Bridge.pre-hblink.ini from current system MMDVM_Bridge.ini..."
-        cp -f "$MMDVM_BRIDGE_INI" "$TGIF_MMDVM_PRE_HBLINK_INI"
-    else
-        if ! mmdvm_ini_is_valid_normal_restore "$TGIF_MMDVM_PRE_HBLINK_INI"; then
-            if mmdvm_ini_is_valid_normal_restore "$TGIF_MMDVM_PRE_HBLINK_KEEP"; then
-                fail "MMDVM_Bridge.pre-hblink.ini is not a valid normal restore profile. A valid safety copy exists at MMDVM_Bridge.pre-hblink.ini.keepdonotdelete. Restore it to MMDVM_Bridge.pre-hblink.ini, then rerun setup."
-            fi
-
-            fail "MMDVM_Bridge.pre-hblink.ini is not a valid normal restore profile, and no valid MMDVM_Bridge.pre-hblink.ini.keepdonotdelete safety copy exists. Repair the normal restore profile before running setup."
-        fi
-
-        log "MMDVM_Bridge.pre-hblink.ini already exists and is valid. Preserving current file."
-    fi
-
-    chmod 0644 "$TGIF_MMDVM_PRE_HBLINK_INI"
-    chown root:root "$TGIF_MMDVM_PRE_HBLINK_INI"
-
-    save_tgif_pre_hblink_keep
-
-    if [[ ! -f "$TGIF_RULES_FILE" ]]; then
-        log "rules.py not found. Generating an initial rules.py from rules.py.template if possible..."
-        if [[ -x "$TGIF_SET_TG" ]]; then
-            if "$TGIF_SET_TG" 9990 "$TGIF_DIR" >/dev/null 2>&1; then
-                log "Generated initial rules.py with placeholder TG 9990. It will be updated dynamically by the helper."
-            else
-                warn "Could not generate initial rules.py automatically. The TGIF helper will generate it later."
-            fi
-        else
-            warn "set_hblink_tg.sh is not executable yet; rules.py will be generated later."
-        fi
-    fi
-}
-
-
-validate_json_file() {
-    local file="$1"
-
-    python3 - "$file" <<'JSONPY'
-import json
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-
-try:
-    with path.open('r', encoding='utf-8') as handle:
-        json.load(handle)
-except Exception as exc:
-    print(str(exc), file=sys.stderr)
-    sys.exit(1)
-JSONPY
-}
-
-move_bad_tgif_alias_file_aside() {
-    local file="$1"
-    local reason="$2"
-    local timestamp
-    local backup_file
-
-    timestamp="$(date +%Y%m%d-%H%M%S)"
-    backup_file="${file}.bad-${timestamp}"
-
-    warn "TGIF/HBLink alias file is ${reason}: ${file}"
-    warn "Moving bad alias file aside: ${backup_file}"
-
-    mv -f "$file" "$backup_file"
-    chmod 0644 "$backup_file" 2>/dev/null || true
-    chown root:root "$backup_file" 2>/dev/null || true
-}
-
-validate_tgif_alias_json_files() {
-    log "Validating TGIF/HBLink alias JSON files..."
-
-    local alias_files=(
-        "$TGIF_DIR/peer_ids.json"
-        "$TGIF_DIR/subscriber_ids.json"
-        "$TGIF_DIR/talkgroup_ids.json"
-    )
-
-    local file
-
-    for file in "${alias_files[@]}"; do
-        if [[ ! -e "$file" ]]; then
-            echo "[INFO] TGIF/HBLink alias file is not present yet. This is normal on some installs; it will be downloaded/regenerated when HBLink needs it: $file"
-            continue
-        fi
-
-        if [[ ! -s "$file" ]]; then
-            move_bad_tgif_alias_file_aside "$file" "missing data or zero bytes"
-            continue
-        fi
-
-        if ! validate_json_file "$file" >/dev/null 2>&1; then
-            move_bad_tgif_alias_file_aside "$file" "invalid JSON"
-            continue
-        fi
-
-        chmod 0644 "$file"
-        chown root:root "$file"
-        log "TGIF/HBLink alias JSON looks valid: $file"
-    done
-}
-
-requirements_hash() {
-    python3 - "$TGIF_REQUIREMENTS" <<'PY'
-import hashlib
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-print(hashlib.sha256(path.read_bytes()).hexdigest())
-PY
-}
-
-check_tgif_requirements_present() {
-    "$TGIF_VENV_PYTHON" - "$TGIF_REQUIREMENTS" <<'PY'
-import importlib.metadata
-import pathlib
-import re
-import sys
-
-path = pathlib.Path(sys.argv[1])
-missing = []
-for raw_line in path.read_text().splitlines():
-    line = raw_line.strip()
-    if not line or line.startswith('#'):
-        continue
-    match = re.match(r'([A-Za-z0-9_.-]+)', line)
-    if not match:
-        missing.append(f"unsupported requirement format: {line}")
-        continue
-    name = match.group(1)
-    normalized = name.replace('_', '-').lower()
-    found = False
-    for dist in importlib.metadata.distributions():
-        dist_name = dist.metadata.get('Name', '')
-        if dist_name.replace('_', '-').lower() == normalized:
-            found = True
-            break
-    if not found:
-        missing.append(name)
-if missing:
-    for item in missing:
-        print(item)
-    raise SystemExit(1)
-PY
-}
-
-run_pip_requirements_install() {
-    if [[ "$INSTALLER_MODE" == "verbose" ]]; then
-        "$TGIF_VENV_PIP" install -r "$TGIF_REQUIREMENTS"
-        return
-    fi
-
-    local pip_log=""
-    pip_log="$(mktemp)"
-    if "$TGIF_VENV_PIP" install -r "$TGIF_REQUIREMENTS" >"$pip_log" 2>&1; then
-        rm -f "$pip_log"
-        return
-    fi
-
-    cat "$pip_log" >&2
-    rm -f "$pip_log"
-    fail "TGIF/HBLink Python requirements install failed."
-}
-
-sync_tgif_requirements_if_needed() {
-    log "Checking TGIF/HBLink Python environment..."
-
-    local current_hash=""
-    current_hash="$(requirements_hash)"
-
-    local should_sync=0
-    local reason=""
-
-    if [[ "${TGIF_VENV_WAS_REBUILT:-0}" == "1" ]]; then
-        should_sync=1
-        reason="new or rebuilt virtual environment"
-    elif [[ ! -f "$TGIF_REQUIREMENTS_STATE_FILE" ]]; then
-        should_sync=1
-        reason="requirements state file is missing"
-    elif [[ "$(tr -d '\r\n' < "$TGIF_REQUIREMENTS_STATE_FILE")" != "$current_hash" ]]; then
-        should_sync=1
-        reason="requirements.txt changed"
-    elif ! check_tgif_requirements_present >/dev/null 2>&1; then
-        should_sync=1
-        reason="one or more required Python packages are missing"
-    elif ! "$TGIF_VENV_PIP" check >/dev/null 2>&1; then
-        should_sync=1
-        reason="pip dependency check failed"
-    fi
-
-    if [[ "$should_sync" -eq 1 ]]; then
-        log "Installing TGIF/HBLink Python requirements because $reason..."
-        run_pip_requirements_install
-        "$TGIF_VENV_PIP" check >/dev/null || fail "pip dependency check failed after installing TGIF/HBLink requirements."
-        printf '%s\n' "$current_hash" > "$TGIF_REQUIREMENTS_STATE_FILE"
-        chmod 0644 "$TGIF_REQUIREMENTS_STATE_FILE"
-        chown root:root "$TGIF_REQUIREMENTS_STATE_FILE"
-    else
-        log "TGIF/HBLink Python requirements already look satisfied. Skipping pip install."
-    fi
-}
-
-build_tgif_venv() {
-    log "Ensuring TGIF/HBLink Python virtual environment exists..."
-
-    TGIF_VENV_WAS_REBUILT=0
-
-    if [[ ! -x "$TGIF_VENV_PYTHON" ]]; then
-        log "Creating TGIF/HBLink virtual environment at $TGIF_VENV_DIR..."
-        rm -rf "$TGIF_VENV_DIR"
-        python3 -m venv "$TGIF_VENV_DIR"
-        TGIF_VENV_WAS_REBUILT=1
-    else
-        log "TGIF/HBLink virtual environment already exists."
-    fi
-
-    if [[ ! -x "$TGIF_VENV_PYTHON" ]]; then
-        fail "Python is missing from the TGIF/HBLink virtual environment: $TGIF_VENV_PYTHON"
-    fi
-
-    if [[ ! -x "$TGIF_VENV_PIP" ]]; then
-        log "pip is missing from the TGIF/HBLink virtual environment. Bootstrapping with ensurepip..."
-        "$TGIF_VENV_PYTHON" -m ensurepip --upgrade >/dev/null 2>&1 || true
-    fi
-
-    if [[ ! -x "$TGIF_VENV_PIP" ]]; then
-        log "pip still missing after ensurepip. Rebuilding the TGIF/HBLink virtual environment..."
-        rm -rf "$TGIF_VENV_DIR"
-        python3 -m venv "$TGIF_VENV_DIR"
-        TGIF_VENV_WAS_REBUILT=1
-    fi
-
-    if [[ ! -x "$TGIF_VENV_PIP" ]]; then
-        fail "pip is still missing from the TGIF/HBLink virtual environment after rebuild: $TGIF_VENV_PIP"
-    fi
-
-    sync_tgif_requirements_if_needed
 }
 
 set_tree_mode_and_owner() {
@@ -911,7 +1198,7 @@ set_permissions() {
     done
 
     if [[ -d "$TGIF_DIR" ]]; then
-        set_tree_mode_and_owner "$TGIF_DIR" 0755 0644 root root "$TGIF_VENV_DIR"
+        set_tree_mode_and_owner "$TGIF_DIR" 0755 0644 root root
     fi
 
     local top_level_files=(
@@ -941,19 +1228,14 @@ set_permissions() {
     chmod 0755 "$TGIF_HELPER"
     chown root:root "$TGIF_HELPER"
 
-    chmod 0755 "$TGIF_SET_TG"
-    chown root:root "$TGIF_SET_TG"
+    if [[ -f "$TGIF_BINARY" ]]; then
+        chmod 0755 "$TGIF_BINARY"
+        chown root:root "$TGIF_BINARY"
+    fi
 
     if [[ -f "$TOOLS_DIR/alltune2_set_admin_password.php" ]]; then
         chmod 0750 "$TOOLS_DIR/alltune2_set_admin_password.php"
         chown root:root "$TOOLS_DIR/alltune2_set_admin_password.php"
-    fi
-
-    if [[ -d "$TGIF_VENV_DIR" ]]; then
-        set_tree_mode_and_owner "$TGIF_VENV_DIR" 0755 0644 root root
-        if [[ -d "$TGIF_VENV_DIR/bin" ]]; then
-            find "$TGIF_VENV_DIR/bin" -maxdepth 1 -type f -exec chmod 0755 {} +
-        fi
     fi
 
     chmod 0775 "$DATA_DIR"
@@ -974,23 +1256,18 @@ set_permissions() {
     chmod 0644 "$CONFIG_EXAMPLE_FILE"
     chown root:root "$CONFIG_EXAMPLE_FILE"
 
-    chmod 0640 "$TGIF_HBLINK_CFG"
-    chown root:"$WEB_GROUP" "$TGIF_HBLINK_CFG"
+    chmod 0755 "$TGIF_CONFIG_DIR"
+    chown root:"$WEB_GROUP" "$TGIF_CONFIG_DIR"
 
-    chmod 0644 "$TGIF_HBLINK_CFG_EXAMPLE"
-    chown root:root "$TGIF_HBLINK_CFG_EXAMPLE"
+    chmod 0640 "$TGIF_CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$TGIF_CONFIG_FILE"
 
-    chmod 0640 "$TGIF_MMDVM_HBLINK_INI"
-    chown root:"$WEB_GROUP" "$TGIF_MMDVM_HBLINK_INI"
+    chmod 0644 "$TGIF_CONFIG_EXAMPLE"
+    chown root:root "$TGIF_CONFIG_EXAMPLE"
 
-    if [[ -f "$TGIF_MMDVM_HBLINK_INI_EXAMPLE" ]]; then
-        chmod 0644 "$TGIF_MMDVM_HBLINK_INI_EXAMPLE"
-        chown root:root "$TGIF_MMDVM_HBLINK_INI_EXAMPLE"
-    fi
-
-    if [[ -f "$TGIF_MMDVM_PRE_HBLINK_INI" ]]; then
-        chmod 0644 "$TGIF_MMDVM_PRE_HBLINK_INI"
-        chown root:root "$TGIF_MMDVM_PRE_HBLINK_INI"
+    if [[ -f "$TGIF_COPYRIGHT_NOTICE" ]]; then
+        chmod 0644 "$TGIF_COPYRIGHT_NOTICE"
+        chown root:root "$TGIF_COPYRIGHT_NOTICE"
     fi
 }
 
@@ -1060,32 +1337,19 @@ check_shell_syntax() {
     bash -n "$APP_DIR/setup_alltune2.sh" || fail "Shell syntax check failed: $APP_DIR/setup_alltune2.sh"
     bash -n "$BM_RECEIVE_HELPER" || fail "Shell syntax check failed: $BM_RECEIVE_HELPER"
     bash -n "$TGIF_HELPER" || fail "Shell syntax check failed: $TGIF_HELPER"
-    bash -n "$TGIF_SET_TG" || fail "Shell syntax check failed: $TGIF_SET_TG"
 
     log "Shell syntax checks passed."
 }
 
-check_python_syntax() {
-    log "Running Python syntax checks for TGIF/HBLink..."
+check_tgifd_source_files() {
+    log "Checking TGIFD source tree..."
 
-    local py_files=(
-        "$TGIF_DIR/bridge.py"
-        "$TGIF_DIR/hblink.py"
-        "$TGIF_DIR/config.py"
-        "$TGIF_DIR/const.py"
-        "$TGIF_DIR/log.py"
-        "$TGIF_DIR/reporting_const.py"
-        "$TGIF_DIR/voice_lib.py"
-    )
+    [[ -f "$TGIF_DIR/CMakeLists.txt" ]] || fail "Missing TGIFD CMakeLists.txt: $TGIF_DIR/CMakeLists.txt"
+    compgen -G "$TGIF_DIR/src/*.cpp" >/dev/null || fail "Missing TGIFD source files: $TGIF_DIR/src/*.cpp"
+    compgen -G "$TGIF_DIR/include/*.hpp" >/dev/null || fail "Missing TGIFD header files: $TGIF_DIR/include/*.hpp"
+    [[ -x "$TGIF_BINARY" ]] || fail "TGIFD binary missing or not executable: $TGIF_BINARY"
 
-    local file
-    for file in "${py_files[@]}"; do
-        if [[ -f "$file" ]]; then
-            python3 -m py_compile "$file" || fail "Python syntax check failed: $file"
-        fi
-    done
-
-    log "Python syntax checks passed."
+    log "TGIFD source/build checks passed."
 }
 
 check_config_content() {
@@ -1124,8 +1388,8 @@ warn_if_placeholder_values_remain() {
         warn "config.ini still contains placeholder values. BM/TGIF/YSF may not work until it is edited."
     fi
 
-    if grep -Eq "$placeholders_regex" "$TGIF_HBLINK_CFG"; then
-        warn "hblink.cfg still contains placeholder values. TGIF/HBLink will not work until it is edited."
+    if grep -Eq "$placeholders_regex" "$TGIF_CONFIG_FILE"; then
+        warn "tgifd.ini still contains placeholder values. TGIFD may not work until it is reviewed."
     fi
 
     if ! grep -Eq 'MYNODE[[:space:]]*=' "$CONFIG_FILE"; then
@@ -1152,7 +1416,7 @@ check_external_config_hints() {
         warn "DVSwitch.ini does not contain BMPassword. BM receive mode may not work."
     fi
 
-    echo "[INFO] TGIF/HBLink reminder: if TGIF does not connect, review the identity/auth fields in hblink.cfg and the related MMDVM/HBLink files."
+    echo "[INFO] TGIFD reminder: if TGIF does not connect, review $TGIF_CONFIG_FILE and the Analog_Bridge identity/TLV settings."
 }
 
 create_or_update_logrotate_files() {
@@ -1198,15 +1462,141 @@ EOF
     chmod 0644 "$STFU_LOGROTATE_FILE"
     chown root:root "$STFU_LOGROTATE_FILE"
 
+    mkdir -p "$LOGS_DIR" "$TGIF_DIR"
+    touch "$TGIF_HELPER_LOG_FILE" "$TGIF_LOG_FILE"
+    chmod 0644 "$TGIF_HELPER_LOG_FILE" "$TGIF_LOG_FILE"
+    chown root:root "$TGIF_HELPER_LOG_FILE" "$TGIF_LOG_FILE"
+
+    cat > "$TGIF_LOGROTATE_FILE" <<EOF
+$TGIF_HELPER_LOG_FILE $TGIF_LOG_FILE {
+    su root root
+    size 1M
+    rotate 1
+    maxage 1
+    missingok
+    notifempty
+    nocompress
+    copytruncate
+}
+EOF
+
+    chmod 0644 "$TGIF_LOGROTATE_FILE"
+    chown root:root "$TGIF_LOGROTATE_FILE"
+
     if command -v logrotate >/dev/null 2>&1; then
         logrotate -d "$BM_RECEIVE_LOGROTATE_FILE" >/dev/null 2>&1 || fail "logrotate validation failed for $BM_RECEIVE_LOGROTATE_FILE"
         logrotate -d "$STFU_LOGROTATE_FILE" >/dev/null 2>&1 || fail "logrotate validation failed for $STFU_LOGROTATE_FILE"
+        logrotate -d "$TGIF_LOGROTATE_FILE" >/dev/null 2>&1 || fail "logrotate validation failed for $TGIF_LOGROTATE_FILE"
     else
-        warn "logrotate command not found. Installed $BM_RECEIVE_LOGROTATE_FILE and $STFU_LOGROTATE_FILE, but rotation cannot run until logrotate is installed."
+        warn "logrotate command not found. Installed logrotate files, but rotation cannot run until logrotate is installed."
     fi
 
     log "Installed BM receive logrotate file: $BM_RECEIVE_LOGROTATE_FILE"
     log "Installed STFU logrotate file: $STFU_LOGROTATE_FILE"
+    log "Installed TGIFD logrotate file: $TGIF_LOGROTATE_FILE"
+}
+
+create_or_update_radio_log_prune() {
+    log "Ensuring radio log prune helper includes TGIFD logs without replacing existing cleanup logic..."
+
+    mkdir -p "$(dirname "$RADIO_LOG_PRUNE_SCRIPT")" "$(dirname "$RADIO_LOG_PRUNE_CRON")"
+
+    local tgifd_block
+    tgifd_block="$(cat <<EOFBLOCK
+# BEGIN AllTune2 TGIFD log caps
+ALLTUNE2_TGIFD_DRY_RUN=0
+if [[ "\${1:-}" == "--dry-run" || "\${DRY_RUN:-}" == "--dry-run" || "\${DRY_RUN:-}" == "1" || "\${DRY_RUN:-}" == "true" ]]; then
+    ALLTUNE2_TGIFD_DRY_RUN=1
+fi
+
+alltune2_tgifd_cap_file() {
+    local file="\$1"
+    local max_bytes="\${ALLTUNE2_LOG_MAX_BYTES:-1048576}"
+
+    if [[ -f "\$file" ]]; then
+        local size
+        size="\$(stat -c %s "\$file" 2>/dev/null || echo 0)"
+        if [[ "\$size" =~ ^[0-9]+$ && "\$size" -gt "\$max_bytes" ]]; then
+            if [[ "\${ALLTUNE2_TGIFD_DRY_RUN:-0}" == "1" ]]; then
+                echo "WOULD TRUNCATE oversized AllTune2 TGIFD log: \$file (\${size} bytes)"
+            else
+                : > "\$file"
+            fi
+        fi
+    fi
+}
+
+alltune2_tgifd_cap_file "$TGIF_HELPER_LOG_FILE"
+alltune2_tgifd_cap_file "$TGIF_LOG_FILE"
+# END AllTune2 TGIFD log caps
+EOFBLOCK
+)"
+
+    if [[ -f "$RADIO_LOG_PRUNE_SCRIPT" ]]; then
+        if [[ -n "$MIGRATION_BACKUP_DIR" ]]; then
+            mkdir -p "$MIGRATION_BACKUP_DIR/rootfs/usr/local/sbin"
+            cp -a "$RADIO_LOG_PRUNE_SCRIPT" "$MIGRATION_BACKUP_DIR/rootfs/usr/local/sbin/radio-log-prune.sh.before-tgifd"
+        fi
+
+        python3 - "$RADIO_LOG_PRUNE_SCRIPT" "$tgifd_block" <<'PYPRUNE'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+block = sys.argv[2] + "\n"
+text = path.read_text()
+
+start = "# BEGIN AllTune2 TGIFD log caps"
+end = "# END AllTune2 TGIFD log caps"
+
+if start in text and end in text:
+    before = text.split(start, 1)[0]
+    after = text.split(end, 1)[1]
+    text = before + block + after.lstrip("\n")
+else:
+    if not text.endswith("\n"):
+        text += "\n"
+    text += "\n" + block
+
+path.write_text(text)
+PYPRUNE
+    else
+        cat > "$RADIO_LOG_PRUNE_SCRIPT" <<EOFPRUNE
+#!/usr/bin/env bash
+set -euo pipefail
+
+# AllTune2 radio log emergency pruning.
+# Logrotate remains the primary rotation mechanism.
+
+$tgifd_block
+EOFPRUNE
+    fi
+
+    chmod 0755 "$RADIO_LOG_PRUNE_SCRIPT"
+    chown root:root "$RADIO_LOG_PRUNE_SCRIPT"
+
+    if [[ ! -f "$RADIO_LOG_PRUNE_CRON" ]]; then
+        cat > "$RADIO_LOG_PRUNE_CRON" <<EOFCRON
+# AllTune2 radio log emergency pruning. Logrotate remains the primary rotation mechanism.
+17 * * * * root $RADIO_LOG_PRUNE_SCRIPT >/dev/null 2>&1
+EOFCRON
+        chmod 0644 "$RADIO_LOG_PRUNE_CRON"
+        chown root:root "$RADIO_LOG_PRUNE_CRON"
+    else
+        log "Existing radio log prune cron preserved: $RADIO_LOG_PRUNE_CRON"
+    fi
+
+    bash -n "$RADIO_LOG_PRUNE_SCRIPT" || fail "radio-log-prune syntax check failed: $RADIO_LOG_PRUNE_SCRIPT"
+
+    if command -v systemctl >/dev/null 2>&1; then
+        if systemctl list-unit-files cron.service >/dev/null 2>&1; then
+            systemctl is-active --quiet cron || warn "cron.service is not active. $RADIO_LOG_PRUNE_CRON will not run until cron is active."
+        else
+            warn "cron.service was not found by systemctl. Verify $RADIO_LOG_PRUNE_CRON runs on this system."
+        fi
+    fi
+
+    log "Ensured TGIFD entries in radio log prune helper: $RADIO_LOG_PRUNE_SCRIPT"
 }
 
 create_or_update_apache_security_conf() {
@@ -1237,7 +1627,7 @@ create_or_update_apache_security_conf() {
     </FilesMatch>
 </Directory>
 
-<DirectoryMatch "^$APP_DIR/(\.git|app|data|docs|logs|run|tools|stfu|tgif-hblink)(/|$)">
+<DirectoryMatch "^$APP_DIR/(\.git|app|data|docs|logs|run|tools|stfu|tgif|tgif-hblink)(/|$)">
     Require all denied
 </DirectoryMatch>
 EOF
@@ -1468,7 +1858,9 @@ check_sudoers_requirement() {
     visudo -cf "$BM_RECEIVE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $BM_RECEIVE_SUDOERS_FILE"
     visudo -cf "$TGIF_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $TGIF_HELPER_SUDOERS_FILE"
 
-    log "Installed sudoers files look correct."
+    [[ ! -e "$OLD_TGIF_HBLINK_SUDOERS_FILE" ]] || fail "Old TGIF/HBLink sudoers file still exists after migration: $OLD_TGIF_HBLINK_SUDOERS_FILE"
+
+    log "Installed sudoers files look correct, and old HBLink sudoers is retired."
 }
 
 check_status_endpoint_cli() {
@@ -1482,19 +1874,50 @@ check_status_endpoint_cli() {
 }
 
 check_tgif_helper_cli() {
-    log "Checking TGIF helper through CLI..."
+    log "Checking TGIFD helper through CLI as root and web user..."
 
     local output
     if output="$(sudo "$TGIF_HELPER" status 2>&1)"; then
         if [[ "$output" == *'"action": "status"'* ]]; then
-            log "TGIF helper CLI status check returned JSON."
+            log "TGIFD helper root CLI status check returned JSON."
         else
-            warn "TGIF helper CLI status check returned unexpected output."
+            warn "TGIFD helper root CLI status check returned unexpected output."
+            warn "$output"
         fi
     else
-        warn "TGIF helper CLI status check returned a non-zero status."
+        warn "TGIFD helper root CLI status check returned a non-zero status."
         warn "$output"
     fi
+
+    if output="$(sudo -u "$WEB_USER" sudo -n "$TGIF_HELPER" status 2>&1)"; then
+        if [[ "$output" == *'"action": "status"'* ]]; then
+            log "TGIFD helper web-user sudo status check returned JSON."
+        else
+            fail "TGIFD helper web-user sudo check returned unexpected output: $output"
+        fi
+    else
+        fail "TGIFD helper web-user sudo check failed. Verify $TGIF_HELPER_SUDOERS_FILE. Output: $output"
+    fi
+}
+
+check_git_hygiene_warnings() {
+    log "Checking for common local-only files that must not be committed..."
+
+    local local_paths=(
+        "$CONFIG_FILE"
+        "$FAVORITES_FILE"
+        "$TGIF_CONFIG_FILE"
+        "$TGIF_BUILD_DIR"
+        "$LOGS_DIR"
+        "$RUN_DIR"
+    )
+
+    local path
+    for path in "${local_paths[@]}"; do
+        if [[ -e "$path" ]]; then
+            log "Local-only path present, confirm .gitignore protects it before release: $path"
+        fi
+    done
 }
 
 show_summary() {
@@ -1533,10 +1956,34 @@ show_summary() {
     echo "Favorites:       $FAVORITES_FILE"
     echo "Web login:       $web_login"
     echo "Apache security: $apache_security"
+    echo "TGIF backend:    TGIFD"
+    echo "Old HBLink:      Retired from live TGIF path"
+    if [[ -n "$MIGRATION_BACKUP_DIR" ]]; then
+        echo "Migration backup: $MIGRATION_BACKUP_DIR"
+    fi
+    if [[ "${TGIFD_CONFIG_HAS_PLACEHOLDERS:-0}" == "1" ]]; then
+        echo "TGIFD config:    PLACEHOLDERS PRESENT - review $TGIF_CONFIG_FILE"
+    else
+        echo "TGIFD config:    Checked"
+    fi
     echo
+
+    if [[ "${TGIFD_CONFIG_HAS_PLACEHOLDERS:-0}" == "1" ]]; then
+        echo "WARNING:"
+        echo "- TGIFD was installed, but tgifd.ini still contains placeholder values."
+        echo "- TGIF will not work correctly until $TGIF_CONFIG_FILE is reviewed."
+        if [[ -n "$MIGRATION_BACKUP_DIR" ]]; then
+            echo "- Old TGIF/HBLink artifacts, if present, were archived under: $MIGRATION_BACKUP_DIR"
+        fi
+        echo
+    fi
 
     echo "Important:"
     echo "- Normal setup/update preserves config.ini, favorites.txt, and web login settings."
+    echo "- Existing TGIF/HBLink artifacts are archived out of the live app path before TGIFD is installed."
+    echo "- TGIFD runtime API files are expected to use clean TGIFD naming, not old tgif_hblink/hblink_tgif keys."
+    echo "- TGIFD helper must keep the stable controlled-restart retune path and must not restart mmdvm_bridge on stop."
+    echo "- TGIFD config must include [tlv] inbound_slot = 2 for reliable inbound TGIF audio."
     echo "- To set/change the web login password:"
     echo "  sudo /var/www/html/alltune2/setup_alltune2.sh --set-admin-password"
     echo "- To disable web login and keep the saved password hash:"
@@ -1545,7 +1992,7 @@ show_summary() {
 
     echo "Next steps:"
     echo "1. Open /alltune2/public/ in the browser."
-    echo "2. New installs: edit $CONFIG_FILE and $TGIF_HBLINK_CFG if placeholder values remain."
+    echo "2. New installs: edit $CONFIG_FILE and $TGIF_CONFIG_FILE if placeholder values remain."
     echo "3. Test your enabled modes."
     echo
 }
@@ -1556,7 +2003,7 @@ main() {
     validate_installer_mode
 
     if [[ "$AUTH_ACTION" == "set-password" ]]; then
-        check_runtime_tools
+        check_auth_runtime_tools
         check_web_user
         make_dirs
         create_config_example
@@ -1576,7 +2023,8 @@ main() {
         exit 0
     fi
 
-    step "Checking runtime prerequisites..."
+    step "Installing/checking minimum runtime prerequisites..."
+    install_minimum_packages_if_possible
     check_runtime_tools
     check_web_user
 
@@ -1586,39 +2034,56 @@ main() {
     create_config_if_missing
     ensure_auth_config_defaults
     create_favorites_if_missing
-    create_tgif_hblink_cfg_example
-    create_tgif_hblink_cfg_if_missing
-    create_tgif_mmdvm_hblink_ini_if_missing
+
+    step "Backing up current AllTune2 state before TGIFD migration..."
+    create_tgifd_migration_backup
+
+    step "Preflighting TGIFD repo/API files before retiring HBLink..."
+    check_tgifd_repo_preflight_before_hblink_retirement
+
+    step "Stopping any active TGIFD before runtime/config changes..."
+    stop_existing_tgifd_if_running
+
+    step "Retiring old TGIF/HBLink artifacts from the live app path..."
+    retire_old_hblink_before_tgifd_install
+
+    step "Preparing TGIFD configuration..."
+    create_tgifd_config_example_if_missing
+    create_tgifd_config_if_missing
+    sync_tgifd_config_from_system_if_safe
 
     step "Checking repo and system dependencies..."
     check_required_repo_files
     check_optional_files
     check_dvswitch_dependencies
     check_helper_local_paths
-    ensure_tgif_runtime_local_files
-    validate_tgif_alias_json_files
 
-    step "Checking TGIF/HBLink Python environment..."
-    build_tgif_venv
+    step "Building TGIFD..."
+    build_tgifd_binary
 
     step "Applying permissions and sudoers..."
     set_permissions
     create_or_update_sudoers_files
     create_or_update_logrotate_files
+    create_or_update_radio_log_prune
     create_or_update_apache_security_conf
     create_or_update_apache_accesslog_filter
 
     step "Running installer self-checks..."
     check_php_syntax
     check_shell_syntax
-    check_python_syntax
+    check_tgifd_source_files
+    check_tgifd_binary
     check_config_content
+    check_tgifd_config_content
     warn_if_placeholder_values_remain
     check_external_config_hints
     check_sudoers_requirement
     check_status_endpoint_cli
     check_tgif_helper_cli
+    check_git_hygiene_warnings
 
+    SETUP_COMPLETED=1
     show_summary
 }
 

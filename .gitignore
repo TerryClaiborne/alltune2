@@ -66,3 +66,16 @@ screenshot.png
 !tgif-hblink/hblink.cfg.example
 !tgif-hblink/rules.py.template
 !tgif-hblink/MMDVM_Bridge.hblink.ini.example
+tgif-hblink/config/config.json
+tgif-hblink/config/*.local.json
+tgif-hblink/config/*.before-*
+tgif-hblink/config/*.bak
+
+# TGIFD local runtime / build artifacts
+tgif/config/tgifd.ini
+tgif/build/
+tgif/*.log
+tgif/*.log.*
+
+# Local user data
+data/favorites.txt

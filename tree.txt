@@ -1,73 +1,68 @@
-.
-|-- .gitignore
-|-- alltune2-bm-receive.sh
-|-- config.ini.example
-|-- README.md
-|-- screenshot.png
-|-- setup_alltune2.sh
-|-- tree.txt
-|-- VERSION
-|-- api
-|   |-- connect.php
-|   |-- direct_link.php
-|   |-- favorites.php
-|   \-- status.php
-|-- app
-|   |-- Actions
-|   |   |-- ActionInterface.php
-|   |   |-- AllStarAction.php
-|   |   |-- BrandMeisterAction.php
-|   |   |-- TGIFAction.php
-|   |   \-- YSFAction.php
-|   |-- Controllers
-|   |   \-- MainController.php
-|   |-- Services
-|   |   \-- NetworkManager.php
-|   |-- State
-|   |   |-- AppState.php
-|   |   |-- MessageCatalog.php
-|   |   \-- StatusMapper.php
-|   \-- Support
-|       |-- ApiAuthGuard.php
-|       |-- AppAuth.php
-|       |-- AppCsrf.php
-|       |-- AppSession.php
-|       |-- Config.php
-|       \-- Logger.php
-|-- data
-|   \-- favorites.txt
-|-- docs
-|   \-- .gitkeep
-|-- logs
-|   \-- .gitkeep
-|-- public
-|   |-- alltune2_ribbon_bar.php
-|   |-- favorites.php
-|   |-- index.php
-|   |-- login.php
-|   |-- logout.php
-|   \-- assets
-|       |-- css
-|       |   \-- style.css
-|       \-- js
-|           \-- app.js
-|-- stfu
-|   \-- STFU
-|-- tgif-hblink
-|   |-- alltune2-hblink-audio-helper.sh
-|   |-- bridge.py
-|   |-- config.py
-|   |-- const.py
-|   |-- hblink.cfg.example
-|   |-- hblink.py
-|   |-- log.py
-|   |-- MMDVM_Bridge.hblink.ini.example
-|   |-- README.md
-|   |-- README_START.txt
-|   |-- reporting_const.py
-|   |-- requirements.txt
-|   |-- rules.py.template
-|   |-- set_hblink_tg.sh
-|   \-- voice_lib.py
-\-- tools
-    \-- alltune2_set_admin_password.php
+AllTune2 release tree
+====================
+
+Generated from the Git release index.
+Local runtime files such as config.ini, data/favorites.txt, logs/, run/,
+tgif/config/tgifd.ini, and tgif/build/ are intentionally excluded.
+
+.gitignore
+README.md
+VERSION
+alltune2-bm-receive.sh
+api/connect.php
+api/direct_link.php
+api/favorites.php
+api/status.php
+app/Actions/ActionInterface.php
+app/Actions/AllStarAction.php
+app/Actions/BrandMeisterAction.php
+app/Actions/TGIFAction.php
+app/Actions/YSFAction.php
+app/Controllers/MainController.php
+app/Services/NetworkManager.php
+app/State/AppState.php
+app/State/MessageCatalog.php
+app/State/StatusMapper.php
+app/Support/ApiAuthGuard.php
+app/Support/AppAuth.php
+app/Support/AppCsrf.php
+app/Support/AppSession.php
+app/Support/Config.php
+app/Support/Logger.php
+config.ini.example
+data/favorites.example.txt
+docs/.gitkeep
+public/alltune2_ribbon_bar.php
+public/assets/css/style.css
+public/assets/js/app.js
+public/favorites.php
+public/index.php
+public/login.php
+public/logout.php
+screenshot.png
+setup_alltune2.sh
+stfu/STFU
+tgif/CMakeLists.txt
+tgif/alltune2-tgifd-helper.sh
+tgif/config/tgifd.ini.example
+tgif/docs/TGIFD-COPYRIGHT-NOTICE.md
+tgif/include/BackendControl.hpp
+tgif/include/Config.hpp
+tgif/include/Logger.hpp
+tgif/include/TGIFClient.hpp
+tgif/include/TGIFDaemon.hpp
+tgif/include/TLVBridge.hpp
+tgif/include/TLVPacket.hpp
+tgif/include/TgifCodec.hpp
+tgif/include/UdpSocket.hpp
+tgif/src/BackendControl.cpp
+tgif/src/Config.cpp
+tgif/src/Logger.cpp
+tgif/src/TGIFClient.cpp
+tgif/src/TGIFDaemon.cpp
+tgif/src/TLVBridge.cpp
+tgif/src/TgifCodec.cpp
+tgif/src/UdpSocket.cpp
+tgif/src/main.cpp
+tools/alltune2_set_admin_password.php
+tree.txt

@@ -1,0 +1,4 @@
+9990|Parrot|TGIF Parrot|TGIF
+9050|East Coast Reflector|East Coast TGIF|TGIF
+23510|CQ-UK World Wide|CQ-World Wide TGIF|TGIF
+parrot.ysfreflector.de:42020|Fusion Parrot|YSF Parrot|YSF

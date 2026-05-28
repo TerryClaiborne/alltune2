@@ -17,7 +17,7 @@ $config = new Config(dirname(__DIR__) . '/config.ini');
 ApiAuthGuard::requireLoginIfEnabled($config);
 
 $GLOBALS['bm_receive_status_cache'] = null;
-$GLOBALS['hblink_tgif_status_cache'] = null;
+$GLOBALS['tgifd_status_cache'] = null;
 
 function respond(array $payload, int $statusCode = 200): never
 {
@@ -113,14 +113,14 @@ function bm_receive_stop(): array
 }
 
 
-function hblink_tgif_helper_path(): string
+function tgifd_helper_path(): string
 {
-    return dirname(__DIR__) . '/tgif-hblink/alltune2-hblink-audio-helper.sh';
+    return dirname(__DIR__) . '/tgif/alltune2-tgifd-helper.sh';
 }
 
-function hblink_tgif_run(string $action, ?string $target = null): array
+function tgifd_run(string $action, ?string $target = null): array
 {
-    $helperPath = hblink_tgif_helper_path();
+    $helperPath = tgifd_helper_path();
     $command = 'sudo ' . escapeshellarg($helperPath) . ' ' . escapeshellarg($action);
 
     if ($target !== null && $target !== '') {
@@ -131,51 +131,51 @@ function hblink_tgif_run(string $action, ?string $target = null): array
     $decoded = json_decode($output, true);
 
     if (is_array($decoded)) {
-        $GLOBALS['hblink_tgif_status_cache'] = $decoded;
+        $GLOBALS['tgifd_status_cache'] = $decoded;
         return $decoded;
     }
 
     return [
         'ok' => false,
         'action' => $action,
-        'message' => 'TGIF HBLINK HELPER RETURNED INVALID JSON',
+        'message' => 'TGIFD HELPER RETURNED INVALID JSON',
         'raw_output' => $output,
         'active' => false,
     ];
 }
 
-function hblink_tgif_status(bool $fresh = false): array
+function tgifd_status(bool $fresh = false): array
 {
     if ($fresh) {
-        $GLOBALS['hblink_tgif_status_cache'] = null;
+        $GLOBALS['tgifd_status_cache'] = null;
     }
 
-    $cached = $GLOBALS['hblink_tgif_status_cache'] ?? null;
+    $cached = $GLOBALS['tgifd_status_cache'] ?? null;
     if (is_array($cached)) {
         return $cached;
     }
-    return hblink_tgif_run('status');
+    return tgifd_run('status');
 }
 
-function hblink_tgif_is_active(): bool
+function tgifd_is_active(): bool
 {
-    $status = hblink_tgif_status();
+    $status = tgifd_status();
     return !empty($status['active']);
 }
 
-function hblink_tgif_start(string $target): array
+function tgifd_start(string $target): array
 {
-    return hblink_tgif_run('start', $target);
+    return tgifd_run('start', $target);
 }
 
-function hblink_tgif_tune(string $target): array
+function tgifd_tune(string $target): array
 {
-    return hblink_tgif_run('tune', $target);
+    return tgifd_run('tune', $target);
 }
 
-function hblink_tgif_stop(): array
+function tgifd_stop(): array
 {
-    return hblink_tgif_run('stop');
+    return tgifd_run('stop');
 }
 
 function read_local_tg_from_analog_bridge(): string
@@ -249,9 +249,9 @@ function enforce_dvswitch_link_mode(string $myNode, string $dvSwitchNode, string
     $previousMode = normalize_autoload_dvswitch_mode((string) ($_SESSION['dvswitch_active_mode'] ?? ''));
 
     /*
-     * TGIF/HBLink is sensitive to unnecessary private-node reloads.
+     * TGIFD is sensitive to unnecessary private-node reloads.
      * If Transceive is requested and we were not previously in Local Monitor,
-     * leave the helper-created T1957 link alone.
+     * leave the helper-created private-node link alone.
      *
      * Still reload when:
      * - Local Monitor is requested
@@ -748,8 +748,8 @@ function disconnect_selected_dvswitch_link(string $myNode, string $dvSwitchNode)
         return;
     }
 
-    if (hblink_tgif_is_active()) {
-        hblink_tgif_stop();
+    if (tgifd_is_active()) {
+        tgifd_stop();
         pause_seconds(0.5);
 
         asterisk_ilink_disconnect($myNode, $dvSwitchNode);
@@ -893,8 +893,8 @@ function disconnect_dvswitch_runtime(string $myNode, string $dvSwitchNode): void
         return;
     }
 
-    if (hblink_tgif_is_active()) {
-        hblink_tgif_stop();
+    if (tgifd_is_active()) {
+        tgifd_stop();
         pause_seconds(0.5);
 
         if ($dvSwitchNode !== '') {
@@ -979,8 +979,8 @@ function disconnect_only_dvswitch_link(string $myNode, string $dvSwitchNode): vo
         return;
     }
 
-    if (hblink_tgif_is_active()) {
-        hblink_tgif_stop();
+    if (tgifd_is_active()) {
+        tgifd_stop();
         pause_seconds(0.5);
 
         if ($dvSwitchNode !== '') {
@@ -1171,7 +1171,7 @@ function direct_allstar_snapshot(string $dvSwitchNode = ''): array
 function session_payload(string $statusText, array $extra = []): array
 {
     $bmActive = session_may_have_bm_runtime() ? bm_receive_is_active() : false;
-    $tgifActive = session_may_have_tgif_runtime() ? hblink_tgif_is_active() : false;
+    $tgifActive = session_may_have_tgif_runtime() ? tgifd_is_active() : false;
     $forcedAutoload = session_forces_private_node();
 
     return array_merge([
@@ -1195,7 +1195,7 @@ function session_payload(string $statusText, array $extra = []): array
         'dmr_active_target' => (string) ($_SESSION['dmr_active_target'] ?? ''),
         'dvswitch_active_mode' => (string) ($_SESSION['dvswitch_active_mode'] ?? ''),
         'bm_receive_active' => $bmActive,
-        'tgif_hblink_active' => $tgifActive,
+        'tgifd_active' => $tgifActive,
         'dvswitch_link_active' => !empty($_SESSION['dvswitch_autoloaded']) || !empty($_SESSION['dmr_ready']) || active_managed_dvswitch_mode() !== '' || $bmActive || $tgifActive,
     ], $extra);
 }
@@ -1336,8 +1336,8 @@ if ($action === 'disconnect_all') {
         pause_seconds(0.5);
     }
 
-    if (hblink_tgif_is_active()) {
-        hblink_tgif_stop();
+    if (tgifd_is_active()) {
+        tgifd_stop();
         pause_seconds(0.5);
     }
 
@@ -1484,13 +1484,13 @@ if ($action === 'connect') {
 
         if ($disconnectBeforeConnect) {
             disconnect_managed_links_before_connect($myNode, $dvSwitchNode);
-        } elseif (hblink_tgif_is_active()) {
-            $tgifStop = hblink_tgif_stop();
+        } elseif (tgifd_is_active()) {
+            $tgifStop = tgifd_stop();
             pause_seconds(0.5);
 
             if (empty($tgifStop['ok'])) {
-                $_SESSION['last_status'] = 'ERROR: FAILED TO STOP TGIF HBLINK';
-                respond(session_payload($_SESSION['last_status'], ['tgif_hblink' => $tgifStop]), 500);
+                $_SESSION['last_status'] = 'ERROR: FAILED TO STOP TGIFD';
+                respond(session_payload($_SESSION['last_status'], ['tgifd' => $tgifStop]), 500);
             }
 
             if ($hasRealDvSwitchNode) {
@@ -1594,13 +1594,13 @@ if ($action === 'connect') {
 
         if ($disconnectBeforeConnect) {
             disconnect_managed_links_before_connect($myNode, $dvSwitchNode);
-        } elseif (hblink_tgif_is_active()) {
-            $tgifStop = hblink_tgif_stop();
+        } elseif (tgifd_is_active()) {
+            $tgifStop = tgifd_stop();
             pause_seconds(0.5);
 
             if (empty($tgifStop['ok'])) {
-                $_SESSION['last_status'] = 'ERROR: FAILED TO STOP TGIF HBLINK';
-                respond(session_payload($_SESSION['last_status'], ['tgif_hblink' => $tgifStop]), 500);
+                $_SESSION['last_status'] = 'ERROR: FAILED TO STOP TGIFD';
+                respond(session_payload($_SESSION['last_status'], ['tgifd' => $tgifStop]), 500);
             }
 
             if ($hasRealDvSwitchNode) {
@@ -1750,7 +1750,7 @@ if ($action === 'connect') {
             respond(session_payload($_SESSION['last_status']), 500);
         }
 
-        $tgifWasActive = hblink_tgif_is_active();
+        $tgifWasActive = tgifd_is_active();
 
         if ($disconnectBeforeConnect) {
             disconnect_managed_links_before_connect($myNode, $dvSwitchNode);
@@ -1785,17 +1785,17 @@ if ($action === 'connect') {
         }
 
         $tgifResult = $tgifWasActive
-            ? hblink_tgif_tune($connectTarget)
-            : hblink_tgif_start($connectTarget);
+            ? tgifd_tune($connectTarget)
+            : tgifd_start($connectTarget);
 
         if (empty($tgifResult['ok'])) {
             pause_seconds(0.5);
-            $tgifStatus = hblink_tgif_status(true);
+            $tgifStatus = tgifd_status(true);
             if (!empty($tgifStatus['active'])) {
                 $tgifResult = $tgifStatus;
             } else {
-                $_SESSION['last_status'] = 'ERROR: TGIF HBLINK FAILED';
-                respond(session_payload($_SESSION['last_status'], ['tgif_hblink' => $tgifResult]), 500);
+                $_SESSION['last_status'] = 'ERROR: TGIFD FAILED';
+                respond(session_payload($_SESSION['last_status'], ['tgifd' => $tgifResult]), 500);
             }
         }
 
@@ -1815,7 +1815,7 @@ if ($action === 'connect') {
         $_SESSION['dmr_active_target'] = $connectTarget;
         $_SESSION['last_status'] = 'CONNECTED: TG ' . $connectTarget . ' (TGIF)';
 
-        respond(session_payload($_SESSION['last_status'], ['tgif_hblink' => $tgifResult]));
+        respond(session_payload($_SESSION['last_status'], ['tgifd' => $tgifResult]));
     }
 
     $_SESSION['last_status'] = 'ERROR: INVALID MODE';
@@ -1880,13 +1880,13 @@ if ($lastMode === 'BM' || $lastMode === 'TGIF') {
             $_SESSION['last_status'] = 'ERROR: FAILED TO STOP BM RECEIVE';
             respond(session_payload($_SESSION['last_status'], ['bm_receive' => $bmStop]), 500);
         }
-    } elseif ($lastMode === 'TGIF' && hblink_tgif_is_active()) {
-        $tgifStop = hblink_tgif_stop();
+    } elseif ($lastMode === 'TGIF' && tgifd_is_active()) {
+        $tgifStop = tgifd_stop();
         pause_seconds(0.5);
 
         if (empty($tgifStop['ok'])) {
-            $_SESSION['last_status'] = 'ERROR: FAILED TO STOP TGIF HBLINK';
-            respond(session_payload($_SESSION['last_status'], ['tgif_hblink' => $tgifStop]), 500);
+            $_SESSION['last_status'] = 'ERROR: FAILED TO STOP TGIFD';
+            respond(session_payload($_SESSION['last_status'], ['tgifd' => $tgifStop]), 500);
         }
 
         if ($dvswitchAutoloaded && $hasRealDvSwitchNode) {
