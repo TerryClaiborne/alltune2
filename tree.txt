@@ -2,7 +2,7 @@ AllTune2 release tree
 ====================
 
 Generated from the Git release index.
-Local runtime files such as config.ini, data/favorites.txt, logs/, run/,
+Local runtime files such as config.ini, logs/, run/,
 tgif/config/tgifd.ini, and tgif/build/ are intentionally excluded.
 
 .gitignore
@@ -31,6 +31,7 @@ app/Support/Config.php
 app/Support/Logger.php
 config.ini.example
 data/favorites.example.txt
+data/favorites.txt
 docs/.gitkeep
 public/alltune2_ribbon_bar.php
 public/assets/css/style.css

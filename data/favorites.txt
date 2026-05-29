@@ -1,0 +1,14 @@
+9990|Parrot|TGIF Parrot|TGIF
+9050|East Coast Reflector|East Coast TGIF|TGIF
+23510|CQ-UK World Wide|CQ-World Wide TGIF|TGIF
+311630|AA9JR Repeater Link|Morning Net|TGIF
+19570|KC3KMV|TGIF Network|TGIF
+3220008|KC3KMV|Brandmeister|BM
+parrot.ysfreflector.de:42020|Fusion|Parrot For Fusion|YSF
+67565|KC3KMV|220 Repeater Node|ASL
+51587|K2EJ|Abindon MD|ASL
+3009999|Echolink Parott|Echolink Parrot Server|ECHO
+31665|Mother Ship|TGIF - The Mother Ship|TGIF
+29332|Alaska Net|Alaska Morning Net|TGIF
+310997#|Brandmeister Parrot|Brandmeister Private Call Echo|BM
+40894|M0HOY Audio Test Server|HUBNet|ASL
