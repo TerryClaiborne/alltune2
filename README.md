@@ -165,6 +165,7 @@ cd /var/www/html/alltune2
 git pull origin main
 sudo ./setup_alltune2.sh
 ```
+**Note for existing users:** If `git status` shows `M data/favorites.txt` after updating, that is normal on a configured node. It only means your saved Favorites are different from the default file. Do not commit your personal `data/favorites.txt`; just run `git pull origin main` and `sudo ./setup_alltune2.sh` as usual.
 
 ### Updating from older TGIF/HBLink releases
 
