@@ -681,8 +681,6 @@ To change BM talkgroups:
 - enter a new talkgroup **or choose another BM Favorite**
 - press Connect again
 
-BrandMeister is usually one of the faster paths.
-
 ---
 
 ## 🟢 TGIF
@@ -700,8 +698,6 @@ To change TGIF talkgroups:
 
 - enter a new talkgroup **or choose another TGIF Favorite**
 - press Connect again
-
-TGIF may take a little longer than BrandMeister to connect or disconnect. TGIFD starts, links the private DVSwitch audio node when needed, tunes TGIF, and then reports status back to the dashboard.
 
 ---
 
