@@ -283,7 +283,15 @@ start_backend() {
   pid="$(wait_for_pid)" || fail_json "start" "TGIFD failed to start. Check log." "$target"
 
   write_state true "$target" "$pid"
-  settle_audio_path
+
+  # Do not hold the dashboard/API response behind the private-node settle delay.
+  # TGIFD is already running and the active TG state has already been written.
+  # Let the settle refresh finish in the background so the dashboard can sync
+  # with TGIFD promptly, similar to the STFU path.
+  (
+    settle_audio_path
+  ) >>"$LOG_FILE" 2>&1 &
+
   ok_json "start" "TGIFD started." true "$target" "$pid"
 }
 

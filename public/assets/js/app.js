@@ -2757,10 +2757,23 @@
             } else if (action === 'disconnect_all') {
                 markAudioSettleWindow(1500);
             } else {
-                markAudioSettleWindow(1200);
-                announceImmediateActionAudio(
-                    responsePayload.status_text || responsePayload.status || responsePayload.last_status || ''
-                );
+                const actionStatusText = responsePayload.status_text || responsePayload.status || responsePayload.last_status || '';
+                const actionStatusUpper = String(actionStatusText || '').toUpperCase();
+
+                /*
+                 * TGIFD now returns as soon as the backend is active so the dashboard
+                 * can sync quickly. Its helper still refreshes the private-node link
+                 * briefly in the background. Suppress that expected link flutter so a
+                 * TGIF connect/retune does not announce a false disconnect.
+                 */
+                const audioSettleMs = (
+                    action === 'connect' &&
+                    /^CONNECTED:\s+TG\s+/i.test(String(actionStatusText || '')) &&
+                    actionStatusUpper.includes('(TGIF)')
+                ) ? 6500 : 1200;
+
+                markAudioSettleWindow(audioSettleMs);
+                announceImmediateActionAudio(actionStatusText);
             }
 
             setBusy(false);

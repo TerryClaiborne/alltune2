@@ -120,6 +120,22 @@ log() {
     fi
 }
 
+quiet_detail() {
+    if [[ "$INSTALLER_MODE" == "verbose" ]]; then
+        echo "[INFO] $*"
+    else
+        printf '[INFO] %s\n' "$*" >> "$QUIET_COMMAND_LOG"
+    fi
+}
+
+init_quiet_command_log() {
+    if [[ "$INSTALLER_MODE" != "verbose" ]]; then
+        mkdir -p "$(dirname "$QUIET_COMMAND_LOG")"
+        : > "$QUIET_COMMAND_LOG"
+        chmod 0600 "$QUIET_COMMAND_LOG" 2>/dev/null || true
+    fi
+}
+
 step() {
     echo "[STEP] $*"
 }
@@ -361,7 +377,6 @@ install_minimum_packages_if_possible() {
     )
 
     export DEBIAN_FRONTEND=noninteractive
-    : > "$QUIET_COMMAND_LOG"
     run_quiet_command "apt package index update" apt-get update
     run_quiet_command "apt package installation" apt-get install -y "${packages[@]}"
 }
@@ -976,7 +991,7 @@ create_tgifd_migration_backup() {
     backup_abs_path_if_exists "$RADIO_LOG_PRUNE_CRON"
 
     printf '%s\n' "$MIGRATION_BACKUP_DIR" > "$MIGRATION_BACKUP_DIR/BACKUP_LOCATION.txt"
-    echo "[INFO] TGIFD migration preflight backup: $MIGRATION_BACKUP_DIR"
+    echo "[INFO] Backup created: $MIGRATION_BACKUP_DIR"
 }
 
 stop_old_hblink_processes_if_running() {
@@ -1035,12 +1050,12 @@ retire_old_hblink_before_tgifd_install() {
     if [[ -f "$OLD_TGIF_HBLINK_SUDOERS_FILE" ]]; then
         cp -a "$OLD_TGIF_HBLINK_SUDOERS_FILE" "$retired_dir/rootfs/etc/sudoers.d/"
         rm -f "$OLD_TGIF_HBLINK_SUDOERS_FILE"
-        warn "Removed old TGIF/HBLink sudoers file from live system: $OLD_TGIF_HBLINK_SUDOERS_FILE"
+        quiet_detail "Removed old TGIF/HBLink sudoers file from live system: $OLD_TGIF_HBLINK_SUDOERS_FILE"
     fi
 
     if [[ -d "$OLD_TGIF_HBLINK_DIR" ]]; then
         mv "$OLD_TGIF_HBLINK_DIR" "$retired_dir/app/tgif-hblink"
-        warn "Moved old TGIF/HBLink directory out of live app path: $retired_dir/app/tgif-hblink"
+        quiet_detail "Moved old TGIF/HBLink directory out of live app path: $retired_dir/app/tgif-hblink"
     fi
 
     local file
@@ -1055,13 +1070,13 @@ retire_old_hblink_before_tgifd_install() {
             local rel="${file#$APP_DIR/}"
             mkdir -p "$retired_dir/app/$(dirname "$rel")"
             mv "$file" "$retired_dir/app/$rel"
-            warn "Moved old TGIF/HBLink artifact out of live app path: $file"
+            quiet_detail "Moved old TGIF/HBLink artifact out of live app path: $file"
         fi
     done
 
     # Keep $TGIF_ACTIVITY_LOG_FILE in place deliberately. It may contain current
     # TGIFD/Cockpit activity history, not only old HBLink runtime state.
-    echo "[INFO] Old TGIF/HBLink artifacts retired to: $retired_dir"
+    quiet_detail "Old TGIF/HBLink artifacts retired to: $retired_dir"
 }
 
 check_required_repo_files() {
@@ -1966,6 +1981,9 @@ show_summary() {
     echo "Old HBLink:      Retired from live TGIF path"
     if [[ -n "$MIGRATION_BACKUP_DIR" ]]; then
         echo "Migration backup: $MIGRATION_BACKUP_DIR"
+        if [[ "$INSTALLER_MODE" != "verbose" ]]; then
+            echo "Installer log:   $QUIET_COMMAND_LOG"
+        fi
     fi
     if [[ "${TGIFD_CONFIG_HAS_PLACEHOLDERS:-0}" == "1" ]]; then
         echo "TGIFD config:    PLACEHOLDERS PRESENT - review $TGIF_CONFIG_FILE"
@@ -2007,6 +2025,7 @@ main() {
     require_root
     require_app_dir
     validate_installer_mode
+    init_quiet_command_log
 
     if [[ "$AUTH_ACTION" == "set-password" ]]; then
         check_auth_runtime_tools

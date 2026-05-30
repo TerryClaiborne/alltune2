@@ -278,14 +278,14 @@ start_mode() {
         command -v systemctl >/dev/null 2>&1 && systemctl start mmdvm_bridge >/dev/null 2>&1 || true
         fail_json "start" "Failed to connect DVSwitch node ${DVSWITCH_NODE}."
     }
-    sleep 1
+    sleep 0.25
 
     "$DVSWITCH_SH" mode STFU >/dev/null 2>&1 || {
         disconnect_dvswitch_node
         command -v systemctl >/dev/null 2>&1 && systemctl start mmdvm_bridge >/dev/null 2>&1 || true
         fail_json "start" "Failed to switch DVSwitch to STFU mode."
     }
-    sleep 1
+    sleep 0.50
 
     start_stfu_process
 
