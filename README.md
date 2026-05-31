@@ -110,8 +110,7 @@ BrandMeister support uses the included STFU helper. STFU reads its BrandMeister 
 
 TGIF support uses the native TGIFD backend. TGIFD does not use HBLink and does not require an HBLink-managed `MMDVM_Bridge.ini` profile. TGIFD uses its own configuration file at `/var/www/html/alltune2/tgif/config/tgifd.ini`.
 
-Your normal `/opt/MMDVM_Bridge/MMDVM_Bridge.ini` should remain a standard DVSwitch/MMDVM_Bridge configuration for your enabled digital modes.
-
+Your normal `/opt/MMDVM_Bridge/MMDVM_Bridge.ini` should remain a working standard DVSwitch/MMDVM_Bridge configuration for your enabled digital modes. Do not change the working `[General] Id` just because TGIFD no longer uses HBLink. On many DVSwitch/MMDVM_Bridge systems, the bridge/hotspot ID may be the base DMR ID with an added suffix or `+1` hotspot-style ID. If YSF, P25, NXDN, or other digital modes are already working, preserve the existing working `Id`.
 
 Optional modes such as D-Star, P25, and NXDN should already be working in your base DVSwitch setup before enabling them in AllTune2.
 
