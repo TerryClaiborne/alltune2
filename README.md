@@ -102,6 +102,17 @@ You need:
 - Analog_Bridge installed and running
 - MMDVM_Bridge installed and running
 
+### DVSwitch / BM-STFU / TGIFD prerequisites
+
+AllTune2 expects a working ASL3 + DVSwitch installation before install.
+
+BrandMeister support uses the included STFU helper. STFU reads its BrandMeister connection settings from the `[STFU]` section in `/opt/MMDVM_Bridge/DVSwitch.ini`. Make sure `BMAddress`, `BMPort`, `BMPassword`, `UserID`, and `TalkerAlias` are configured there before using BrandMeister from AllTune2.
+
+TGIF support uses the native TGIFD backend. TGIFD does not use HBLink and does not require an HBLink-managed `MMDVM_Bridge.ini` profile. TGIFD uses its own configuration file at `/var/www/html/alltune2/tgif/config/tgifd.ini`.
+
+Your normal `/opt/MMDVM_Bridge/MMDVM_Bridge.ini` should remain a standard DVSwitch/MMDVM_Bridge configuration for your enabled digital modes.
+
+
 Optional modes such as D-Star, P25, and NXDN should already be working in your base DVSwitch setup before enabling them in AllTune2.
 
 If your base node is broken, fix that first. AllTune2 is a control panel, not a repair tool for a broken ASL3 / DVSwitch install.
