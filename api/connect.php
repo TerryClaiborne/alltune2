@@ -273,6 +273,25 @@ function dvswitch_tune(string $value): string
     return shell_run($command);
 }
 
+function ensure_mmdvm_bridge_active_for_managed_digital(string $modeLabel): void
+{
+    $state = trim(shell_run('systemctl is-active mmdvm_bridge 2>/dev/null || true'));
+    if ($state === 'active') {
+        return;
+    }
+
+    shell_run('sudo systemctl start mmdvm_bridge >/dev/null 2>&1');
+    pause_seconds(1.0);
+
+    $state = trim(shell_run('systemctl is-active mmdvm_bridge 2>/dev/null || true'));
+    if ($state !== 'active') {
+        $_SESSION['last_status'] = 'ERROR: MMDVM_BRIDGE NOT ACTIVE FOR ' . $modeLabel;
+        respond(session_payload($_SESSION['last_status'], [
+            'mmdvm_bridge' => $state !== '' ? $state : 'inactive',
+        ]), 500);
+    }
+}
+
 function managed_digital_mode_label(string $mode): string
 {
     return match (normalize_mode($mode)) {
@@ -364,11 +383,12 @@ function cleanup_previous_managed_gateway_link(string $mode): string
 function dvswitch_disconnect_mode(string $mode): string
 {
     $normalized = normalize_mode($mode);
-    $output = cleanup_all_dvswitch_gateway_links();
 
     if (in_array($normalized, ['YSF', 'DSTAR', 'P25', 'NXDN'], true)) {
-        return trim($output);
+        return trim(cleanup_previous_managed_gateway_link($normalized));
     }
+
+    $output = cleanup_all_dvswitch_gateway_links();
 
     if ($output !== '') {
         pause_seconds(0.5);
@@ -1532,6 +1552,8 @@ if ($action === 'connect') {
             $_SESSION['dvswitch_active_mode'] = $autoloadDvSwitchMode;
         }
 
+        ensure_mmdvm_bridge_active_for_managed_digital('YSF');
+
         dvswitch_mode('YSF');
         pause_seconds(0.5);
 
@@ -1575,6 +1597,8 @@ if ($action === 'connect') {
         if ($sameManagedDigitalMode) {
             enforce_dvswitch_link_mode($myNode, $dvSwitchNode, $autoloadDvSwitchMode);
             $_SESSION['dvswitch_active_mode'] = $autoloadDvSwitchMode;
+
+            ensure_mmdvm_bridge_active_for_managed_digital($modeLabel);
 
             dvswitch_mode($mode);
             pause_seconds(0.2);
@@ -1643,6 +1667,8 @@ if ($action === 'connect') {
             enforce_dvswitch_link_mode($myNode, $dvSwitchNode, $autoloadDvSwitchMode);
             $_SESSION['dvswitch_active_mode'] = $autoloadDvSwitchMode;
         }
+
+        ensure_mmdvm_bridge_active_for_managed_digital($modeLabel);
 
         dvswitch_mode($mode);
         pause_seconds(0.5);
