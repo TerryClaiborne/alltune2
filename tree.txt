@@ -3,7 +3,7 @@ AllTune2 release tree
 
 Generated from the Git release index.
 Local runtime files such as config.ini, logs/, run/,
-tgif/config/tgifd.ini, and tgif/build/ are intentionally excluded.
+tgif/config/tgifd.ini, tgif/build/, and TGIFD runtime logs are intentionally excluded.
 
 .gitignore
 README.md
@@ -43,27 +43,9 @@ public/logout.php
 screenshot.png
 setup_alltune2.sh
 stfu/STFU
-tgif/CMakeLists.txt
 tgif/alltune2-tgifd-helper.sh
+tgif/bin/tgifd
 tgif/config/tgifd.ini.example
 tgif/docs/TGIFD-COPYRIGHT-NOTICE.md
-tgif/include/BackendControl.hpp
-tgif/include/Config.hpp
-tgif/include/Logger.hpp
-tgif/include/TGIFClient.hpp
-tgif/include/TGIFDaemon.hpp
-tgif/include/TLVBridge.hpp
-tgif/include/TLVPacket.hpp
-tgif/include/TgifCodec.hpp
-tgif/include/UdpSocket.hpp
-tgif/src/BackendControl.cpp
-tgif/src/Config.cpp
-tgif/src/Logger.cpp
-tgif/src/TGIFClient.cpp
-tgif/src/TGIFDaemon.cpp
-tgif/src/TLVBridge.cpp
-tgif/src/TgifCodec.cpp
-tgif/src/UdpSocket.cpp
-tgif/src/main.cpp
 tools/alltune2_set_admin_password.php
 tree.txt

@@ -32,7 +32,7 @@ LOCAL_STFU_BIN="$LOCAL_STFU_DIR/STFU"
 TGIF_HELPER="$TGIF_DIR/alltune2-tgifd-helper.sh"
 TGIF_CONFIG_FILE="$TGIF_CONFIG_DIR/tgifd.ini"
 TGIF_CONFIG_EXAMPLE="$TGIF_CONFIG_DIR/tgifd.ini.example"
-TGIF_BINARY="$TGIF_BUILD_DIR/tgifd"
+TGIF_BINARY="$TGIF_DIR/bin/tgifd"
 TGIF_COPYRIGHT_NOTICE="$TGIF_DOCS_DIR/TGIFD-COPYRIGHT-NOTICE.md"
 TGIF_LOG_FILE="$TGIF_DIR/tgifd.log"
 TGIF_HELPER_LOG_FILE="$LOGS_DIR/tgifd-helper.log"
@@ -348,7 +348,7 @@ run_auth_disable() {
 }
 
 install_minimum_packages_if_possible() {
-    log "Ensuring minimum runtime/build packages are installed when apt is available..."
+    log "Ensuring minimum runtime packages are installed when apt is available..."
 
     if [[ "$SKIP_APT" == "1" ]]; then
         warn "ALLTUNE2_SKIP_APT=1 set. Skipping automatic package installation; required tools will be checked next."
@@ -371,9 +371,10 @@ install_minimum_packages_if_possible() {
         python3
         cron
         logrotate
-        build-essential
-        cmake
-        libssl-dev
+        openssl
+        libstdc++6
+        zlib1g
+        libzstd1
     )
 
     export DEBIAN_FRONTEND=noninteractive
@@ -395,8 +396,7 @@ check_runtime_tools() {
     command -v sudo >/dev/null 2>&1 || fail "sudo is not installed or not in PATH."
     command -v visudo >/dev/null 2>&1 || fail "visudo is not installed or not in PATH."
     command -v python3 >/dev/null 2>&1 || fail "python3 is not installed or not in PATH."
-    command -v cmake >/dev/null 2>&1 || fail "cmake is not installed or not in PATH. Install cmake before building TGIFD."
-
+ 
     if command -v apache2ctl >/dev/null 2>&1; then
         log "apache2ctl found."
     else
@@ -830,21 +830,29 @@ check_tgifd_config_content() {
     fi
 }
 
-build_tgifd_binary() {
-    log "Building TGIFD..."
+prepare_tgifd_binary() {
+    log "Checking shipped TGIFD binary..."
 
-    [[ -f "$TGIF_DIR/CMakeLists.txt" ]] || fail "TGIFD CMakeLists.txt not found: $TGIF_DIR/CMakeLists.txt"
     [[ -f "$TGIF_HELPER" ]] || fail "TGIFD helper not found: $TGIF_HELPER"
+    [[ -f "$TGIF_BINARY" ]] || fail "TGIFD binary not found: $TGIF_BINARY"
 
-    run_quiet_command "TGIFD cmake configure" cmake -S "$TGIF_DIR" -B "$TGIF_BUILD_DIR"
-    run_quiet_command "TGIFD build" cmake --build "$TGIF_BUILD_DIR" -j
+    chmod 0755 "$TGIF_BINARY"
+    chown root:root "$TGIF_BINARY"
 
-    if [[ -f "$TGIF_BINARY" ]]; then
-        chmod 0755 "$TGIF_BINARY"
-        chown root:root "$TGIF_BINARY"
+    [[ -x "$TGIF_BINARY" ]] || fail "TGIFD binary is not executable: $TGIF_BINARY"
+
+    local arch
+    arch="$(dpkg --print-architecture 2>/dev/null || uname -m 2>/dev/null || true)"
+    if [[ "$arch" != "arm64" && "$arch" != "aarch64" ]]; then
+        fail "TGIFD binary is built for 64-bit ARM. This system reports architecture: ${arch:-unknown}"
     fi
 
-    [[ -x "$TGIF_BINARY" ]] || fail "TGIFD binary was not built or is not executable: $TGIF_BINARY"
+    if command -v ldd >/dev/null 2>&1; then
+        if ldd "$TGIF_BINARY" 2>/dev/null | grep -q "not found"; then
+            ldd "$TGIF_BINARY" 2>/dev/null || true
+            fail "TGIFD binary has missing runtime libraries. Install the missing runtime packages and rerun setup."
+        fi
+    fi
 }
 
 check_tgifd_binary() {
@@ -859,7 +867,7 @@ check_tgifd_repo_preflight_before_hblink_retirement() {
 
     local required_tgifd_files=(
         "$TGIF_HELPER"
-        "$TGIF_DIR/CMakeLists.txt"
+        "$TGIF_BINARY"
         "$TGIF_CONFIG_EXAMPLE"
         "$TGIF_COPYRIGHT_NOTICE"
     )
@@ -871,16 +879,6 @@ check_tgifd_repo_preflight_before_hblink_retirement() {
             missing=1
         fi
     done
-
-    if ! compgen -G "$TGIF_DIR/src/*.cpp" >/dev/null; then
-        warn "Missing TGIFD source files before HBLink retirement: $TGIF_DIR/src/*.cpp"
-        missing=1
-    fi
-
-    if ! compgen -G "$TGIF_DIR/include/*.hpp" >/dev/null; then
-        warn "Missing TGIFD header files before HBLink retirement: $TGIF_DIR/include/*.hpp"
-        missing=1
-    fi
 
     if ! grep -qE 'alltune2-tgifd-helper\.sh|/tgif/' "$APP_DIR/api/connect.php" || ! grep -q 'tgifd_' "$APP_DIR/api/connect.php"; then
         warn "api/connect.php does not appear to be updated for TGIFD naming/helper usage. Refusing to retire HBLink."
@@ -1100,7 +1098,7 @@ check_required_repo_files() {
         "$CONFIG_EXAMPLE_FILE"
         "$LOCAL_STFU_BIN"
         "$TGIF_HELPER"
-        "$TGIF_DIR/CMakeLists.txt"
+        "$TGIF_BINARY"
         "$TGIF_CONFIG_EXAMPLE"
         "$TGIF_COPYRIGHT_NOTICE"
     )
@@ -1114,16 +1112,6 @@ check_required_repo_files() {
             missing=1
         fi
     done
-
-    if ! compgen -G "$TGIF_DIR/src/*.cpp" >/dev/null; then
-        warn "Missing TGIFD source files: $TGIF_DIR/src/*.cpp"
-        missing=1
-    fi
-
-    if ! compgen -G "$TGIF_DIR/include/*.hpp" >/dev/null; then
-        warn "Missing TGIFD header files: $TGIF_DIR/include/*.hpp"
-        missing=1
-    fi
 
     if [[ "$missing" -ne 0 ]]; then
         fail "Required AllTune2 repo files are missing."
@@ -1362,15 +1350,15 @@ check_shell_syntax() {
     log "Shell syntax checks passed."
 }
 
-check_tgifd_source_files() {
-    log "Checking TGIFD source tree..."
+check_tgifd_runtime_files() {
+    log "Checking TGIFD runtime files..."
 
-    [[ -f "$TGIF_DIR/CMakeLists.txt" ]] || fail "Missing TGIFD CMakeLists.txt: $TGIF_DIR/CMakeLists.txt"
-    compgen -G "$TGIF_DIR/src/*.cpp" >/dev/null || fail "Missing TGIFD source files: $TGIF_DIR/src/*.cpp"
-    compgen -G "$TGIF_DIR/include/*.hpp" >/dev/null || fail "Missing TGIFD header files: $TGIF_DIR/include/*.hpp"
     [[ -x "$TGIF_BINARY" ]] || fail "TGIFD binary missing or not executable: $TGIF_BINARY"
+    [[ -f "$TGIF_HELPER" ]] || fail "Missing TGIFD helper: $TGIF_HELPER"
+    [[ -f "$TGIF_CONFIG_EXAMPLE" ]] || fail "Missing TGIFD config example: $TGIF_CONFIG_EXAMPLE"
+    [[ -f "$TGIF_COPYRIGHT_NOTICE" ]] || fail "Missing TGIFD copyright notice: $TGIF_COPYRIGHT_NOTICE"
 
-    log "TGIFD source/build checks passed."
+    log "TGIFD runtime checks passed."
 }
 
 check_config_content() {
@@ -2083,8 +2071,8 @@ main() {
     check_dvswitch_dependencies
     check_helper_local_paths
 
-    step "Building TGIFD..."
-    build_tgifd_binary
+    step "Checking TGIFD binary..."
+    prepare_tgifd_binary
 
     step "Applying permissions and sudoers..."
     set_permissions
@@ -2097,7 +2085,7 @@ main() {
     step "Running installer self-checks..."
     check_php_syntax
     check_shell_syntax
-    check_tgifd_source_files
+    check_tgifd_runtime_files
     check_tgifd_binary
     check_config_content
     check_tgifd_config_content

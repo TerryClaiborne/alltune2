@@ -4,7 +4,7 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/var/www/html/alltune2}"
 TGIFD_DIR="${TGIFD_DIR:-$APP_DIR/tgif}"
 CFG_FILE="${CFG_FILE:-$TGIFD_DIR/config/tgifd.ini}"
-BIN_FILE="${BIN_FILE:-$TGIFD_DIR/build/tgifd}"
+BIN_FILE="${BIN_FILE:-$TGIFD_DIR/bin/tgifd}"
 RUN_DIR="$APP_DIR/run"
 LOG_DIR="$APP_DIR/logs"
 PID_FILE="$RUN_DIR/alltune2-tgifd.pid"
