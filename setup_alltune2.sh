@@ -860,6 +860,46 @@ check_tgifd_binary() {
     log "TGIFD binary exists: $TGIF_BINARY"
 }
 
+retire_old_tgifd_development_artifacts() {
+    log "Checking for old TGIFD development/build artifacts..."
+
+    [[ -x "$TGIF_BINARY" ]] || fail "Refusing to retire old TGIFD artifacts because the active binary is missing or not executable: $TGIF_BINARY"
+
+    local old_paths=(
+        "$TGIF_BUILD_DIR"
+        "$TGIF_DIR/src"
+        "$TGIF_DIR/include"
+        "$TGIF_DIR/CMakeLists.txt"
+    )
+
+    local found=0
+    local path
+    for path in "${old_paths[@]}"; do
+        if [[ -e "$path" ]]; then
+            found=1
+        fi
+    done
+
+    if [[ "$found" -eq 0 ]]; then
+        log "No old TGIFD development/build artifacts found in the live app path."
+        return
+    fi
+
+    local retired_dir="/root/alltune2-backups/tgifd-dev-artifacts-retired-$(date +%Y%m%d-%H%M%S)"
+    mkdir -p "$retired_dir/tgif"
+
+    for path in "${old_paths[@]}"; do
+        if [[ -e "$path" ]]; then
+            local base
+            base="$(basename "$path")"
+            mv "$path" "$retired_dir/tgif/$base"
+            log "Archived old TGIFD artifact: $path -> $retired_dir/tgif/$base"
+        fi
+    done
+
+    log "Old TGIFD development/build artifacts archived under: $retired_dir"
+}
+
 check_tgifd_repo_preflight_before_hblink_retirement() {
     log "Running TGIFD repo preflight before retiring HBLink..."
 
@@ -2073,6 +2113,9 @@ main() {
 
     step "Checking TGIFD binary..."
     prepare_tgifd_binary
+
+    step "Retiring old TGIFD development/build artifacts..."
+    retire_old_tgifd_development_artifacts
 
     step "Applying permissions and sudoers..."
     set_permissions
