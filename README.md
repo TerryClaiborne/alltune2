@@ -1061,7 +1061,8 @@ Remember:
 - do not commit `config.ini`
 - do not commit `data/favorites.txt`
 - do not commit `tgif/config/tgifd.ini`
-- do not commit `tgif/build/`
+- TGIFD runs from `/var/www/html/alltune2/tgif/bin/tgifd` 
+- do not commit old local build folders such as `tgif/build/`
 - do not assume every update needs setup
 - use `--set-admin-password` to change the web login password
 - use `--disable-auth` to turn web login off
