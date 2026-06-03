@@ -380,11 +380,29 @@ function cleanup_previous_managed_gateway_link(string $mode): string
     return '';
 }
 
+function reset_mmdvm_runtime_to_idle_dmr(): string
+{
+    $messages = [];
+    $messages[] = dvswitch_mode('DMR');
+    pause_seconds(0.5);
+    $messages[] = dvswitch_tune('0');
+
+    return trim(implode(PHP_EOL, array_filter($messages)));
+}
+
 function dvswitch_disconnect_mode(string $mode): string
 {
     $normalized = normalize_mode($mode);
 
-    if (in_array($normalized, ['YSF', 'DSTAR', 'P25', 'NXDN'], true)) {
+    if (in_array($normalized, ['YSF', 'P25', 'NXDN'], true)) {
+        $messages = [];
+        $messages[] = cleanup_previous_managed_gateway_link($normalized);
+        $messages[] = reset_mmdvm_runtime_to_idle_dmr();
+
+        return trim(implode(PHP_EOL, array_filter($messages)));
+    }
+
+    if ($normalized === 'DSTAR') {
         return trim(cleanup_previous_managed_gateway_link($normalized));
     }
 
