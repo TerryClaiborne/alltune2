@@ -292,6 +292,38 @@ function ensure_mmdvm_bridge_active_for_managed_digital(string $modeLabel): void
     }
 }
 
+function ensure_ysfgateway_active_for_ysf(): void
+{
+    $state = trim(shell_run('systemctl is-active ysfgateway.service 2>/dev/null || true'));
+    if ($state === 'active') {
+        return;
+    }
+
+    shell_run('sudo /usr/bin/systemctl start ysfgateway.service >/dev/null 2>&1');
+    pause_seconds(1.0);
+
+    $state = trim(shell_run('systemctl is-active ysfgateway.service 2>/dev/null || true'));
+    if ($state !== 'active') {
+        $_SESSION['last_status'] = 'ERROR: YSFGATEWAY NOT ACTIVE FOR YSF';
+        respond(session_payload($_SESSION['last_status'], [
+            'ysfgateway' => $state !== '' ? $state : 'inactive',
+        ]), 500);
+    }
+}
+
+function stop_ysfgateway_after_ysf_disconnect(): string
+{
+    $state = trim(shell_run('systemctl is-active ysfgateway.service 2>/dev/null || true'));
+    if ($state !== 'active') {
+        return '';
+    }
+
+    $output = shell_run('sudo /usr/bin/systemctl stop ysfgateway.service 2>&1 || true');
+    pause_seconds(1.0);
+
+    return trim($output);
+}
+
 function managed_digital_mode_label(string $mode): string
 {
     return match (normalize_mode($mode)) {
@@ -357,7 +389,11 @@ function cleanup_previous_managed_gateway_link(string $mode): string
     $normalized = normalize_mode($mode);
 
     if ($normalized === 'YSF') {
-        return gateway_udp_command('YSF', 6073, 'disconnect');
+        $messages = [];
+        $messages[] = gateway_udp_command('YSF', 6073, 'disconnect');
+        $messages[] = stop_ysfgateway_after_ysf_disconnect();
+
+        return trim(implode(PHP_EOL, array_filter($messages)));
     }
 
     if ($normalized === 'P25') {
@@ -1571,6 +1607,7 @@ if ($action === 'connect') {
         }
 
         ensure_mmdvm_bridge_active_for_managed_digital('YSF');
+        ensure_ysfgateway_active_for_ysf();
 
         dvswitch_mode('YSF');
         pause_seconds(0.5);

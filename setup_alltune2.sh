@@ -90,6 +90,7 @@ ANALOG_BRIDGE_INI="/opt/Analog_Bridge/Analog_Bridge.ini"
 ASTERISK_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk"
 BM_RECEIVE_SUDOERS_FILE="/etc/sudoers.d/alltune2-bm-receive"
 TGIF_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-tgifd"
+YSFGATEWAY_SUDOERS_FILE="/etc/sudoers.d/alltune2-ysfgateway"
 OLD_TGIF_HBLINK_SUDOERS_FILE="/etc/sudoers.d/alltune2-hblink"
 
 BM_RECEIVE_LOG_FILE="/var/log/alltune2-bm-receive.log"
@@ -103,7 +104,9 @@ APACHE_SECURITY_CONF_FILE="/etc/apache2/conf-available/${APACHE_SECURITY_CONF_NA
 
 EXPECTED_ASTERISK_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${ASTERISK_BIN}"
 EXPECTED_BM_RECEIVE_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${BM_RECEIVE_HELPER}"
+SYSTEMCTL_BIN="/usr/bin/systemctl"
 EXPECTED_TGIF_HELPER_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${TGIF_HELPER} *"
+EXPECTED_YSFGATEWAY_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start ysfgateway.service, ${SYSTEMCTL_BIN} stop ysfgateway.service"
 
 validate_installer_mode() {
     case "$INSTALLER_MODE" in
@@ -1351,10 +1354,12 @@ create_or_update_sudoers_files() {
     [[ -x "$ASTERISK_BIN" ]] || fail "Asterisk binary not found at $ASTERISK_BIN"
     [[ -x "$BM_RECEIVE_HELPER" ]] || fail "BM receive helper is not executable: $BM_RECEIVE_HELPER"
     [[ -x "$TGIF_HELPER" ]] || fail "TGIF helper is not executable: $TGIF_HELPER"
+    [[ -x "$SYSTEMCTL_BIN" ]] || fail "systemctl not found at $SYSTEMCTL_BIN"
 
     install_validated_sudoers_file "$ASTERISK_SUDOERS_FILE" "$EXPECTED_ASTERISK_SUDOERS_RULE"
     install_validated_sudoers_file "$BM_RECEIVE_SUDOERS_FILE" "$EXPECTED_BM_RECEIVE_SUDOERS_RULE"
     install_validated_sudoers_file "$TGIF_HELPER_SUDOERS_FILE" "$EXPECTED_TGIF_HELPER_SUDOERS_RULE"
+    install_validated_sudoers_file "$YSFGATEWAY_SUDOERS_FILE" "$EXPECTED_YSFGATEWAY_SUDOERS_RULE"
 }
 
 check_php_syntax() {
@@ -1903,13 +1908,16 @@ check_sudoers_requirement() {
 
     grep -qF "$EXPECTED_TGIF_HELPER_SUDOERS_RULE" "$TGIF_HELPER_SUDOERS_FILE"         || fail "Expected TGIF helper sudoers rule not found in $TGIF_HELPER_SUDOERS_FILE"
 
+    grep -qF "$EXPECTED_YSFGATEWAY_SUDOERS_RULE" "$YSFGATEWAY_SUDOERS_FILE"         || fail "Expected YSFGateway sudoers rule not found in $YSFGATEWAY_SUDOERS_FILE"
+
     visudo -cf "$ASTERISK_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $ASTERISK_SUDOERS_FILE"
     visudo -cf "$BM_RECEIVE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $BM_RECEIVE_SUDOERS_FILE"
     visudo -cf "$TGIF_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $TGIF_HELPER_SUDOERS_FILE"
+    visudo -cf "$YSFGATEWAY_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $YSFGATEWAY_SUDOERS_FILE"
 
     [[ ! -e "$OLD_TGIF_HBLINK_SUDOERS_FILE" ]] || fail "Old TGIF/HBLink sudoers file still exists after migration: $OLD_TGIF_HBLINK_SUDOERS_FILE"
 
-    log "Installed sudoers files look correct, and old HBLink sudoers is retired."
+    log "Installed sudoers files look correct, YSFGateway control is available, and old HBLink sudoers is retired."
 }
 
 check_status_endpoint_cli() {
