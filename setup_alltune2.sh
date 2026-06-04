@@ -65,7 +65,7 @@ case "${1:-}" in
         echo "  sudo /var/www/html/alltune2/setup_alltune2.sh --disable-auth"
         echo
         echo "Normal setup/update preserves existing config.ini and auth settings."
-        echo "Normal setup/update retires the old TGIF/HBLink backend from the live app path after backing it up."
+        echo "Normal setup/update preserves existing user/system settings when they are already present."
         echo "Set ALLTUNE2_SKIP_APT=1 to skip automatic apt package installation."
         echo "--set-admin-password changes only the AllTune2 web login password."
         echo "--disable-auth sets ALLTUNE2_AUTH_ENABLED=0 and keeps the saved hash."
@@ -882,93 +882,7 @@ retire_old_tgifd_development_artifacts() {
     fi
 }
 
-check_tgifd_repo_preflight_before_hblink_retirement() {
-    log "Running TGIFD repo preflight before retiring HBLink..."
 
-    local missing=0
-
-    local required_tgifd_files=(
-        "$TGIF_HELPER"
-        "$TGIF_BINARY"
-        "$TGIF_CONFIG_EXAMPLE"
-        "$TGIF_COPYRIGHT_NOTICE"
-    )
-
-    local file
-    for file in "${required_tgifd_files[@]}"; do
-        if [[ ! -f "$file" ]]; then
-            warn "Missing TGIFD required file before HBLink retirement: $file"
-            missing=1
-        fi
-    done
-
-    if ! grep -qE 'alltune2-tgifd-helper\.sh|/tgif/' "$APP_DIR/api/connect.php" || ! grep -q 'tgifd_' "$APP_DIR/api/connect.php"; then
-        warn "api/connect.php does not appear to be updated for TGIFD naming/helper usage. Refusing to retire HBLink."
-        missing=1
-    fi
-
-    if grep -qE 'hblink_tgif|tgif_hblink|TGIF HBLINK|FAILED TO STOP TGIF HBLINK' "$APP_DIR/api/connect.php"; then
-        warn "api/connect.php still contains old TGIF/HBLink runtime naming. Refusing to retire HBLink."
-        missing=1
-    fi
-
-    if ! grep -qE "'tgifd'[[:space:]]*=>|TGIFD|alltune2-tgifd|/tgif/" "$APP_DIR/api/status.php"; then
-        warn "api/status.php does not appear to expose TGIFD status. Refusing to retire HBLink."
-        missing=1
-    fi
-
-    if grep -qE 'hblink_tgif|tgif_hblink|read_hblink|hblinkTgif|TGIF HBLINK|FAILED TO STOP TGIF HBLINK' "$APP_DIR/api/status.php"; then
-        warn "api/status.php still contains old TGIF/HBLink runtime naming. Refusing to retire HBLink."
-        missing=1
-    fi
-
-    if grep -qE 'systemctl[[:space:]]+start[[:space:]]+mmdvm_bridge' "$TGIF_HELPER"; then
-        warn "TGIFD helper still restarts mmdvm_bridge. Stable TGIFD stop must leave mmdvm_bridge inactive. Refusing to retire HBLink."
-        missing=1
-    fi
-
-    if grep -q 'TGIFD retuned' "$TGIF_HELPER"; then
-        warn "TGIFD helper appears to contain the failed fast-retune experiment. Refusing to retire HBLink."
-        missing=1
-    fi
-
-    if ! grep -qE '^[[:space:]]*inbound_slot[[:space:]]*=[[:space:]]*2[[:space:]]*$' "$TGIF_CONFIG_EXAMPLE"; then
-        warn "tgifd.ini.example must include [tlv] inbound_slot = 2 for reliable TGIF inbound audio."
-        missing=1
-    fi
-
-    if [[ "$missing" -ne 0 ]]; then
-        fail "TGIFD repo/API preflight failed. HBLink was not retired."
-    fi
-
-    log "TGIFD repo/API preflight passed."
-}
-
-
-stop_old_hblink_processes_if_running() {
-    log "Checking for old TGIF/HBLink processes..."
-
-    local matches=""
-    matches="$(pgrep -af "$OLD_TGIF_HBLINK_DIR|alltune2-hblink-audio-helper|set_hblink_tg\.sh" 2>/dev/null || true)"
-
-    if [[ -z "$matches" ]]; then
-        log "No old TGIF/HBLink processes found."
-        return
-    fi
-
-    warn "Old TGIF/HBLink processes detected. Stopping them before migration."
-    echo "$matches" | sed 's/^/[INFO] /'
-
-    pkill -f "$OLD_TGIF_HBLINK_DIR" 2>/dev/null || true
-    pkill -f 'alltune2-hblink-audio-helper|set_hblink_tg\.sh' 2>/dev/null || true
-    sleep 1
-
-    matches="$(pgrep -af "$OLD_TGIF_HBLINK_DIR|alltune2-hblink-audio-helper|set_hblink_tg\.sh" 2>/dev/null || true)"
-    if [[ -n "$matches" ]]; then
-        warn "Some old TGIF/HBLink processes may still be running after stop attempt:"
-        echo "$matches" | sed 's/^/[WARN] /'
-    fi
-}
 
 stop_existing_tgifd_if_running() {
     log "Stopping any active TGIFD instance before rebuild/config update..."
@@ -1229,6 +1143,8 @@ create_or_update_sudoers_files() {
     install_validated_sudoers_file "$BM_RECEIVE_SUDOERS_FILE" "$EXPECTED_BM_RECEIVE_SUDOERS_RULE"
     install_validated_sudoers_file "$TGIF_HELPER_SUDOERS_FILE" "$EXPECTED_TGIF_HELPER_SUDOERS_RULE"
     install_validated_sudoers_file "$YSFGATEWAY_SUDOERS_FILE" "$EXPECTED_YSFGATEWAY_SUDOERS_RULE"
+
+    visudo -c >/dev/null || fail "Full sudoers validation failed after installing AllTune2 sudoers files."
 }
 
 check_php_syntax() {
@@ -1342,82 +1258,156 @@ check_external_config_hints() {
     echo "[INFO] TGIFD reminder: if TGIF does not connect, review $TGIF_CONFIG_FILE and the Analog_Bridge identity/TLV settings."
 }
 
+
+logrotate_external_owners() {
+    local target_file="$1"
+    local log_path="$2"
+    local owner=""
+    local target_real=""
+    local owner_real=""
+
+    target_real="$(readlink -f "$target_file" 2>/dev/null || printf '%s' "$target_file")"
+
+    while IFS= read -r owner; do
+        [[ -n "$owner" ]] || continue
+        owner_real="$(readlink -f "$owner" 2>/dev/null || printf '%s' "$owner")"
+        if [[ "$owner_real" != "$target_real" ]]; then
+            printf '%s\n' "$owner"
+        fi
+    done < <(grep -RIlF -- "$log_path" /etc/logrotate.conf /etc/logrotate.d 2>/dev/null || true)
+}
+
+ensure_log_file_if_missing() {
+    local file="$1"
+
+    if [[ ! -e "$file" ]]; then
+        touch "$file"
+        chmod 0644 "$file"
+        chown root:root "$file"
+        quiet_detail "Created missing log file: $file"
+    else
+        quiet_detail "Existing log file preserved: $file"
+    fi
+}
+
+install_logrotate_rule_without_duplicates() {
+    local target_file="$1"
+    local rule_body="$2"
+    shift 2
+
+    local requested_paths=("$@")
+    local managed_paths=()
+    local log_path=""
+    local owners=""
+    local conflict=0
+
+    for log_path in "${requested_paths[@]}"; do
+        owners="$(logrotate_external_owners "$target_file" "$log_path" || true)"
+        if [[ -n "$owners" ]]; then
+            conflict=1
+            warn "Existing logrotate rule already manages $log_path. Preserving existing owner(s): $(echo "$owners" | paste -sd ',' -)"
+        else
+            managed_paths+=("$log_path")
+        fi
+    done
+
+    # If another/manual rule owns some paths, AllTune2 must not duplicate them.
+    # If no paths remain for this AllTune2 file, remove only the AllTune2-owned file.
+    if [[ "$conflict" -eq 1 ]]; then
+        if [[ "${#managed_paths[@]}" -eq 0 ]]; then
+            if [[ -f "$target_file" ]]; then
+                rm -f -- "$target_file"
+                echo "[INFO] Removed AllTune2 logrotate file to avoid duplicate log ownership: $target_file"
+            fi
+            return 0
+        fi
+
+        {
+            printf '%s {\n' "${managed_paths[*]}"
+            printf '%s\n' "$rule_body"
+            printf '}\n'
+        } > "$target_file"
+
+        chmod 0644 "$target_file"
+        chown root:root "$target_file"
+        echo "[INFO] Adjusted AllTune2 logrotate file to avoid duplicate log ownership: $target_file"
+        return 0
+    fi
+
+    # If AllTune2 already owns the file and no external duplicate exists,
+    # preserve it. Users may have changed policy values such as rotate/compress.
+    if [[ -f "$target_file" ]]; then
+        chmod 0644 "$target_file"
+        chown root:root "$target_file"
+        quiet_detail "Existing AllTune2 logrotate file preserved: $target_file"
+        return 0
+    fi
+
+    {
+        printf '%s {\n' "${requested_paths[*]}"
+        printf '%s\n' "$rule_body"
+        printf '}\n'
+    } > "$target_file"
+
+    chmod 0644 "$target_file"
+    chown root:root "$target_file"
+    echo "[INFO] Installed new AllTune2 logrotate file: $target_file"
+}
+
 create_or_update_logrotate_files() {
-    log "Ensuring BM receive log rotation exists..."
+    log "Ensuring AllTune2 log rotation exists without overwriting existing user rules..."
 
-    touch "$BM_RECEIVE_LOG_FILE"
-    chmod 0644 "$BM_RECEIVE_LOG_FILE"
-    chown root:root "$BM_RECEIVE_LOG_FILE"
+    local before_ok=0
+    if command -v logrotate >/dev/null 2>&1; then
+        if logrotate -d /etc/logrotate.conf >/dev/null 2>&1; then
+            before_ok=1
+        else
+            warn "Existing logrotate configuration has errors before AllTune2 changes. Setup will avoid duplicate AllTune2 log rules and recheck afterward."
+        fi
+    fi
 
-    cat > "$BM_RECEIVE_LOGROTATE_FILE" <<EOF
-$BM_RECEIVE_LOG_FILE {
-    size 1M
-    rotate 5
-    compress
-    delaycompress
-    missingok
-    notifempty
-    copytruncate
-    create 0644 root root
-}
-EOF
-
-    chmod 0644 "$BM_RECEIVE_LOGROTATE_FILE"
-    chown root:root "$BM_RECEIVE_LOGROTATE_FILE"
-
-    touch "$STFU_LOG_FILE" "$BM_STFU_LOG_FILE"
-    chmod 0644 "$STFU_LOG_FILE" "$BM_STFU_LOG_FILE"
-    chown root:root "$STFU_LOG_FILE" "$BM_STFU_LOG_FILE"
-
-    cat > "$STFU_LOGROTATE_FILE" <<EOF
-$STFU_LOG_FILE $BM_STFU_LOG_FILE {
-    size 1M
-    rotate 5
-    compress
-    delaycompress
-    missingok
-    notifempty
-    copytruncate
-    create 0644 root root
-}
-EOF
-
-    chmod 0644 "$STFU_LOGROTATE_FILE"
-    chown root:root "$STFU_LOGROTATE_FILE"
+    ensure_log_file_if_missing "$BM_RECEIVE_LOG_FILE"
+    ensure_log_file_if_missing "$STFU_LOG_FILE"
+    ensure_log_file_if_missing "$BM_STFU_LOG_FILE"
 
     mkdir -p "$LOGS_DIR" "$TGIF_DIR"
-    touch "$TGIF_HELPER_LOG_FILE" "$TGIF_LOG_FILE"
-    chmod 0644 "$TGIF_HELPER_LOG_FILE" "$TGIF_LOG_FILE"
-    chown root:root "$TGIF_HELPER_LOG_FILE" "$TGIF_LOG_FILE"
+    ensure_log_file_if_missing "$TGIF_HELPER_LOG_FILE"
+    ensure_log_file_if_missing "$TGIF_LOG_FILE"
 
-    cat > "$TGIF_LOGROTATE_FILE" <<EOF
-$TGIF_HELPER_LOG_FILE $TGIF_LOG_FILE {
-    su root root
-    size 1M
+    local default_one_day_rule
+    default_one_day_rule='    daily
     rotate 1
     maxage 1
     missingok
     notifempty
     nocompress
     copytruncate
-}
-EOF
+    su root root'
 
-    chmod 0644 "$TGIF_LOGROTATE_FILE"
-    chown root:root "$TGIF_LOGROTATE_FILE"
+    install_logrotate_rule_without_duplicates "$BM_RECEIVE_LOGROTATE_FILE" "$default_one_day_rule" \
+        "$BM_RECEIVE_LOG_FILE"
+
+    install_logrotate_rule_without_duplicates "$STFU_LOGROTATE_FILE" "$default_one_day_rule" \
+        "$STFU_LOG_FILE" "$BM_STFU_LOG_FILE"
+
+    install_logrotate_rule_without_duplicates "$TGIF_LOGROTATE_FILE" "$default_one_day_rule" \
+        "$TGIF_HELPER_LOG_FILE" "$TGIF_LOG_FILE"
 
     if command -v logrotate >/dev/null 2>&1; then
-        logrotate -d "$BM_RECEIVE_LOGROTATE_FILE" >/dev/null 2>&1 || fail "logrotate validation failed for $BM_RECEIVE_LOGROTATE_FILE"
-        logrotate -d "$STFU_LOGROTATE_FILE" >/dev/null 2>&1 || fail "logrotate validation failed for $STFU_LOGROTATE_FILE"
-        logrotate -d "$TGIF_LOGROTATE_FILE" >/dev/null 2>&1 || fail "logrotate validation failed for $TGIF_LOGROTATE_FILE"
+        if logrotate -d /etc/logrotate.conf >/dev/null 2>&1; then
+            log "Full logrotate configuration validation passed."
+        elif [[ "$before_ok" -eq 1 ]]; then
+            fail "Full logrotate validation failed after AllTune2 logrotate setup. Review /etc/logrotate.d/alltune2-* and /etc/logrotate.conf."
+        else
+            warn "Full logrotate validation still reports errors that existed before or outside AllTune2. Review: sudo logrotate -d /etc/logrotate.conf"
+        fi
     else
-        warn "logrotate command not found. Installed logrotate files, but rotation cannot run until logrotate is installed."
+        warn "logrotate command not found. Rotation cannot run until logrotate is installed."
     fi
 
-    log "Installed BM receive logrotate file: $BM_RECEIVE_LOGROTATE_FILE"
-    log "Installed STFU logrotate file: $STFU_LOGROTATE_FILE"
-    log "Installed TGIFD logrotate file: $TGIF_LOGROTATE_FILE"
+    log "AllTune2 logrotate checks completed. Existing user/system rules were preserved."
 }
+
 
 create_or_update_radio_log_prune() {
     log "Ensuring radio log prune helper includes TGIFD logs without replacing existing cleanup logic..."
@@ -1578,16 +1568,19 @@ create_or_update_apache_accesslog_filter() {
         return
     fi
 
+    local restore_file="/tmp/alltune2-apache-accesslog-restore.json"
     local patch_output
+    rm -f "$restore_file"
 
-    if ! patch_output="$(python3 - <<'PYAPACHE'
+    if ! patch_output="$(python3 - "$restore_file" <<'PYAPACHE'
+import json
 import os
 import pathlib
 import re
-import shutil
 import sys
 
-restore_items = []
+restore_file = pathlib.Path(sys.argv[1])
+restore_items = {}
 
 # The filter suppresses only AllTune2's high-frequency browser polling URLs
 # from Apache access.log. It does not block the requests.
@@ -1597,44 +1590,43 @@ plain_customlog_re = re.compile(r'^(\s*)CustomLog\s+\$\{APACHE_LOG_DIR\}/access\
 old_env_customlog_re = re.compile(r'^(\s*)CustomLog\s+\$\{APACHE_LOG_DIR\}/access\.log\s+combined\s+env=!dontlog_alltune2_polling\s*$')
 
 def line_has_alltune_filter(line: str) -> bool:
-    normalized = line.replace("\\", "")
+    normalized = line.replace('\\', '')
     return (
-        "CustomLog" in line
-        and "access.log" in line
-        and "expr=" in line
-        and "/alltune2/" in normalized
-        and "api/status.php" in normalized
-        and "public/alltune2_ribbon_bar.php" in normalized
+        'CustomLog' in line
+        and 'access.log' in line
+        and 'expr=' in line
+        and '/alltune2/' in normalized
+        and 'api/status.php' in normalized
+        and 'public/alltune2_ribbon_bar.php' in normalized
     )
 
 def replacement_for_line(line: str):
-    if "CustomLog" not in line or "access.log" not in line:
+    if 'CustomLog' not in line or 'access.log' not in line:
         return None
 
     if line_has_alltune_filter(line):
         return None
 
-    old_env_match = old_env_customlog_re.match(line.rstrip("\\r\\n"))
+    old_env_match = old_env_customlog_re.match(line.rstrip('\r\n'))
     if old_env_match:
         return old_env_match.group(1) + expr_line
 
-    plain_match = plain_customlog_re.match(line.rstrip("\\r\\n"))
+    plain_match = plain_customlog_re.match(line.rstrip('\r\n'))
     if plain_match:
         return plain_match.group(1) + expr_line
 
     return None
 
-site_available = pathlib.Path(os.environ.get("ALLTUNE2_APACHE_SITES_AVAILABLE", "/etc/apache2/sites-available"))
-site_enabled = pathlib.Path(os.environ.get("ALLTUNE2_APACHE_SITES_ENABLED", "/etc/apache2/sites-enabled"))
+site_available = pathlib.Path(os.environ.get('ALLTUNE2_APACHE_SITES_AVAILABLE', '/etc/apache2/sites-available'))
+site_enabled = pathlib.Path(os.environ.get('ALLTUNE2_APACHE_SITES_ENABLED', '/etc/apache2/sites-enabled'))
 
 candidate_paths = [
-    site_available / "000-default.conf",
-    site_available / "default-ssl.conf",
+    site_available / '000-default.conf',
+    site_available / 'default-ssl.conf',
 ]
 
-# Include real files behind enabled .conf symlinks on systems with custom vhost names.
 if site_enabled.exists():
-    for item in site_enabled.glob("*.conf"):
+    for item in site_enabled.glob('*.conf'):
         try:
             candidate_paths.append(item.resolve())
         except Exception:
@@ -1652,13 +1644,12 @@ for path in candidate_paths:
 
 changed = []
 skipped = []
-manifest_entries = []
 
 for path in paths:
     try:
         text = path.read_text()
     except Exception as exc:
-        skipped.append(f"{path}: could not read file: {exc}")
+        skipped.append(f'{path}: could not read file: {exc}')
         continue
 
     lines = text.splitlines(keepends=True)
@@ -1666,46 +1657,41 @@ for path in paths:
     file_changed = False
 
     for line in lines:
-        if "CustomLog" in line and "access.log" in line:
+        if 'CustomLog' in line and 'access.log' in line:
             if line_has_alltune_filter(line):
                 new_lines.append(line)
                 continue
 
             replacement = replacement_for_line(line)
             if replacement is not None:
-                ending = "\\n" if line.endswith("\\n") else ""
+                ending = '\n' if line.endswith('\n') else ''
                 new_lines.append(replacement + ending)
                 file_changed = True
                 continue
 
-            if "expr=" in line:
-                skipped.append(f"{path}: CustomLog access.log already has a custom expr= clause; left unchanged")
+            if 'expr=' in line:
+                skipped.append(f'{path}: CustomLog access.log already has a custom expr= clause; left unchanged')
             else:
-                skipped.append(f"{path}: CustomLog access.log format not recognized; left unchanged")
+                skipped.append(f'{path}: CustomLog access.log format not recognized; left unchanged')
 
         new_lines.append(line)
 
     if not file_changed:
         continue
 
-    backup_dir.mkdir(parents=True, exist_ok=True)
-    backup_name = str(path).lstrip("/").replace("/", "__")
-    backup_path = backup_dir / backup_name
-    shutil.copy2(path, backup_path)
-
-    path.write_text("".join(new_lines))
+    restore_items[str(path)] = text
+    path.write_text(''.join(new_lines))
     changed.append(str(path))
-    manifest_entries.append(f"{path}\\t{backup_path}\\n")
 
-if manifest_entries:
-    (backup_dir / manifest_name).write_text("".join(manifest_entries))
+if restore_items:
+    restore_file.write_text(json.dumps(restore_items))
 
 for item in skipped:
-    print(f"SKIPPED {item}")
+    print(f'SKIPPED {item}')
 for item in changed:
-    print(f"CHANGED {item}")
+    print(f'CHANGED {item}')
 if not changed:
-    print("NO_CHANGES")
+    print('NO_CHANGES')
 PYAPACHE
 )"; then
         warn "Apache access log filter patch helper failed. Leaving Apache config unchanged."
@@ -1719,33 +1705,33 @@ PYAPACHE
     fi
 
     if [[ "$patch_output" != *"CHANGED"* ]]; then
+        rm -f "$restore_file"
         log "Apache access log filter already installed or no standard access.log CustomLog lines were found."
         return
     fi
 
     if ! apache2ctl configtest >/dev/null; then
-        warn "Apache configtest failed after installing AllTune2 access log filter. Restoring Apache site backups."
-        if [[ -f /tmp/alltune2-apache-accesslog-restore.tsv ]]; then
-            python3 - <<'PYRESTORE'
+        warn "Apache configtest failed after installing AllTune2 access log filter. Restoring Apache site files."
+        if [[ -f "$restore_file" ]]; then
+            python3 - "$restore_file" <<'PYRESTORE'
+import json
 import pathlib
+import sys
 
-restore_file = pathlib.Path("/tmp/alltune2-apache-accesslog-restore.tsv")
-for line in restore_file.read_text().splitlines():
-    if not line.strip():
-        continue
-    original, encoded = line.split("\t", 1)
-    content = encoded.replace("\\n", "\n").replace("\\\\", "\\")
+restore_file = pathlib.Path(sys.argv[1])
+restore_items = json.loads(restore_file.read_text())
+for original, content in restore_items.items():
     pathlib.Path(original).write_text(content)
 restore_file.unlink(missing_ok=True)
 PYRESTORE
         fi
 
         if apache2ctl configtest >/dev/null; then
-            warn "Restored Apache site backups. Access log filter was not installed."
+            warn "Restored Apache site files. Access log filter was not installed."
             return
         fi
 
-        fail "Apache configtest still fails after restoring access log filter backups. Manual Apache review is required."
+        fail "Apache configtest still fails after restoring access log filter changes. Manual Apache review is required."
     fi
 
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet apache2; then
@@ -1754,7 +1740,7 @@ PYRESTORE
         warn "Apache service is not active or systemctl is unavailable. Access log filter installed, but Apache was not reloaded automatically."
     fi
 
-    rm -f /tmp/alltune2-apache-accesslog-restore.tsv
+    rm -f "$restore_file"
     log "Installed Apache access log filter for AllTune2 status/ribbon polling URLs."
 }
 
@@ -1774,6 +1760,7 @@ check_sudoers_requirement() {
     visudo -cf "$BM_RECEIVE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $BM_RECEIVE_SUDOERS_FILE"
     visudo -cf "$TGIF_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $TGIF_HELPER_SUDOERS_FILE"
     visudo -cf "$YSFGATEWAY_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $YSFGATEWAY_SUDOERS_FILE"
+    visudo -c >/dev/null || fail "Full sudoers validation failed during installer self-check."
 
     if [[ -e "$OLD_TGIF_HBLINK_SUDOERS_FILE" ]]; then
         warn "Old TGIF/HBLink sudoers file still exists: $OLD_TGIF_HBLINK_SUDOERS_FILE"
