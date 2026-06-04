@@ -39,7 +39,6 @@ TGIF_HELPER_LOG_FILE="$LOGS_DIR/tgifd-helper.log"
 TGIF_ACTIVITY_LOG_FILE="$LOGS_DIR/tgif-activity.jsonl"
 RADIO_LOG_PRUNE_SCRIPT="/usr/local/sbin/radio-log-prune.sh"
 RADIO_LOG_PRUNE_CRON="/etc/cron.d/radio-log-prune"
-MIGRATION_BACKUP_DIR=""
 TGIFD_CONFIG_HAS_PLACEHOLDERS=0
 SETUP_COMPLETED=0
 SKIP_APT="${ALLTUNE2_SKIP_APT:-0}"
@@ -149,10 +148,6 @@ warn() {
 
 fail() {
     echo "[ERROR] $*" >&2
-    if [[ "${SETUP_COMPLETED:-0}" != "1" && -n "${MIGRATION_BACKUP_DIR:-}" ]]; then
-        echo "[INFO] Migration backup is here: ${MIGRATION_BACKUP_DIR}" >&2
-        echo "[INFO] Review the error before rerunning setup repeatedly." >&2
-    fi
     exit 1
 }
 
@@ -192,9 +187,6 @@ on_error() {
 
     echo >&2
     echo "[ERROR] AllTune2 setup failed near line ${line_no}." >&2
-    if [[ -n "${MIGRATION_BACKUP_DIR:-}" ]]; then
-        echo "[INFO] Migration backup is here: ${MIGRATION_BACKUP_DIR}" >&2
-    fi
     echo "[INFO] Review the error before rerunning setup repeatedly." >&2
 
     exit "$exit_code"
@@ -866,7 +858,7 @@ check_tgifd_binary() {
 retire_old_tgifd_development_artifacts() {
     log "Checking for old TGIFD development/build artifacts..."
 
-    [[ -x "$TGIF_BINARY" ]] || fail "Refusing to retire old TGIFD artifacts because the active binary is missing or not executable: $TGIF_BINARY"
+    [[ -x "$TGIF_BINARY" ]] || fail "Refusing to remove old TGIFD artifacts because the active binary is missing or not executable: $TGIF_BINARY"
 
     local old_paths=(
         "$TGIF_BUILD_DIR"
@@ -875,32 +867,19 @@ retire_old_tgifd_development_artifacts() {
         "$TGIF_DIR/CMakeLists.txt"
     )
 
-    local found=0
+    local removed=0
     local path
     for path in "${old_paths[@]}"; do
         if [[ -e "$path" ]]; then
-            found=1
+            rm -rf -- "$path"
+            removed=1
+            echo "[INFO] Removed old TGIFD development/build artifact: $path"
         fi
     done
 
-    if [[ "$found" -eq 0 ]]; then
+    if [[ "$removed" -eq 0 ]]; then
         log "No old TGIFD development/build artifacts found in the live app path."
-        return
     fi
-
-    local retired_dir="/root/alltune2-backups/tgifd-dev-artifacts-retired-$(date +%Y%m%d-%H%M%S)"
-    mkdir -p "$retired_dir/tgif"
-
-    for path in "${old_paths[@]}"; do
-        if [[ -e "$path" ]]; then
-            local base
-            base="$(basename "$path")"
-            mv "$path" "$retired_dir/tgif/$base"
-            log "Archived old TGIFD artifact: $path -> $retired_dir/tgif/$base"
-        fi
-    done
-
-    log "Old TGIFD development/build artifacts archived under: $retired_dir"
 }
 
 check_tgifd_repo_preflight_before_hblink_retirement() {
@@ -965,75 +944,6 @@ check_tgifd_repo_preflight_before_hblink_retirement() {
     log "TGIFD repo/API preflight passed."
 }
 
-backup_app_path_if_exists() {
-    local path="$1"
-    local rel=""
-
-    [[ -n "$MIGRATION_BACKUP_DIR" ]] || fail "MIGRATION_BACKUP_DIR is not set."
-    [[ -e "$path" ]] || return 0
-
-    rel="${path#$APP_DIR/}"
-    mkdir -p "$MIGRATION_BACKUP_DIR/app/$(dirname "$rel")"
-    cp -a "$path" "$MIGRATION_BACKUP_DIR/app/$rel"
-}
-
-backup_abs_path_if_exists() {
-    local path="$1"
-    local dest=""
-
-    [[ -n "$MIGRATION_BACKUP_DIR" ]] || fail "MIGRATION_BACKUP_DIR is not set."
-    [[ -e "$path" ]] || return 0
-
-    dest="$MIGRATION_BACKUP_DIR/rootfs${path}"
-    mkdir -p "$(dirname "$dest")"
-    cp -a "$path" "$dest"
-}
-
-create_tgifd_migration_backup() {
-    local timestamp
-    timestamp="$(date +%Y%m%d-%H%M%S)"
-    MIGRATION_BACKUP_DIR="/root/alltune2-backups/setup-pre-tgifd-migration-${timestamp}"
-
-    log "Creating TGIFD migration preflight backup: $MIGRATION_BACKUP_DIR"
-    mkdir -p "$MIGRATION_BACKUP_DIR/app" "$MIGRATION_BACKUP_DIR/rootfs"
-
-    backup_app_path_if_exists "$CONFIG_FILE"
-    backup_app_path_if_exists "$CONFIG_EXAMPLE_FILE"
-    backup_app_path_if_exists "$FAVORITES_FILE"
-    backup_app_path_if_exists "$VERSION_FILE"
-    backup_app_path_if_exists "$APP_DIR/.gitignore"
-    backup_app_path_if_exists "$APP_DIR/setup_alltune2.sh"
-    backup_app_path_if_exists "$BM_RECEIVE_HELPER"
-    backup_app_path_if_exists "$APP_DIR/api/connect.php"
-    backup_app_path_if_exists "$APP_DIR/api/status.php"
-    backup_app_path_if_exists "$TGIF_DIR"
-    backup_app_path_if_exists "$OLD_TGIF_HBLINK_DIR"
-
-    backup_app_path_if_exists "$RUN_DIR/alltune2-tgif-hblink.state"
-    backup_app_path_if_exists "$RUN_DIR/alltune2-tgif-hblink.pid"
-    backup_app_path_if_exists "$RUN_DIR/alltune2-tgifd.state"
-    backup_app_path_if_exists "$RUN_DIR/alltune2-tgifd.pid"
-
-    backup_app_path_if_exists "$LOGS_DIR/hblink-bridge.log"
-    backup_app_path_if_exists "$LOGS_DIR/hblink-bridge.out"
-    backup_app_path_if_exists "$LOGS_DIR/hblink4-bridge-console.out"
-    backup_app_path_if_exists "$LOGS_DIR/tgifd-helper.log"
-    backup_app_path_if_exists "$TGIF_LOG_FILE"
-    backup_app_path_if_exists "$TGIF_ACTIVITY_LOG_FILE"
-
-    backup_abs_path_if_exists "$ASTERISK_SUDOERS_FILE"
-    backup_abs_path_if_exists "$BM_RECEIVE_SUDOERS_FILE"
-    backup_abs_path_if_exists "$TGIF_HELPER_SUDOERS_FILE"
-    backup_abs_path_if_exists "$OLD_TGIF_HBLINK_SUDOERS_FILE"
-    backup_abs_path_if_exists "$BM_RECEIVE_LOGROTATE_FILE"
-    backup_abs_path_if_exists "$STFU_LOGROTATE_FILE"
-    backup_abs_path_if_exists "$TGIF_LOGROTATE_FILE"
-    backup_abs_path_if_exists "$RADIO_LOG_PRUNE_SCRIPT"
-    backup_abs_path_if_exists "$RADIO_LOG_PRUNE_CRON"
-
-    printf '%s\n' "$MIGRATION_BACKUP_DIR" > "$MIGRATION_BACKUP_DIR/BACKUP_LOCATION.txt"
-    echo "[INFO] Backup created: $MIGRATION_BACKUP_DIR"
-}
 
 stop_old_hblink_processes_if_running() {
     log "Checking for old TGIF/HBLink processes..."
@@ -1078,47 +988,6 @@ stop_existing_tgifd_if_running() {
 }
 
 
-retire_old_hblink_before_tgifd_install() {
-    log "Retiring old TGIF/HBLink artifacts from live AllTune2 path..."
-
-    [[ -n "$MIGRATION_BACKUP_DIR" ]] || fail "Migration backup was not created before HBLink retirement."
-
-    local retired_dir="$MIGRATION_BACKUP_DIR/hblink-retired"
-    mkdir -p "$retired_dir/app/run" "$retired_dir/app/logs" "$retired_dir/rootfs/etc/sudoers.d"
-
-    stop_old_hblink_processes_if_running
-
-    if [[ -f "$OLD_TGIF_HBLINK_SUDOERS_FILE" ]]; then
-        cp -a "$OLD_TGIF_HBLINK_SUDOERS_FILE" "$retired_dir/rootfs/etc/sudoers.d/"
-        rm -f "$OLD_TGIF_HBLINK_SUDOERS_FILE"
-        quiet_detail "Removed old TGIF/HBLink sudoers file from live system: $OLD_TGIF_HBLINK_SUDOERS_FILE"
-    fi
-
-    if [[ -d "$OLD_TGIF_HBLINK_DIR" ]]; then
-        mv "$OLD_TGIF_HBLINK_DIR" "$retired_dir/app/tgif-hblink"
-        quiet_detail "Moved old TGIF/HBLink directory out of live app path: $retired_dir/app/tgif-hblink"
-    fi
-
-    local file
-    for file in \
-        "$RUN_DIR/alltune2-tgif-hblink.state" \
-        "$RUN_DIR/alltune2-tgif-hblink.pid" \
-        "$LOGS_DIR/hblink-bridge.log" \
-        "$LOGS_DIR/hblink-bridge.out" \
-        "$LOGS_DIR/hblink4-bridge-console.out"
-    do
-        if [[ -e "$file" ]]; then
-            local rel="${file#$APP_DIR/}"
-            mkdir -p "$retired_dir/app/$(dirname "$rel")"
-            mv "$file" "$retired_dir/app/$rel"
-            quiet_detail "Moved old TGIF/HBLink artifact out of live app path: $file"
-        fi
-    done
-
-    # Keep $TGIF_ACTIVITY_LOG_FILE in place deliberately. It may contain current
-    # TGIFD/Cockpit activity history, not only old HBLink runtime state.
-    quiet_detail "Old TGIF/HBLink artifacts retired to: $retired_dir"
-}
 
 check_required_repo_files() {
     log "Checking required repo files..."
@@ -1587,11 +1456,6 @@ EOFBLOCK
 )"
 
     if [[ -f "$RADIO_LOG_PRUNE_SCRIPT" ]]; then
-        if [[ -n "$MIGRATION_BACKUP_DIR" ]]; then
-            mkdir -p "$MIGRATION_BACKUP_DIR/rootfs/usr/local/sbin"
-            cp -a "$RADIO_LOG_PRUNE_SCRIPT" "$MIGRATION_BACKUP_DIR/rootfs/usr/local/sbin/radio-log-prune.sh.before-tgifd"
-        fi
-
         python3 - "$RADIO_LOG_PRUNE_SCRIPT" "$tgifd_block" <<'PYPRUNE'
 import pathlib
 import sys
@@ -1714,21 +1578,16 @@ create_or_update_apache_accesslog_filter() {
         return
     fi
 
-    local timestamp
-    local backup_dir
     local patch_output
-    timestamp="$(date +%Y%m%d-%H%M%S)"
-    backup_dir="/root/alltune2-backups/apache-accesslog-filter-${timestamp}"
 
-    if ! patch_output="$(python3 - "$backup_dir" <<'PYAPACHE'
+    if ! patch_output="$(python3 - <<'PYAPACHE'
 import os
 import pathlib
 import re
 import shutil
 import sys
 
-backup_dir = pathlib.Path(sys.argv[1])
-manifest_name = "manifest.tsv"
+restore_items = []
 
 # The filter suppresses only AllTune2's high-frequency browser polling URLs
 # from Apache access.log. It does not block the requests.
@@ -1866,18 +1725,18 @@ PYAPACHE
 
     if ! apache2ctl configtest >/dev/null; then
         warn "Apache configtest failed after installing AllTune2 access log filter. Restoring Apache site backups."
-        if [[ -f "$backup_dir/manifest.tsv" ]]; then
-            python3 - "$backup_dir/manifest.tsv" <<'PYRESTORE'
+        if [[ -f /tmp/alltune2-apache-accesslog-restore.tsv ]]; then
+            python3 - <<'PYRESTORE'
 import pathlib
-import shutil
-import sys
 
-manifest = pathlib.Path(sys.argv[1])
-for line in manifest.read_text().splitlines():
+restore_file = pathlib.Path("/tmp/alltune2-apache-accesslog-restore.tsv")
+for line in restore_file.read_text().splitlines():
     if not line.strip():
         continue
-    original, backup = line.split("\t", 1)
-    shutil.copy2(pathlib.Path(backup), pathlib.Path(original))
+    original, encoded = line.split("\t", 1)
+    content = encoded.replace("\\n", "\n").replace("\\\\", "\\")
+    pathlib.Path(original).write_text(content)
+restore_file.unlink(missing_ok=True)
 PYRESTORE
         fi
 
@@ -1895,7 +1754,8 @@ PYRESTORE
         warn "Apache service is not active or systemctl is unavailable. Access log filter installed, but Apache was not reloaded automatically."
     fi
 
-    log "Installed Apache access log filter for AllTune2 status/ribbon polling URLs. Backup: $backup_dir"
+    rm -f /tmp/alltune2-apache-accesslog-restore.tsv
+    log "Installed Apache access log filter for AllTune2 status/ribbon polling URLs."
 }
 
 
@@ -1915,9 +1775,12 @@ check_sudoers_requirement() {
     visudo -cf "$TGIF_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $TGIF_HELPER_SUDOERS_FILE"
     visudo -cf "$YSFGATEWAY_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $YSFGATEWAY_SUDOERS_FILE"
 
-    [[ ! -e "$OLD_TGIF_HBLINK_SUDOERS_FILE" ]] || fail "Old TGIF/HBLink sudoers file still exists after migration: $OLD_TGIF_HBLINK_SUDOERS_FILE"
+    if [[ -e "$OLD_TGIF_HBLINK_SUDOERS_FILE" ]]; then
+        warn "Old TGIF/HBLink sudoers file still exists: $OLD_TGIF_HBLINK_SUDOERS_FILE"
+        warn "Old HBLink cleanup is no longer run during normal setup/update. Remove it manually if no longer needed."
+    fi
 
-    log "Installed sudoers files look correct, YSFGateway control is available, and old HBLink sudoers is retired."
+    log "Installed sudoers files look correct, and YSFGateway control is available."
 }
 
 check_status_endpoint_cli() {
@@ -1977,6 +1840,39 @@ check_git_hygiene_warnings() {
     done
 }
 
+
+cleanup_old_installer_created_backup_folders() {
+    local backup_root="/root/alltune2-backups"
+
+    [[ -d "$backup_root" ]] || return 0
+
+    local patterns=(
+        "setup-pre-tgifd-migration-*"
+        "tgifd-dev-artifacts-retired-*"
+        "setup-retire-old-tgifd-artifacts-*"
+        "setup-runtime-packages-*"
+        "setup-tgifd-binary-only-*"
+    )
+
+    local pattern
+    local dir
+    local removed=0
+
+    for pattern in "${patterns[@]}"; do
+        while IFS= read -r -d '' dir; do
+            rm -rf -- "$dir"
+            removed=1
+            echo "[INFO] Removed old installer-created backup folder: $dir"
+        done < <(find "$backup_root" -maxdepth 1 -type d -name "$pattern" -print0 2>/dev/null | sort -z)
+    done
+
+    if [[ "$removed" -eq 0 ]]; then
+        log "No old installer-created backup folders found."
+    fi
+
+    rmdir "$backup_root" 2>/dev/null || true
+}
+
 show_summary() {
     local version="unknown"
     local web_login="Disabled"
@@ -2014,12 +1910,9 @@ show_summary() {
     echo "Web login:       $web_login"
     echo "Apache security: $apache_security"
     echo "TGIF backend:    TGIFD"
-    echo "Old HBLink:      Retired from live TGIF path"
-    if [[ -n "$MIGRATION_BACKUP_DIR" ]]; then
-        echo "Migration backup: $MIGRATION_BACKUP_DIR"
-        if [[ "$INSTALLER_MODE" != "verbose" ]]; then
-            echo "Installer log:   $QUIET_COMMAND_LOG"
-        fi
+    echo "Old HBLink:      Manual cleanup only if still present"
+    if [[ "$INSTALLER_MODE" != "verbose" ]]; then
+        echo "Installer log:   $QUIET_COMMAND_LOG"
     fi
     if [[ "${TGIFD_CONFIG_HAS_PLACEHOLDERS:-0}" == "1" ]]; then
         echo "TGIFD config:    PLACEHOLDERS PRESENT - review $TGIF_CONFIG_FILE"
@@ -2032,15 +1925,12 @@ show_summary() {
         echo "WARNING:"
         echo "- TGIFD was installed, but tgifd.ini still contains placeholder values."
         echo "- TGIF will not work correctly until $TGIF_CONFIG_FILE is reviewed."
-        if [[ -n "$MIGRATION_BACKUP_DIR" ]]; then
-            echo "- Old TGIF/HBLink artifacts, if present, were archived under: $MIGRATION_BACKUP_DIR"
-        fi
         echo
     fi
 
     echo "Important:"
     echo "- Normal setup/update preserves config.ini, favorites.txt, and web login settings."
-    echo "- Existing TGIF/HBLink artifacts are archived out of the live app path before TGIFD is installed."
+    echo "- Old TGIF/HBLink cleanup is no longer run during normal setup/update."
     echo "- TGIFD runtime API files are expected to use clean TGIFD naming, not old tgif_hblink/hblink_tgif keys."
     echo "- TGIFD helper must keep the stable controlled-restart retune path and must not restart mmdvm_bridge on stop."
     echo "- TGIFD config must include [tlv] inbound_slot = 2 for reliable inbound TGIF audio."
@@ -2096,17 +1986,8 @@ main() {
     ensure_auth_config_defaults
     create_favorites_if_missing
 
-    step "Backing up current AllTune2 state before TGIFD migration..."
-    create_tgifd_migration_backup
-
-    step "Preflighting TGIFD repo/API files before retiring HBLink..."
-    check_tgifd_repo_preflight_before_hblink_retirement
-
     step "Stopping any active TGIFD before runtime/config changes..."
     stop_existing_tgifd_if_running
-
-    step "Retiring old TGIF/HBLink artifacts from the live app path..."
-    retire_old_hblink_before_tgifd_install
 
     step "Preparing TGIFD configuration..."
     create_tgifd_config_example_if_missing
@@ -2132,6 +2013,9 @@ main() {
     create_or_update_radio_log_prune
     create_or_update_apache_security_conf
     create_or_update_apache_accesslog_filter
+
+    step "Cleaning old installer-created backup folders..."
+    cleanup_old_installer_created_backup_folders
 
     step "Running installer self-checks..."
     check_php_syntax
