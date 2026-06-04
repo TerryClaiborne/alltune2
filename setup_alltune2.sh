@@ -1144,7 +1144,9 @@ create_or_update_sudoers_files() {
     install_validated_sudoers_file "$TGIF_HELPER_SUDOERS_FILE" "$EXPECTED_TGIF_HELPER_SUDOERS_RULE"
     install_validated_sudoers_file "$YSFGATEWAY_SUDOERS_FILE" "$EXPECTED_YSFGATEWAY_SUDOERS_RULE"
 
-    visudo -c >/dev/null || fail "Full sudoers validation failed after installing AllTune2 sudoers files."
+    if ! visudo -c >/dev/null; then
+        warn "Full sudoers validation reports an issue outside AllTune2-owned files. AllTune2 sudoers files were validated individually; review sudo visudo -c output manually."
+    fi
 }
 
 check_php_syntax() {
@@ -1760,7 +1762,9 @@ check_sudoers_requirement() {
     visudo -cf "$BM_RECEIVE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $BM_RECEIVE_SUDOERS_FILE"
     visudo -cf "$TGIF_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $TGIF_HELPER_SUDOERS_FILE"
     visudo -cf "$YSFGATEWAY_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $YSFGATEWAY_SUDOERS_FILE"
-    visudo -c >/dev/null || fail "Full sudoers validation failed during installer self-check."
+    if ! visudo -c >/dev/null; then
+        warn "Full sudoers validation reports an issue outside AllTune2-owned files. AllTune2 sudoers files were validated individually; review sudo visudo -c output manually."
+    fi
 
     if [[ -e "$OLD_TGIF_HBLINK_SUDOERS_FILE" ]]; then
         warn "Old TGIF/HBLink sudoers file still exists: $OLD_TGIF_HBLINK_SUDOERS_FILE"
