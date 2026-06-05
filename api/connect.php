@@ -275,21 +275,25 @@ function dvswitch_tune(string $value): string
 
 function ensure_mmdvm_bridge_active_for_managed_digital(string $modeLabel): void
 {
-    $state = trim(shell_run('systemctl is-active mmdvm_bridge 2>/dev/null || true'));
+    $state = trim(shell_run('systemctl is-active mmdvm_bridge.service 2>/dev/null || true'));
     if ($state === 'active') {
         return;
     }
 
-    shell_run('sudo systemctl start mmdvm_bridge >/dev/null 2>&1');
-    pause_seconds(1.0);
+    shell_run('sudo /usr/bin/systemctl start mmdvm_bridge.service >/dev/null 2>&1');
 
-    $state = trim(shell_run('systemctl is-active mmdvm_bridge 2>/dev/null || true'));
-    if ($state !== 'active') {
-        $_SESSION['last_status'] = 'ERROR: MMDVM_BRIDGE NOT ACTIVE FOR ' . $modeLabel;
-        respond(session_payload($_SESSION['last_status'], [
-            'mmdvm_bridge' => $state !== '' ? $state : 'inactive',
-        ]), 500);
+    for ($i = 0; $i < 6; $i++) {
+        pause_seconds(0.5);
+        $state = trim(shell_run('systemctl is-active mmdvm_bridge.service 2>/dev/null || true'));
+        if ($state === 'active') {
+            return;
+        }
     }
+
+    $_SESSION['last_status'] = 'ERROR: MMDVM_BRIDGE NOT ACTIVE FOR ' . $modeLabel;
+    respond(session_payload($_SESSION['last_status'], [
+        'mmdvm_bridge' => $state !== '' ? $state : 'inactive',
+    ]), 500);
 }
 
 function ensure_ysfgateway_active_for_ysf(): void
@@ -1415,7 +1419,7 @@ if ($action === 'disconnect_all') {
         pause_seconds(0.5);
     }
 
-    shell_run('sudo systemctl restart asterisk');
+    shell_run('sudo /usr/bin/systemctl restart asterisk.service');
     pause_seconds(2.0);
 
     clear_allstar_tracking();

@@ -89,6 +89,8 @@ ANALOG_BRIDGE_INI="/opt/Analog_Bridge/Analog_Bridge.ini"
 ASTERISK_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk"
 BM_RECEIVE_SUDOERS_FILE="/etc/sudoers.d/alltune2-bm-receive"
 TGIF_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-tgifd"
+MMDVM_BRIDGE_SUDOERS_FILE="/etc/sudoers.d/alltune2-mmdvm-bridge"
+ASTERISK_SERVICE_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk-service"
 YSFGATEWAY_SUDOERS_FILE="/etc/sudoers.d/alltune2-ysfgateway"
 OLD_TGIF_HBLINK_SUDOERS_FILE="/etc/sudoers.d/alltune2-hblink"
 
@@ -105,6 +107,8 @@ EXPECTED_ASTERISK_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${ASTERISK_BIN}
 EXPECTED_BM_RECEIVE_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${BM_RECEIVE_HELPER}"
 SYSTEMCTL_BIN="/usr/bin/systemctl"
 EXPECTED_TGIF_HELPER_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${TGIF_HELPER} *"
+EXPECTED_MMDVM_BRIDGE_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mmdvm_bridge.service"
+EXPECTED_ASTERISK_SERVICE_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart asterisk.service"
 EXPECTED_YSFGATEWAY_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start ysfgateway.service, ${SYSTEMCTL_BIN} stop ysfgateway.service"
 
 validate_installer_mode() {
@@ -1142,6 +1146,8 @@ create_or_update_sudoers_files() {
     install_validated_sudoers_file "$ASTERISK_SUDOERS_FILE" "$EXPECTED_ASTERISK_SUDOERS_RULE"
     install_validated_sudoers_file "$BM_RECEIVE_SUDOERS_FILE" "$EXPECTED_BM_RECEIVE_SUDOERS_RULE"
     install_validated_sudoers_file "$TGIF_HELPER_SUDOERS_FILE" "$EXPECTED_TGIF_HELPER_SUDOERS_RULE"
+    install_validated_sudoers_file "$MMDVM_BRIDGE_SUDOERS_FILE" "$EXPECTED_MMDVM_BRIDGE_SUDOERS_RULE"
+    install_validated_sudoers_file "$ASTERISK_SERVICE_SUDOERS_FILE" "$EXPECTED_ASTERISK_SERVICE_SUDOERS_RULE"
     install_validated_sudoers_file "$YSFGATEWAY_SUDOERS_FILE" "$EXPECTED_YSFGATEWAY_SUDOERS_RULE"
 
     if ! visudo -c >/dev/null; then
@@ -1747,6 +1753,28 @@ PYRESTORE
 }
 
 
+check_web_user_sudo_command() {
+    local description="$1"
+    shift
+
+    if sudo -u "$WEB_USER" sudo -n "$@" >/dev/null 2>&1; then
+        log "Web-user sudo check passed: $description"
+    else
+        fail "Web-user sudo check failed for $description. Command: sudo -u $WEB_USER sudo -n $*"
+    fi
+}
+
+check_web_user_sudo_allowed() {
+    local description="$1"
+    shift
+
+    if sudo -u "$WEB_USER" sudo -n -l "$@" >/dev/null 2>&1; then
+        log "Web-user sudo permission check passed: $description"
+    else
+        fail "Web-user sudo permission check failed for $description. Command: sudo -u $WEB_USER sudo -n -l $*"
+    fi
+}
+
 check_sudoers_requirement() {
     log "Checking installed sudoers files..."
 
@@ -1756,12 +1784,26 @@ check_sudoers_requirement() {
 
     grep -qF "$EXPECTED_TGIF_HELPER_SUDOERS_RULE" "$TGIF_HELPER_SUDOERS_FILE"         || fail "Expected TGIF helper sudoers rule not found in $TGIF_HELPER_SUDOERS_FILE"
 
+    grep -qF "$EXPECTED_MMDVM_BRIDGE_SUDOERS_RULE" "$MMDVM_BRIDGE_SUDOERS_FILE"         || fail "Expected MMDVM_Bridge sudoers rule not found in $MMDVM_BRIDGE_SUDOERS_FILE"
+
+    grep -qF "$EXPECTED_ASTERISK_SERVICE_SUDOERS_RULE" "$ASTERISK_SERVICE_SUDOERS_FILE"         || fail "Expected Asterisk service sudoers rule not found in $ASTERISK_SERVICE_SUDOERS_FILE"
+
     grep -qF "$EXPECTED_YSFGATEWAY_SUDOERS_RULE" "$YSFGATEWAY_SUDOERS_FILE"         || fail "Expected YSFGateway sudoers rule not found in $YSFGATEWAY_SUDOERS_FILE"
 
     visudo -cf "$ASTERISK_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $ASTERISK_SUDOERS_FILE"
     visudo -cf "$BM_RECEIVE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $BM_RECEIVE_SUDOERS_FILE"
     visudo -cf "$TGIF_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $TGIF_HELPER_SUDOERS_FILE"
+    visudo -cf "$MMDVM_BRIDGE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $MMDVM_BRIDGE_SUDOERS_FILE"
+    visudo -cf "$ASTERISK_SERVICE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $ASTERISK_SERVICE_SUDOERS_FILE"
     visudo -cf "$YSFGATEWAY_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $YSFGATEWAY_SUDOERS_FILE"
+
+    check_web_user_sudo_allowed "Asterisk CLI permission" "$ASTERISK_BIN"
+    check_web_user_sudo_command "BM receive helper status" "$BM_RECEIVE_HELPER" status
+    check_web_user_sudo_command "TGIFD helper status" "$TGIF_HELPER" status
+    check_web_user_sudo_allowed "MMDVM_Bridge start" "$SYSTEMCTL_BIN" start mmdvm_bridge.service
+    check_web_user_sudo_allowed "YSFGateway start" "$SYSTEMCTL_BIN" start ysfgateway.service
+    check_web_user_sudo_allowed "YSFGateway stop" "$SYSTEMCTL_BIN" stop ysfgateway.service
+    check_web_user_sudo_allowed "Asterisk service restart permission" "$SYSTEMCTL_BIN" restart asterisk.service
     if ! visudo -c >/dev/null; then
         warn "Full sudoers validation reports an issue outside AllTune2-owned files. AllTune2 sudoers files were validated individually; review sudo visudo -c output manually."
     fi
@@ -1771,7 +1813,7 @@ check_sudoers_requirement() {
         warn "Old HBLink cleanup is no longer run during normal setup/update. Remove it manually if no longer needed."
     fi
 
-    log "Installed sudoers files look correct, and YSFGateway control is available."
+    log "Installed sudoers files look correct, MMDVM_Bridge/YSFGateway control is available, and web-user sudo checks passed."
 }
 
 check_status_endpoint_cli() {
