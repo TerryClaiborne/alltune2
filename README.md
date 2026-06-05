@@ -129,7 +129,7 @@ cd alltune2
 sudo ./setup_alltune2.sh
 ```
 
-The installer may take a little while during dependency checks or while building TGIFD, especially on slower hardware. Wait for the final setup summary before assuming it is stuck.
+The installer may take a little while during dependency checks, especially on slower hardware such as a Raspberry Pi 3. Wait for the final setup summary before assuming it is stuck.
 
 ### What setup does
 
@@ -137,7 +137,6 @@ The setup script helps with:
 
 - permissions
 - sudoers rules
-- TGIFD build and setup
 - config examples
 - preserving existing local config files
 - helper permissions
@@ -188,8 +187,6 @@ cd /var/www/html/alltune2
 git pull origin main
 sudo ./setup_alltune2.sh
 ```
-
-Setup will archive old TGIF/HBLink artifacts out of the live application path and install TGIFD as the active TGIF backend.
 
 ### Reboot when needed
 
