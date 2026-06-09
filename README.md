@@ -152,6 +152,12 @@ A brand-new install may still need you to review and edit:
 /var/www/html/alltune2/tgif/config/tgifd.ini
 ```
 
+INI spacing note: AllTune2 accepts normal INI spacing with or without spaces around `=`.
+For example, `MYNODE=12345` and `MYNODE = 12345` are both valid.
+
+Do not add spaces inside TGIFD option values such as `StartRef=9050;RelinkTime=60`.
+Those embedded option values should stay in that compact form.
+
 ---
 
 ## 🔁 UPDATE / REINSTALL / REBOOT
