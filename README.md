@@ -928,7 +928,7 @@ Check TGIFD helper status:
 sudo /var/www/html/alltune2/tgif/alltune2-tgifd-helper.sh status
 ```
 
-TGIF may take longer than some other modes to start or stop. Wait for status to finish before clicking repeatedly.
+TGIFD normally connects quickly. If the dashboard is still updating, wait for the current status change to finish before clicking Connect again.
 
 ### If TGIF connects but inbound audio is unreliable
 
