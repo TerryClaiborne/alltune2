@@ -556,7 +556,7 @@ Use BrandMeister in AllTune2 when you want the BrandMeister side. Use TGIF when 
 
 TGIFD is the AllTune2 TGIF backend.
 
-The old TGIF/HBLink sidecar path has been removed from the release tree. During an update from an older AllTune2 release, setup archives old TGIF/HBLink artifacts out of the live application path before installing TGIFD.
+The old TGIF/HBLink sidecar path has been removed from the release tree. During an update from an older AllTune2 release, setup quietly removes known old TGIF/HBLink leftovers from the live application path before using TGIFD.
 
 TGIFD runtime files are local-only and should not be committed:
 
