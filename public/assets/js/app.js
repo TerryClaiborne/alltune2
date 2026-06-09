@@ -1232,6 +1232,10 @@
         return !state.auth.enabled || state.auth.loggedIn || state.auth.canWrite;
     }
 
+    function authLoginRequired() {
+        return !!(state.auth.enabled && !state.auth.loggedIn && !state.auth.canWrite);
+    }
+
     function loginRequiredMessage() {
         return 'LOGIN REQUIRED - SIGN IN TO CONTROL ALLTUNE2';
     }
@@ -1266,7 +1270,7 @@
         control.style.opacity = enabled ? '1' : '0.58';
         control.style.cursor = enabled ? '' : 'not-allowed';
 
-        if (enabled) {
+        if (enabled || !authLoginRequired()) {
             control.removeAttribute('title');
         } else {
             control.setAttribute('title', 'Login required to control AllTune2');
@@ -2182,7 +2186,7 @@
                         type="button"
                         class="connected-node-button connected-node-button-dvswitch ${pendingDisconnect ? 'connected-node-button-pending' : ''}"
                         data-disconnect-dvswitch="${node}"
-                        ${disableDisconnectButton ? 'disabled' : ''} ${actionBlocked ? 'title="Login required to control AllTune2"' : ''}
+                        ${disableDisconnectButton ? 'disabled' : ''} ${authLoginRequired() ? 'title="Login required to control AllTune2"' : ''}
                     >
                         ${pendingDisconnect ? 'Disconnecting...' : 'Disconnect DVSwitch'}
                     </button>
@@ -2192,7 +2196,7 @@
                         type="button"
                         class="connected-node-button allstar-disconnect-button ${pendingDisconnect ? 'connected-node-button-pending' : ''}"
                         data-disconnect-node="${node}"
-                        ${disableDisconnectButton ? 'disabled' : ''} ${actionBlocked ? 'title="Login required to control AllTune2"' : ''}
+                        ${disableDisconnectButton ? 'disabled' : ''} ${authLoginRequired() ? 'title="Login required to control AllTune2"' : ''}
                     >
                         ${pendingDisconnect ? 'Disconnecting...' : `Disconnect ${node}`}
                     </button>

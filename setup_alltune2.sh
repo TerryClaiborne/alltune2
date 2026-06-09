@@ -16,9 +16,7 @@ RUN_DIR="$APP_DIR/run"
 LOCAL_STFU_DIR="$APP_DIR/stfu"
 TGIF_DIR="$APP_DIR/tgif"
 TGIF_CONFIG_DIR="$TGIF_DIR/config"
-TGIF_BUILD_DIR="$TGIF_DIR/build"
 TGIF_DOCS_DIR="$TGIF_DIR/docs"
-OLD_TGIF_HBLINK_DIR="$APP_DIR/tgif-hblink"
 TOOLS_DIR="$APP_DIR/tools"
 
 CONFIG_FILE="$APP_DIR/config.ini"
@@ -31,14 +29,12 @@ LOCAL_STFU_BIN="$LOCAL_STFU_DIR/STFU"
 
 TGIF_HELPER="$TGIF_DIR/alltune2-tgifd-helper.sh"
 TGIF_CONFIG_FILE="$TGIF_CONFIG_DIR/tgifd.ini"
+TGIF_CONFIG_CREATED_THIS_RUN=0
 TGIF_CONFIG_EXAMPLE="$TGIF_CONFIG_DIR/tgifd.ini.example"
 TGIF_BINARY="$TGIF_DIR/bin/tgifd"
 TGIF_COPYRIGHT_NOTICE="$TGIF_DOCS_DIR/TGIFD-COPYRIGHT-NOTICE.md"
 TGIF_LOG_FILE="$TGIF_DIR/tgifd.log"
 TGIF_HELPER_LOG_FILE="$LOGS_DIR/tgifd-helper.log"
-TGIF_ACTIVITY_LOG_FILE="$LOGS_DIR/tgif-activity.jsonl"
-RADIO_LOG_PRUNE_SCRIPT="/usr/local/sbin/radio-log-prune.sh"
-RADIO_LOG_PRUNE_CRON="/etc/cron.d/radio-log-prune"
 TGIFD_CONFIG_HAS_PLACEHOLDERS=0
 SETUP_COMPLETED=0
 SKIP_APT="${ALLTUNE2_SKIP_APT:-0}"
@@ -92,7 +88,6 @@ TGIF_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-tgifd"
 MMDVM_BRIDGE_SUDOERS_FILE="/etc/sudoers.d/alltune2-mmdvm-bridge"
 ASTERISK_SERVICE_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk-service"
 YSFGATEWAY_SUDOERS_FILE="/etc/sudoers.d/alltune2-ysfgateway"
-OLD_TGIF_HBLINK_SUDOERS_FILE="/etc/sudoers.d/alltune2-hblink"
 
 BM_RECEIVE_LOG_FILE="/var/log/alltune2-bm-receive.log"
 BM_RECEIVE_LOGROTATE_FILE="/etc/logrotate.d/alltune2-bm-receive"
@@ -441,23 +436,14 @@ EOF
 }
 
 create_config_if_missing() {
-    if [[ ! -f "$CONFIG_FILE" ]]; then
-        log "config.ini not found. Creating starter config.ini..."
-        cat > "$CONFIG_FILE" <<'EOF'
-MYNODE="YOUR NODE"
-DVSWITCH_NODE="YOUR DVSWITCH NODE"
-BM_SelfcarePassword="CHANGE_ME"
-TGIF_HotspotSecurityKey="CHANGE_ME"
-DSTAR_ENABLED=0
-P25_ENABLED=0
-NXDN_ENABLED=0
-ALLTUNE2_AUTH_ENABLED=0
-ALLTUNE2_ADMIN_USER="admin"
-ALLTUNE2_ADMIN_PASSWORD_HASH=""
-EOF
+    if [[ -f "$CONFIG_FILE" ]]; then
+        log "config.ini already exists. Preserving current values."
+    elif [[ -f "$APP_DIR/config.ini.example" ]]; then
+        log "Creating starter config.ini from config.ini.example..."
+        cp -f "$APP_DIR/config.ini.example" "$CONFIG_FILE"
         warn "Created $CONFIG_FILE with placeholder values. Edit it before using AllTune2."
     else
-        log "config.ini already exists. Preserving current values."
+        fail "Neither $CONFIG_FILE nor $APP_DIR/config.ini.example exists."
     fi
 
     chmod 0640 "$CONFIG_FILE"
@@ -479,13 +465,6 @@ EOF
 
     chmod 0664 "$FAVORITES_FILE"
     chown "$WEB_USER":"$WEB_GROUP" "$FAVORITES_FILE"
-}
-
-strip_quotes() {
-    local value="$1"
-    value="${value#\"}"
-    value="${value%\"}"
-    printf '%s\n' "$value"
 }
 
 config_value_or_empty() {
@@ -547,6 +526,7 @@ value = sys.argv[4]
 
 text = path.read_text() if path.exists() else ""
 lines = text.splitlines()
+changed = False
 
 placeholder_tokens = (
     "", "YOUR", "Your", "CHANGE_ME", "PLACEHOLDER", "YOURCALL",
@@ -574,6 +554,7 @@ if start is None:
     if lines and lines[-1].strip():
         lines.append("")
     lines.extend([f"[{section}]", f"{key} = {value}"])
+    changed = True
 else:
     key_line = None
     for i in range(start + 1, end):
@@ -584,63 +565,15 @@ else:
             key_line = i
             if is_placeholder(right):
                 lines[i] = f"{key} = {value}"
+                changed = True
             break
     if key_line is None:
         lines.insert(end, f"{key} = {value}")
+        changed = True
 
-path.write_text("\n".join(lines).rstrip() + "\n")
+if changed:
+    path.write_text("\n".join(lines).rstrip() + "\n")
 PYTGIFDINI
-}
-
-tgifd_ini_set_value() {
-    local section="$1"
-    local key="$2"
-    local value="$3"
-
-    [[ -n "$value" ]] || return 0
-
-    python3 - "$TGIF_CONFIG_FILE" "$section" "$key" "$value" <<'PYTGIFDSET'
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-section = sys.argv[2]
-key = sys.argv[3]
-value = sys.argv[4]
-
-text = path.read_text() if path.exists() else ""
-lines = text.splitlines()
-
-start = None
-end = len(lines)
-for i, line in enumerate(lines):
-    if line.strip().lower() == f"[{section}]".lower():
-        start = i
-        for j in range(i + 1, len(lines)):
-            if lines[j].strip().startswith("[") and lines[j].strip().endswith("]"):
-                end = j
-                break
-        break
-
-if start is None:
-    if lines and lines[-1].strip():
-        lines.append("")
-    lines.extend([f"[{section}]", f"{key} = {value}"])
-else:
-    key_line = None
-    for i in range(start + 1, end):
-        if "=" not in lines[i]:
-            continue
-        left, _right = lines[i].split("=", 1)
-        if left.strip().lower() == key.lower():
-            key_line = i
-            lines[i] = f"{key} = {value}"
-            break
-    if key_line is None:
-        lines.insert(end, f"{key} = {value}")
-
-path.write_text("\n".join(lines).rstrip() + "\n")
-PYTGIFDSET
 }
 
 create_tgifd_config_example_if_missing() {
@@ -717,12 +650,14 @@ EOFTGIFDINIEXAMPLE
 
 create_tgifd_config_if_missing() {
     mkdir -p "$TGIF_CONFIG_DIR"
+    TGIF_CONFIG_CREATED_THIS_RUN=0
 
     if [[ -f "$TGIF_CONFIG_FILE" ]]; then
         log "Live tgifd.ini already exists. Preserving current values."
     elif [[ -f "$TGIF_CONFIG_EXAMPLE" ]]; then
         log "Creating starter tgifd.ini from tgifd.ini.example..."
         cp -f "$TGIF_CONFIG_EXAMPLE" "$TGIF_CONFIG_FILE"
+        TGIF_CONFIG_CREATED_THIS_RUN=1
         warn "Created $TGIF_CONFIG_FILE with placeholder values. Review it before using TGIFD."
     else
         fail "Neither $TGIF_CONFIG_FILE nor $TGIF_CONFIG_EXAMPLE exists."
@@ -733,6 +668,11 @@ create_tgifd_config_if_missing() {
 }
 
 sync_tgifd_config_from_system_if_safe() {
+    if [[ "${TGIF_CONFIG_CREATED_THIS_RUN:-0}" != "1" ]]; then
+        log "Existing tgifd.ini preserved; skipping TGIFD placeholder sync."
+        return 0
+    fi
+
     log "Syncing TGIFD config placeholders from existing AllTune2/DVSwitch settings when safe..."
 
     local mynode=""
@@ -793,8 +733,8 @@ sync_tgifd_config_from_system_if_safe() {
     tgifd_ini_set_if_placeholder_or_missing "mmdvm" "location" "$location"
     tgifd_ini_set_if_placeholder_or_missing "mmdvm" "description" "$description"
 
-    # AllTune2 TGIFD is a TS2 path. This must be present for reliable inbound TGIF audio.
-    tgifd_ini_set_value "tlv" "inbound_slot" "2"
+    # AllTune2 TGIFD is a TS2 path. Add the default only when the key is missing or still a placeholder.
+    tgifd_ini_set_if_placeholder_or_missing "tlv" "inbound_slot" "2"
 
     chmod 0640 "$TGIF_CONFIG_FILE"
     chown root:"$WEB_GROUP" "$TGIF_CONFIG_FILE"
@@ -858,35 +798,6 @@ check_tgifd_binary() {
     [[ -x "$TGIF_BINARY" ]] || fail "TGIFD binary missing or not executable: $TGIF_BINARY"
     log "TGIFD binary exists: $TGIF_BINARY"
 }
-
-retire_old_tgifd_development_artifacts() {
-    log "Checking for old TGIFD development/build artifacts..."
-
-    [[ -x "$TGIF_BINARY" ]] || fail "Refusing to remove old TGIFD artifacts because the active binary is missing or not executable: $TGIF_BINARY"
-
-    local old_paths=(
-        "$TGIF_BUILD_DIR"
-        "$TGIF_DIR/src"
-        "$TGIF_DIR/include"
-        "$TGIF_DIR/CMakeLists.txt"
-    )
-
-    local removed=0
-    local path
-    for path in "${old_paths[@]}"; do
-        if [[ -e "$path" ]]; then
-            rm -rf -- "$path"
-            removed=1
-            echo "[INFO] Removed old TGIFD development/build artifact: $path"
-        fi
-    done
-
-    if [[ "$removed" -eq 0 ]]; then
-        log "No old TGIFD development/build artifacts found in the live app path."
-    fi
-}
-
-
 
 stop_existing_tgifd_if_running() {
     log "Stopping any active TGIFD instance before rebuild/config update..."
@@ -1150,9 +1061,6 @@ create_or_update_sudoers_files() {
     install_validated_sudoers_file "$ASTERISK_SERVICE_SUDOERS_FILE" "$EXPECTED_ASTERISK_SERVICE_SUDOERS_RULE"
     install_validated_sudoers_file "$YSFGATEWAY_SUDOERS_FILE" "$EXPECTED_YSFGATEWAY_SUDOERS_RULE"
 
-    if ! visudo -c >/dev/null; then
-        warn "Full sudoers validation reports an issue outside AllTune2-owned files. AllTune2 sudoers files were validated individually; review sudo visudo -c output manually."
-    fi
 }
 
 check_php_syntax() {
@@ -1370,7 +1278,7 @@ create_or_update_logrotate_files() {
         if logrotate -d /etc/logrotate.conf >/dev/null 2>&1; then
             before_ok=1
         else
-            warn "Existing logrotate configuration has errors before AllTune2 changes. Setup will avoid duplicate AllTune2 log rules and recheck afterward."
+            :
         fi
     fi
 
@@ -1407,7 +1315,7 @@ create_or_update_logrotate_files() {
         elif [[ "$before_ok" -eq 1 ]]; then
             fail "Full logrotate validation failed after AllTune2 logrotate setup. Review /etc/logrotate.d/alltune2-* and /etc/logrotate.conf."
         else
-            warn "Full logrotate validation still reports errors that existed before or outside AllTune2. Review: sudo logrotate -d /etc/logrotate.conf"
+            :
         fi
     else
         warn "logrotate command not found. Rotation cannot run until logrotate is installed."
@@ -1417,103 +1325,30 @@ create_or_update_logrotate_files() {
 }
 
 
-create_or_update_radio_log_prune() {
-    log "Ensuring radio log prune helper includes TGIFD logs without replacing existing cleanup logic..."
+remove_legacy_alltune2_leftovers() {
+    rm -rf "$APP_DIR/tgif-hblink" 2>/dev/null || true
 
-    mkdir -p "$(dirname "$RADIO_LOG_PRUNE_SCRIPT")" "$(dirname "$RADIO_LOG_PRUNE_CRON")"
+    rm -rf "$APP_DIR/tgif/src" 2>/dev/null || true
+    rm -rf "$APP_DIR/tgif/include" 2>/dev/null || true
+    rm -rf "$APP_DIR/tgif/build" 2>/dev/null || true
+    rm -rf "$APP_DIR/tgif/CMakeFiles" 2>/dev/null || true
+    rm -f  "$APP_DIR/tgif/CMakeCache.txt" 2>/dev/null || true
+    rm -f  "$APP_DIR/tgif/cmake_install.cmake" 2>/dev/null || true
+    rm -f  "$APP_DIR/tgif/Makefile" 2>/dev/null || true
+    rm -f  "$APP_DIR/tgif/CMakeLists.txt" 2>/dev/null || true
+    rm -f  "$APP_DIR/tgif/tgifd" 2>/dev/null || true
 
-    local tgifd_block
-    tgifd_block="$(cat <<EOFBLOCK
-# BEGIN AllTune2 TGIFD log caps
-ALLTUNE2_TGIFD_DRY_RUN=0
-if [[ "\${1:-}" == "--dry-run" || "\${DRY_RUN:-}" == "--dry-run" || "\${DRY_RUN:-}" == "1" || "\${DRY_RUN:-}" == "true" ]]; then
-    ALLTUNE2_TGIFD_DRY_RUN=1
-fi
+    rm -rf /root/alltune2-backups 2>/dev/null || true
+    rm -rf /root/alltune2-backups-* 2>/dev/null || true
+    rm -rf /root/setup-pre-tgifd-* 2>/dev/null || true
+    rm -rf /root/tgifd-build-removed-* 2>/dev/null || true
 
-alltune2_tgifd_cap_file() {
-    local file="\$1"
-    local max_bytes="\${ALLTUNE2_LOG_MAX_BYTES:-1048576}"
+    rm -f /etc/sudoers.d/alltune2-hblink 2>/dev/null || true
 
-    if [[ -f "\$file" ]]; then
-        local size
-        size="\$(stat -c %s "\$file" 2>/dev/null || echo 0)"
-        if [[ "\$size" =~ ^[0-9]+$ && "\$size" -gt "\$max_bytes" ]]; then
-            if [[ "\${ALLTUNE2_TGIFD_DRY_RUN:-0}" == "1" ]]; then
-                echo "WOULD TRUNCATE oversized AllTune2 TGIFD log: \$file (\${size} bytes)"
-            else
-                : > "\$file"
-            fi
-        fi
-    fi
+    rm -f /etc/cron.d/radio-log-prune 2>/dev/null || true
+    rm -f /usr/local/sbin/radio-log-prune.sh 2>/dev/null || true
 }
 
-alltune2_tgifd_cap_file "$TGIF_HELPER_LOG_FILE"
-alltune2_tgifd_cap_file "$TGIF_LOG_FILE"
-# END AllTune2 TGIFD log caps
-EOFBLOCK
-)"
-
-    if [[ -f "$RADIO_LOG_PRUNE_SCRIPT" ]]; then
-        python3 - "$RADIO_LOG_PRUNE_SCRIPT" "$tgifd_block" <<'PYPRUNE'
-import pathlib
-import sys
-
-path = pathlib.Path(sys.argv[1])
-block = sys.argv[2] + "\n"
-text = path.read_text()
-
-start = "# BEGIN AllTune2 TGIFD log caps"
-end = "# END AllTune2 TGIFD log caps"
-
-if start in text and end in text:
-    before = text.split(start, 1)[0]
-    after = text.split(end, 1)[1]
-    text = before + block + after.lstrip("\n")
-else:
-    if not text.endswith("\n"):
-        text += "\n"
-    text += "\n" + block
-
-path.write_text(text)
-PYPRUNE
-    else
-        cat > "$RADIO_LOG_PRUNE_SCRIPT" <<EOFPRUNE
-#!/usr/bin/env bash
-set -euo pipefail
-
-# AllTune2 radio log emergency pruning.
-# Logrotate remains the primary rotation mechanism.
-
-$tgifd_block
-EOFPRUNE
-    fi
-
-    chmod 0755 "$RADIO_LOG_PRUNE_SCRIPT"
-    chown root:root "$RADIO_LOG_PRUNE_SCRIPT"
-
-    if [[ ! -f "$RADIO_LOG_PRUNE_CRON" ]]; then
-        cat > "$RADIO_LOG_PRUNE_CRON" <<EOFCRON
-# AllTune2 radio log emergency pruning. Logrotate remains the primary rotation mechanism.
-17 * * * * root $RADIO_LOG_PRUNE_SCRIPT >/dev/null 2>&1
-EOFCRON
-        chmod 0644 "$RADIO_LOG_PRUNE_CRON"
-        chown root:root "$RADIO_LOG_PRUNE_CRON"
-    else
-        log "Existing radio log prune cron preserved: $RADIO_LOG_PRUNE_CRON"
-    fi
-
-    bash -n "$RADIO_LOG_PRUNE_SCRIPT" || fail "radio-log-prune syntax check failed: $RADIO_LOG_PRUNE_SCRIPT"
-
-    if command -v systemctl >/dev/null 2>&1; then
-        if systemctl list-unit-files cron.service >/dev/null 2>&1; then
-            systemctl is-active --quiet cron || warn "cron.service is not active. $RADIO_LOG_PRUNE_CRON will not run until cron is active."
-        else
-            warn "cron.service was not found by systemctl. Verify $RADIO_LOG_PRUNE_CRON runs on this system."
-        fi
-    fi
-
-    log "Ensured TGIFD entries in radio log prune helper: $RADIO_LOG_PRUNE_SCRIPT"
-}
 
 create_or_update_apache_security_conf() {
     log "Ensuring Apache security hardening exists..."
@@ -1543,7 +1378,7 @@ create_or_update_apache_security_conf() {
     </FilesMatch>
 </Directory>
 
-<DirectoryMatch "^$APP_DIR/(\.git|app|data|docs|logs|run|tools|stfu|tgif|tgif-hblink)(/|$)">
+<DirectoryMatch "^$APP_DIR/(\.git|app|data|docs|logs|run|tools|stfu|tgif)(/|$)">
     Require all denied
 </DirectoryMatch>
 EOF
@@ -1576,9 +1411,12 @@ create_or_update_apache_accesslog_filter() {
         return
     fi
 
-    local restore_file="/tmp/alltune2-apache-accesslog-restore.json"
+    local restore_file
+    restore_file="$(mktemp "${TMPDIR:-/tmp}/alltune2-apache-accesslog-restore.XXXXXX.json")" || {
+        warn "Could not create temporary restore file for Apache access log filter."
+        return
+    }
     local patch_output
-    rm -f "$restore_file"
 
     if ! patch_output="$(python3 - "$restore_file" <<'PYAPACHE'
 import json
@@ -1703,6 +1541,7 @@ if not changed:
 PYAPACHE
 )"; then
         warn "Apache access log filter patch helper failed. Leaving Apache config unchanged."
+        rm -f "$restore_file"
         return
     fi
 
@@ -1736,11 +1575,15 @@ PYRESTORE
 
         if apache2ctl configtest >/dev/null; then
             warn "Restored Apache site files. Access log filter was not installed."
+            rm -f "$restore_file"
             return
         fi
 
+        rm -f "$restore_file"
         fail "Apache configtest still fails after restoring access log filter changes. Manual Apache review is required."
     fi
+
+    rm -f "$restore_file"
 
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet apache2; then
         systemctl reload apache2 || fail "Failed to reload apache2 after installing AllTune2 access log filter."
@@ -1748,7 +1591,6 @@ PYRESTORE
         warn "Apache service is not active or systemctl is unavailable. Access log filter installed, but Apache was not reloaded automatically."
     fi
 
-    rm -f "$restore_file"
     log "Installed Apache access log filter for AllTune2 status/ribbon polling URLs."
 }
 
@@ -1798,20 +1640,13 @@ check_sudoers_requirement() {
     visudo -cf "$YSFGATEWAY_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $YSFGATEWAY_SUDOERS_FILE"
 
     check_web_user_sudo_allowed "Asterisk CLI permission" "$ASTERISK_BIN"
-    check_web_user_sudo_command "BM receive helper status" "$BM_RECEIVE_HELPER" status
-    check_web_user_sudo_command "TGIFD helper status" "$TGIF_HELPER" status
+    check_web_user_sudo_allowed "BM receive helper permission" "$BM_RECEIVE_HELPER"
+    check_web_user_sudo_allowed "TGIFD helper permission" "$TGIF_HELPER"
     check_web_user_sudo_allowed "MMDVM_Bridge start" "$SYSTEMCTL_BIN" start mmdvm_bridge.service
     check_web_user_sudo_allowed "YSFGateway start" "$SYSTEMCTL_BIN" start ysfgateway.service
     check_web_user_sudo_allowed "YSFGateway stop" "$SYSTEMCTL_BIN" stop ysfgateway.service
     check_web_user_sudo_allowed "Asterisk service restart permission" "$SYSTEMCTL_BIN" restart asterisk.service
-    if ! visudo -c >/dev/null; then
-        warn "Full sudoers validation reports an issue outside AllTune2-owned files. AllTune2 sudoers files were validated individually; review sudo visudo -c output manually."
-    fi
 
-    if [[ -e "$OLD_TGIF_HBLINK_SUDOERS_FILE" ]]; then
-        warn "Old TGIF/HBLink sudoers file still exists: $OLD_TGIF_HBLINK_SUDOERS_FILE"
-        warn "Old HBLink cleanup is no longer run during normal setup/update. Remove it manually if no longer needed."
-    fi
 
     log "Installed sudoers files look correct, MMDVM_Bridge/YSFGateway control is available, and web-user sudo checks passed."
 }
@@ -1860,7 +1695,6 @@ check_git_hygiene_warnings() {
         "$CONFIG_FILE"
         "$FAVORITES_FILE"
         "$TGIF_CONFIG_FILE"
-        "$TGIF_BUILD_DIR"
         "$LOGS_DIR"
         "$RUN_DIR"
     )
@@ -1873,38 +1707,6 @@ check_git_hygiene_warnings() {
     done
 }
 
-
-cleanup_old_installer_created_backup_folders() {
-    local backup_root="/root/alltune2-backups"
-
-    [[ -d "$backup_root" ]] || return 0
-
-    local patterns=(
-        "setup-pre-tgifd-migration-*"
-        "tgifd-dev-artifacts-retired-*"
-        "setup-retire-old-tgifd-artifacts-*"
-        "setup-runtime-packages-*"
-        "setup-tgifd-binary-only-*"
-    )
-
-    local pattern
-    local dir
-    local removed=0
-
-    for pattern in "${patterns[@]}"; do
-        while IFS= read -r -d '' dir; do
-            rm -rf -- "$dir"
-            removed=1
-            echo "[INFO] Removed old installer-created backup folder: $dir"
-        done < <(find "$backup_root" -maxdepth 1 -type d -name "$pattern" -print0 2>/dev/null | sort -z)
-    done
-
-    if [[ "$removed" -eq 0 ]]; then
-        log "No old installer-created backup folders found."
-    fi
-
-    rmdir "$backup_root" 2>/dev/null || true
-}
 
 show_summary() {
     local version="unknown"
@@ -1943,7 +1745,6 @@ show_summary() {
     echo "Web login:       $web_login"
     echo "Apache security: $apache_security"
     echo "TGIF backend:    TGIFD"
-    echo "Old HBLink:      Manual cleanup only if still present"
     if [[ "$INSTALLER_MODE" != "verbose" ]]; then
         echo "Installer log:   $QUIET_COMMAND_LOG"
     fi
@@ -1963,8 +1764,6 @@ show_summary() {
 
     echo "Important:"
     echo "- Normal setup/update preserves config.ini, favorites.txt, and web login settings."
-    echo "- Old TGIF/HBLink cleanup is no longer run during normal setup/update."
-    echo "- TGIFD runtime API files are expected to use clean TGIFD naming, not old tgif_hblink/hblink_tgif keys."
     echo "- TGIFD helper must keep the stable controlled-restart retune path and must not restart mmdvm_bridge on stop."
     echo "- TGIFD config must include [tlv] inbound_slot = 2 for reliable inbound TGIF audio."
     echo "- To set/change the web login password:"
@@ -2036,19 +1835,13 @@ main() {
     step "Checking TGIFD binary..."
     prepare_tgifd_binary
 
-    step "Retiring old TGIFD development/build artifacts..."
-    retire_old_tgifd_development_artifacts
-
     step "Applying permissions and sudoers..."
+    remove_legacy_alltune2_leftovers
     set_permissions
     create_or_update_sudoers_files
     create_or_update_logrotate_files
-    create_or_update_radio_log_prune
     create_or_update_apache_security_conf
     create_or_update_apache_accesslog_filter
-
-    step "Cleaning old installer-created backup folders..."
-    cleanup_old_installer_created_backup_folders
 
     step "Running installer self-checks..."
     check_php_syntax
