@@ -928,8 +928,6 @@ Check TGIFD helper status:
 sudo /var/www/html/alltune2/tgif/alltune2-tgifd-helper.sh status
 ```
 
-TGIFD normally connects quickly. If the dashboard is still updating, wait for the current status change to finish before clicking Connect again.
-
 ### If TGIF connects but inbound audio is unreliable
 
 Check that this line exists under `[tlv]` in:
