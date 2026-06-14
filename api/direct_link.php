@@ -54,6 +54,14 @@ function asterisk_ilink_disconnect(string $node, string $remoteNode): string
     return asterisk_rpt_cmd($node, "ilink 1 {$remoteNode}");
 }
 
+function asterisk_reset_echolink_module(): void
+{
+    shell_run('sudo /usr/sbin/asterisk -rx ' . escapeshellarg('module unload chan_echolink.so'));
+    usleep(1000000);
+    shell_run('sudo /usr/sbin/asterisk -rx ' . escapeshellarg('module load chan_echolink.so'));
+    usleep(2000000);
+}
+
 function asterisk_ilink_connect(string $node, string $remoteNode, string $linkMode): string
 {
     $ilink = $linkMode === 'local_monitor' ? '8' : '3';
@@ -393,6 +401,10 @@ if ($action === 'connect') {
         }
     }
 
+    if ($uiMode === 'ECHO') {
+        asterisk_reset_echolink_module();
+    }
+
     asterisk_ilink_connect($myNode, $digitsOnlyTarget, $autoloadDvSwitchMode);
     track_allstar_link($digitsOnlyTarget, $autoloadDvSwitchMode, $uiMode);
 
@@ -422,7 +434,10 @@ if ($action === 'disconnect_selected') {
 
     $selectedUiMode = tracked_allstar_ui_mode($selectedNode);
     asterisk_ilink_disconnect($myNode, $selectedNode);
-    pause_seconds(0.5);
+    pause_seconds(1.0);
+    if ($selectedUiMode === 'ECHO') {
+        asterisk_reset_echolink_module();
+    }
     untrack_allstar_link($selectedNode);
     sync_last_direct_target_from_tracking($hasRealDvSwitchNode ? $dvSwitchNode : null);
     $_SESSION['last_status'] = 'DISCONNECTED: ' . direct_node_status_label($selectedUiMode) . ' ' . $selectedNode;
@@ -436,8 +451,12 @@ if ($trackedNode === '') {
 }
 
 $trackedUiMode = last_tracked_allstar_ui_mode($hasRealDvSwitchNode ? $dvSwitchNode : null);
+$trackedUiMode = tracked_allstar_ui_mode($trackedNode);
 asterisk_ilink_disconnect($myNode, $trackedNode);
-pause_seconds(0.5);
+pause_seconds(1.0);
+if ($trackedUiMode === 'ECHO') {
+    asterisk_reset_echolink_module();
+}
 untrack_allstar_link($trackedNode);
 sync_last_direct_target_from_tracking($hasRealDvSwitchNode ? $dvSwitchNode : null);
 $_SESSION['last_status'] = 'DISCONNECTED: ' . direct_node_status_label($trackedUiMode) . ' ' . $trackedNode;

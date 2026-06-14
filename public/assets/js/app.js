@@ -6,8 +6,9 @@
         busy: false,
         pollTimer: null,
         quickStatusTimers: [],
-        pollIntervalMs: 2000,
+        pollIntervalMs: 1000,
         fastPollIntervalMs: 650,
+        dvswitchKeyedHoldSeconds: 2,
         lastRequestedUiMode: '',
         userSelectionHoldUntil: 0,
         cachedDvSwitchNode: '',
@@ -432,7 +433,7 @@
             return false;
         }
 
-        return links.some((link) => String(link?.node ?? '').trim() === dvswitchNode && linkLooksKeyed(link));
+        return links.some((link) => String(link?.node ?? '').trim() === dvswitchNode && linkLooksKeyed(link, state.dvswitchKeyedHoldSeconds));
     }
 
     function payloadModeLooksActive(payload) {
@@ -1682,7 +1683,7 @@
 
         setButtonVisualState(els.connectButton, shouldEnableConnectButton(statusText));
         setButtonVisualState(els.disconnectButton, shouldEnableDisconnectButton(statusText));
-        setButtonVisualState(els.disconnectAllButton, shouldEnableDisconnectAllButton(statusText));
+        setButtonVisualState(els.disconnectAllButton, true);
         setButtonVisualState(els.disconnectDvSwitchButton, shouldEnableDisconnectDvSwitchButton(statusText));
         updateDtmfButtonState();
     }
@@ -2036,7 +2037,7 @@
             const modeLabel = String(link?.mode_label ?? link?.link_mode ?? link?.mode ?? 'Connected').trim();
             const isDvSwitchNode = dvswitchNode !== '' && rawNode === dvswitchNode;
             const isLocalMonitor = modeLabel.toLowerCase().includes('monitor');
-            const keyedHoldSeconds = isDvSwitchNode ? 5 : 1;
+            const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 1;
             const active = (isDvSwitchNode || !isLocalMonitor) && linkLooksKeyed(link, keyedHoldSeconds);
 
             return {
@@ -2137,7 +2138,7 @@
 
         const bridgeAudioActive = dvswitchNode !== '' && links.some((link) => {
             const rawNode = String(link?.node ?? link?.target ?? '').trim();
-            return rawNode === dvswitchNode && linkLooksKeyed(link);
+            return rawNode === dvswitchNode && linkLooksKeyed(link, state.dvswitchKeyedHoldSeconds);
         });
 
         const externalBridgeAudioActive = dvswitchNode !== '' && links.some((link) => {
@@ -2160,7 +2161,7 @@
             const isLive = !!link.is_live;
             const isDvSwitchNode = dvswitchNode !== '' && rawNode === dvswitchNode;
             const isLocalMonitor = linkModeLabel.toLowerCase().includes('monitor');
-            const keyedHoldSeconds = isDvSwitchNode ? 5 : 1;
+            const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 1;
             const rowKeyed = (isDvSwitchNode || !isLocalMonitor) && linkLooksKeyed(link, keyedHoldSeconds);
             const bridgeAudioForNode = bridgeAudioActive && !isDvSwitchNode && !isLocalMonitor;
             const bridgeAudioForDvSwitch = isDvSwitchNode && externalBridgeAudioActive;

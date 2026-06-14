@@ -284,13 +284,8 @@ start_backend() {
 
   write_state true "$target" "$pid"
 
-  # Do not hold the dashboard/API response behind the private-node settle delay.
-  # TGIFD is already running and the active TG state has already been written.
-  # Let the settle refresh finish in the background so the dashboard can sync
-  # with TGIFD promptly, similar to the STFU path.
-  (
-    settle_audio_path
-  ) >>"$LOG_FILE" 2>&1 &
+  # Do not refresh the private DVSwitch node after TGIFD is already live.
+  # On faster nodes this delayed refresh can cause a second TGIF audio blip.
 
   ok_json "start" "TGIFD started." true "$target" "$pid"
 }
