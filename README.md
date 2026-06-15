@@ -727,7 +727,7 @@ Your live Favorites file is local user data:
 /var/www/html/alltune2/data/favorites.txt
 ```
 
-This file is intentionally ignored by Git.
+This file is local user data and should not be committed with your personal changes.
 
 A neutral example file is included for reference:
 
@@ -810,8 +810,7 @@ Check:
 
 - `/var/www/html/alltune2/config.ini`
 - `/var/www/html/alltune2/tgif/config/tgifd.ini`
-- `/var/www/html/alltune2/logs/tgifd-helper.log`
-- `/var/www/html/alltune2/tgif/tgifd.log`
+- `/var/www/html/alltune2/logs/tgifd.log`
 
 Check TGIFD helper status:
 
@@ -937,8 +936,7 @@ Edit these:
 
 Review these if TGIF needs troubleshooting:
 
-- `/var/www/html/alltune2/logs/tgifd-helper.log`
-- `/var/www/html/alltune2/tgif/tgifd.log`
+- `/var/www/html/alltune2/logs/tgifd.log`
 
 Leave these alone unless you know why:
 
