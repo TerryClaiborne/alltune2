@@ -369,9 +369,11 @@ Normal setup/update does **not** ask for a password and does **not** change the 
 
 ## 🟢 TGIF CONFIG
 
-AllTune2 now uses **TGIFD** for TGIF.
+AllTune2 uses **TGIFD** for TGIF.
 
-TGIFD replaces the older TGIF/HBLink sidecar path. In testing, TGIFD reduced the TGIF runtime footprint, removed the local Python/HBLink stack, reduced disk usage, reduced CPU load compared with the previous sidecar approach, and provided cleaner TGIF audio.
+TGIFD replaces the older TGIF/HBLink sidecar path. During setup, AllTune2 creates the full TGIFD config file from the example file.
+
+TGIFD reduced the TGIF runtime footprint, removed the local Python/HBLink stack, reduced disk usage, reduced CPU load compared with the previous sidecar approach, and provided cleaner TGIF audio.
 
 Edit:
 
@@ -379,152 +381,76 @@ Edit:
 /var/www/html/alltune2/tgif/config/tgifd.ini
 ```
 
-Example:
+The example file is:
+
+```text
+/var/www/html/alltune2/tgif/config/tgifd.ini.example
+```
+
+Existing `tgifd.ini` files are preserved on updates.
+
+### Important
+
+The full `tgifd.ini` file contains required settings that TGIFD needs to run. Do not remove sections or change unrelated values unless you know exactly what they do.
+
+For normal setup, only edit the station-specific values below.
+
+### Values you normally need to edit
 
 ```ini
-[general]
-log_file=./tgifd.log
-
 [identity]
 callsign=YOURCALL
 dmr_id=YOUR_DMR_ID
 hotspot_radio_id=YOUR_HOTSPOT_ID_PLUS_1
 
 [tgif]
-host=tgif.network
-port=62031
-security_key=YOUR_TGIF_SECURITY_KEY
+security_key="YOUR_TGIF_SECURITY_KEY"
 startup_tg=9990
 options=StartRef=9990;RelinkTime=60
 
-[behavior]
-receive_timeout_ms=1000
-keepalive_seconds=5
-protocol_assert_seconds=30
-soft_refresh_trigger_missed=2
-max_missed=5
-reconnect_delay_seconds=5
-
-[network]
-local_bind_port=0
-
-[tlv]
-rx_port=31103
-tx_host=127.0.0.1
-tx_port=31100
-timeout_ms=500
-inbound_slot=2
-
 [private_node]
-enabled=true
-asterisk_bin=/usr/sbin/asterisk
-mynode=YOUR_ALLSTAR_NODE
-private_node=YOUR_DVSWITCH_NODE
+mynode="YOUR_ALLSTAR_NODE"
+private_node="YOUR_DVSWITCH_NODE"
 autoload_mode=transceive
-
-[mmdvm]
-rx_frequency=0
-tx_frequency=0
-power=5
-color_code=1
-latitude=0.000000
-longitude=0.000000
-height=0
-location=Your Location
-description=TGIFD via AllTune2
-slots=2
-url=https://github.com/TerryClaiborne/alltune2
-version=alltune2-tgifd
-software=TGIFD
 ```
 
-### TGIFD values
+### Field notes
 
 **callsign**  
-Your ham callsign.
-
-Example:
-
-```text
-callsign=YOURCALL
-```
+Your HAM Callsign.
 
 **dmr_id**  
 Your gateway/base DMR ID.
 
-On many DVSwitch systems this is the same DMR ID used by Analog_Bridge as the gateway DMR ID.
-
-Example:
-
-```ini
-dmr_id=3101234
-```
-
 **hotspot_radio_id**  
-Your TGIF hotspot/radio ID for this bridge.
-
-For the AllTune2 TGIFD path, this is usually your hotspot ID plus 1.
+Your TGIF hotspot/radio ID for this bridge. For the AllTune2 TGIFD path, this is usually your hotspot ID plus 1.
 
 Example:
 
 ```text
-Your hotspot ID: 330000811
-Use:             330000812
+Hotspot ID:       330000811
+hotspot_radio_id: 330000812
 ```
-
-Another example:
-
-```text
-Your hotspot ID: 3101234
-Use:             3101235
-```
-
-Do **not** blindly use your original hotspot ID unchanged unless your setup specifically requires that. Use the ID pattern that is correct for your DVSwitch / TGIF setup.
 
 **security_key**  
-Your TGIF Hotspot Security Key.
+Your TGIF Hotspot Security Key. This is not your TGIF website login password.
 
-This is **not** your TGIF website login password.
-
-This should match the TGIF key you set in `config.ini`:
-
-```ini
-TGIF_HotspotSecurityKey="CHANGE_ME"
-```
-
-**startup_tg**  
+**startup_tg** and **options**  
 The TGIF talkgroup TGIFD should start on when launched directly.
 
-Example:
+Example for TG 9990:
 
 ```ini
 startup_tg=9990
-```
-
-**options**  
-TGIF startup options.
-
-Example:
-
-```ini
 options=StartRef=9990;RelinkTime=60
 ```
 
-For another startup talkgroup:
+Example for TG 9050:
 
 ```ini
 startup_tg=9050
 options=StartRef=9050;RelinkTime=60
 ```
-
-**inbound_slot**  
-This must stay set to `2`:
-
-```ini
-inbound_slot=2
-```
-
-AllTune2/TGIFD uses this for reliable inbound TGIF audio through the TLV/DVSwitch path. Do not remove it.
 
 **mynode**  
 Your main AllStar node number. This should match `MYNODE` in `config.ini`.
@@ -533,45 +459,10 @@ Your main AllStar node number. This should match `MYNODE` in `config.ini`.
 Your private DVSwitch audio node. This should match `DVSWITCH_NODE` in `config.ini`.
 
 **autoload_mode**  
-Controls how TGIFD links the private DVSwitch node.
-
 Typical value:
 
 ```ini
 autoload_mode=transceive
-```
-
-**rx_frequency / tx_frequency / latitude / longitude / height / location / description**  
-These are MMDVM/TGIF descriptive values.
-
-If your existing MMDVM_Bridge configuration has valid values, setup may copy some of them. If you are not running a repeater, frequency values of `0` are usually fine.
-
-### Important TGIF note
-
-TGIF and BrandMeister are separate networks. A talkgroup number existing on TGIF does not automatically mean you will hear users who are connected through BrandMeister.
-
-Use BrandMeister in AllTune2 when you want the BrandMeister side. Use TGIF when you want the TGIF side.
-
-### TGIFD backend notes
-
-TGIFD is the AllTune2 TGIF backend.
-
-The old TGIF/HBLink sidecar path has been removed from the release tree. During an update from an older AllTune2 release, setup quietly removes known old TGIF/HBLink leftovers from the live application path before using TGIFD.
-
-TGIFD runtime files are local-only and should not be committed:
-
-```text
-/var/www/html/alltune2/tgif/config/tgifd.ini
-/var/www/html/alltune2/tgif/build/
-/var/www/html/alltune2/tgif/*.log
-/var/www/html/alltune2/logs/tgifd-helper.log
-/var/www/html/alltune2/run/
-```
-
-The public example file is:
-
-```text
-/var/www/html/alltune2/tgif/config/tgifd.ini.example
 ```
 
 ---
