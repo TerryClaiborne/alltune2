@@ -9,7 +9,7 @@ RUN_DIR="$APP_DIR/run"
 LOG_DIR="$APP_DIR/logs"
 PID_FILE="$RUN_DIR/alltune2-tgifd.pid"
 STATE_FILE="$RUN_DIR/alltune2-tgifd.state"
-LOG_FILE="$LOG_DIR/tgifd-helper.log"
+LOG_FILE="$LOG_DIR/tgifd.log"
 ALLTUNE_CFG="$APP_DIR/config.ini"
 
 json_escape() {
@@ -277,10 +277,12 @@ start_backend() {
   stop_proc
   (
     cd "$TGIFD_DIR" || exit 1
-    nohup "$BIN_FILE" "$CFG_FILE" >>"$LOG_FILE" 2>&1 &
+    # TGIFD writes to log_file in tgifd.ini. Do not also redirect stdout/stderr
+    # to the same file, or every TGIFD log line is duplicated.
+    nohup "$BIN_FILE" "$CFG_FILE" >/dev/null 2>&1 &
   )
   local pid
-  pid="$(wait_for_pid)" || fail_json "start" "TGIFD failed to start. Check log." "$target"
+  pid="$(wait_for_pid)" || fail_json "start" "TGIFD failed to start. Check /var/www/html/alltune2/logs/tgifd.log." "$target"
 
   write_state true "$target" "$pid"
 

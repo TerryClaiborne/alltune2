@@ -33,8 +33,7 @@ TGIF_CONFIG_CREATED_THIS_RUN=0
 TGIF_CONFIG_EXAMPLE="$TGIF_CONFIG_DIR/tgifd.ini.example"
 TGIF_BINARY="$TGIF_DIR/bin/tgifd"
 TGIF_COPYRIGHT_NOTICE="$TGIF_DOCS_DIR/TGIFD-COPYRIGHT-NOTICE.md"
-TGIF_LOG_FILE="$TGIF_DIR/tgifd.log"
-TGIF_HELPER_LOG_FILE="$LOGS_DIR/tgifd-helper.log"
+TGIF_LOG_FILE="$LOGS_DIR/tgifd.log"
 TGIFD_CONFIG_HAS_PLACEHOLDERS=0
 SETUP_COMPLETED=0
 SKIP_APT="${ALLTUNE2_SKIP_APT:-0}"
@@ -89,11 +88,8 @@ MMDVM_BRIDGE_SUDOERS_FILE="/etc/sudoers.d/alltune2-mmdvm-bridge"
 ASTERISK_SERVICE_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk-service"
 YSFGATEWAY_SUDOERS_FILE="/etc/sudoers.d/alltune2-ysfgateway"
 
-BM_RECEIVE_LOG_FILE="/var/log/alltune2-bm-receive.log"
+BM_RECEIVE_LOG_FILE="$LOGS_DIR/STFU.log"
 BM_RECEIVE_LOGROTATE_FILE="/etc/logrotate.d/alltune2-bm-receive"
-STFU_LOG_FILE="/var/log/STFU.log"
-BM_STFU_LOG_FILE="/var/log/bm-stfu.log"
-STFU_LOGROTATE_FILE="/etc/logrotate.d/alltune2-stfu"
 TGIF_LOGROTATE_FILE="/etc/logrotate.d/alltune2-tgifd"
 APACHE_SECURITY_CONF_NAME="alltune2-security"
 APACHE_SECURITY_CONF_FILE="/etc/apache2/conf-available/${APACHE_SECURITY_CONF_NAME}.conf"
@@ -423,9 +419,13 @@ TGIF_HotspotSecurityKey="CHANGE_ME"
 DSTAR_ENABLED=0
 P25_ENABLED=0
 NXDN_ENABLED=0
+
+# Optional web login / security
+# Disabled by default. Leave ALLTUNE2_AUTH_ENABLED=0 for normal current behavior.
 ALLTUNE2_AUTH_ENABLED=0
 ALLTUNE2_ADMIN_USER="admin"
 ALLTUNE2_ADMIN_PASSWORD_HASH=""
+
 EOF
     else
         log "config.ini.example already exists."
@@ -539,6 +539,18 @@ def is_placeholder(v: str) -> bool:
         return True
     return any(token in raw for token in placeholder_tokens if token)
 
+quoted_placeholder_keys = {"security_key", "mynode", "private_node"}
+
+def render_value(k: str, v: str) -> str:
+    raw = v.strip().strip('"')
+    if k.lower() in quoted_placeholder_keys:
+        raw = raw.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{raw}"'
+    return v.strip()
+
+def render_line(k: str, v: str) -> str:
+    return f"{k}={render_value(k, v)}"
+
 start = None
 end = len(lines)
 for i, line in enumerate(lines):
@@ -553,7 +565,7 @@ for i, line in enumerate(lines):
 if start is None:
     if lines and lines[-1].strip():
         lines.append("")
-    lines.extend([f"[{section}]", f"{key} = {value}"])
+    lines.extend([f"[{section}]", render_line(key, value)])
     changed = True
 else:
     key_line = None
@@ -564,11 +576,11 @@ else:
         if left.strip().lower() == key.lower():
             key_line = i
             if is_placeholder(right):
-                lines[i] = f"{key} = {value}"
+                lines[i] = render_line(key, value)
                 changed = True
             break
     if key_line is None:
-        lines.insert(end, f"{key} = {value}")
+        lines.insert(end, render_line(key, value))
         changed = True
 
 if changed:
@@ -588,60 +600,60 @@ create_tgifd_config_example_if_missing() {
     mkdir -p "$TGIF_CONFIG_DIR"
     cat > "$TGIF_CONFIG_EXAMPLE" <<'EOFTGIFDINIEXAMPLE'
 [general]
-log_file = ./tgifd.log
+log_file=/var/www/html/alltune2/logs/tgifd.log
 
 [identity]
-callsign = YOURCALL
-dmr_id = YOUR_DMR_ID
-hotspot_radio_id = YOUR_HOTSPOT_ID_PLUS_1
+callsign=YOURCALL
+dmr_id=YOUR_GATEWAY_DMR_ID
+hotspot_radio_id=YOUR_HOTSPOT_ID_PLUS_1
 
 [tgif]
-host = tgif.network
-port = 62031
-security_key = YOUR_TGIF_SECURITY_KEY
-startup_tg = 9990
-options = StartRef=9990;RelinkTime=60
+host=tgif.network
+port=62031
+security_key="YOUR_TGIF_SECURITY_KEY"
+startup_tg=9990
+options=StartRef=9990;RelinkTime=60
 
 [behavior]
-receive_timeout_ms = 1000
-keepalive_seconds = 5
-protocol_assert_seconds = 30
-soft_refresh_trigger_missed = 2
-max_missed = 5
-reconnect_delay_seconds = 5
-rx_idle_end_ms = 1500
+receive_timeout_ms=1000
+keepalive_seconds=5
+protocol_assert_seconds=30
+soft_refresh_trigger_missed=2
+max_missed=5
+reconnect_delay_seconds=5
 
 [network]
-local_bind_port = 0
+local_bind_port=0
 
 [tlv]
-rx_port = 31103
-tx_host = 127.0.0.1
-tx_port = 31100
-timeout_ms = 500
-inbound_slot = 2
+rx_port=31103
+tx_host=127.0.0.1
+tx_port=31100
+timeout_ms=500
+inbound_slot=2
 
 [private_node]
-enabled = true
-asterisk_bin = /usr/sbin/asterisk
-mynode = YOUR_NODE
-private_node = YOUR_DVSWITCH_NODE
-autoload_mode = transceive
+enabled=true
+asterisk_bin=/usr/sbin/asterisk
+mynode="YOUR_ALLSTAR_NODE"
+private_node="YOUR_DVSWITCH_NODE"
+autoload_mode=transceive
 
 [mmdvm]
-rx_frequency = 000000000
-tx_frequency = 000000000
-power = 5
-color_code = 1
-latitude = 0.0
-longitude = 0.0
-height = 0
-location = Your Location
-description = AllTune2 TGIFD
-slots = 2
-url = https://github.com/TerryClaiborne/alltune2
-version = alltune2-tgifd
-software = TGIFD
+rx_frequency=YOUR_RX_FREQUENCY
+tx_frequency=YOUR_TX_FREQUENCY
+power=5
+color_code=1
+latitude=0.000000
+longitude=0.000000
+height=0
+location=YOUR_LOCATION
+description=TGIFD via AllTune2
+slots=2
+url=https://github.com/TerryClaiborne/alltune2
+version=alltune2-tgifd
+software=TGIFD
+
 EOFTGIFDINIEXAMPLE
 
     chmod 0644 "$TGIF_CONFIG_EXAMPLE"
@@ -1233,7 +1245,7 @@ install_logrotate_rule_without_duplicates() {
         if [[ "${#managed_paths[@]}" -eq 0 ]]; then
             if [[ -f "$target_file" ]]; then
                 rm -f -- "$target_file"
-                echo "[INFO] Removed AllTune2 logrotate file to avoid duplicate log ownership: $target_file"
+                quiet_detail "Removed AllTune2 logrotate file to avoid duplicate log ownership: $target_file"
             fi
             return 0
         fi
@@ -1246,7 +1258,7 @@ install_logrotate_rule_without_duplicates() {
 
         chmod 0644 "$target_file"
         chown root:root "$target_file"
-        echo "[INFO] Adjusted AllTune2 logrotate file to avoid duplicate log ownership: $target_file"
+        quiet_detail "Adjusted AllTune2 logrotate file to avoid duplicate log ownership: $target_file"
         return 0
     fi
 
@@ -1267,7 +1279,30 @@ install_logrotate_rule_without_duplicates() {
 
     chmod 0644 "$target_file"
     chown root:root "$target_file"
-    echo "[INFO] Installed new AllTune2 logrotate file: $target_file"
+    quiet_detail "Installed new AllTune2 logrotate file: $target_file"
+}
+
+
+
+normalize_tgifd_log_path() {
+    local current_tgifd_log_path=""
+
+    mkdir -p "$LOGS_DIR"
+
+    # Keep TGIFD on the current AllTune2 log path for fresh installs and updates.
+    # Old physical TGIFD log leftovers are removed quietly in create_or_update_logrotate_files().
+    if [[ -f "$TGIF_CONFIG_FILE" ]]; then
+        current_tgifd_log_path="$(grep -E '^[[:space:]]*log_file[[:space:]]*=' "$TGIF_CONFIG_FILE" 2>/dev/null | tail -n 1 | sed -E 's/^[^=]+=//; s/^[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//' || true)"
+        if [[ "$current_tgifd_log_path" == "./tgifd.log" || "$current_tgifd_log_path" == "$TGIF_DIR/tgifd.log" || "$current_tgifd_log_path" == "/var/www/html/alltune2/tgif/tgifd.log" ]]; then
+            sed -i "s|^[[:space:]]*log_file[[:space:]]*=.*|log_file=$TGIF_LOG_FILE|" "$TGIF_CONFIG_FILE"
+        fi
+    fi
+
+    # If an older AllTune2 logrotate rule points at old TGIFD paths, remove only
+    # the stale rule. The normal logrotate installer below recreates the current rule.
+    if [[ -f "$TGIF_LOGROTATE_FILE" ]] && grep -Eq 'tgifd-helper\.log|/var/www/html/alltune2/tgif/tgifd\.log' "$TGIF_LOGROTATE_FILE"; then
+        rm -f "$TGIF_LOGROTATE_FILE" >/dev/null 2>&1 || true
+    fi
 }
 
 create_or_update_logrotate_files() {
@@ -1282,13 +1317,31 @@ create_or_update_logrotate_files() {
         fi
     fi
 
-    ensure_log_file_if_missing "$BM_RECEIVE_LOG_FILE"
-    ensure_log_file_if_missing "$STFU_LOG_FILE"
-    ensure_log_file_if_missing "$BM_STFU_LOG_FILE"
-
     mkdir -p "$LOGS_DIR" "$TGIF_DIR"
-    ensure_log_file_if_missing "$TGIF_HELPER_LOG_FILE"
+
+    # Quietly remove stale physical log files from older AllTune2 BM/TGIFD paths.
+    # Current logs are $LOGS_DIR/STFU.log and $LOGS_DIR/tgifd.log.
+    rm -f \
+        /var/log/alltune2-bm-receive.log \
+        /var/log/alltune2-bm-receive.log.* \
+        /var/log/bm-stfu.log \
+        /var/log/bm-stfu.log.* \
+        /var/log/STFU.log \
+        /var/log/STFU.log.* \
+        "$TGIF_DIR/tgifd.log" \
+        "$TGIF_DIR/tgifd.log".* \
+        "$LOGS_DIR/tgifd-helper.log" \
+        "$LOGS_DIR/tgifd-helper.log".* \
+        >/dev/null 2>&1 || true
+
+    rm -f /etc/logrotate.d/alltune2-stfu >/dev/null 2>&1 || true
+    if [[ -f "$BM_RECEIVE_LOGROTATE_FILE" ]] && grep -Eq '/var/log/alltune2-bm-receive\.log|/var/log/STFU\.log|/var/log/bm-stfu\.log' "$BM_RECEIVE_LOGROTATE_FILE"; then
+        rm -f "$BM_RECEIVE_LOGROTATE_FILE" >/dev/null 2>&1 || true
+    fi
+
+    ensure_log_file_if_missing "$BM_RECEIVE_LOG_FILE"
     ensure_log_file_if_missing "$TGIF_LOG_FILE"
+    normalize_tgifd_log_path
 
     local default_one_day_rule
     default_one_day_rule='    daily
@@ -1303,11 +1356,8 @@ create_or_update_logrotate_files() {
     install_logrotate_rule_without_duplicates "$BM_RECEIVE_LOGROTATE_FILE" "$default_one_day_rule" \
         "$BM_RECEIVE_LOG_FILE"
 
-    install_logrotate_rule_without_duplicates "$STFU_LOGROTATE_FILE" "$default_one_day_rule" \
-        "$STFU_LOG_FILE" "$BM_STFU_LOG_FILE"
-
     install_logrotate_rule_without_duplicates "$TGIF_LOGROTATE_FILE" "$default_one_day_rule" \
-        "$TGIF_HELPER_LOG_FILE" "$TGIF_LOG_FILE"
+        "$TGIF_LOG_FILE"
 
     if command -v logrotate >/dev/null 2>&1; then
         if logrotate -d /etc/logrotate.conf >/dev/null 2>&1; then
@@ -1322,31 +1372,6 @@ create_or_update_logrotate_files() {
     fi
 
     log "AllTune2 logrotate checks completed. Existing user/system rules were preserved."
-}
-
-
-remove_legacy_alltune2_leftovers() {
-    rm -rf "$APP_DIR/tgif-hblink" 2>/dev/null || true
-
-    rm -rf "$APP_DIR/tgif/src" 2>/dev/null || true
-    rm -rf "$APP_DIR/tgif/include" 2>/dev/null || true
-    rm -rf "$APP_DIR/tgif/build" 2>/dev/null || true
-    rm -rf "$APP_DIR/tgif/CMakeFiles" 2>/dev/null || true
-    rm -f  "$APP_DIR/tgif/CMakeCache.txt" 2>/dev/null || true
-    rm -f  "$APP_DIR/tgif/cmake_install.cmake" 2>/dev/null || true
-    rm -f  "$APP_DIR/tgif/Makefile" 2>/dev/null || true
-    rm -f  "$APP_DIR/tgif/CMakeLists.txt" 2>/dev/null || true
-    rm -f  "$APP_DIR/tgif/tgifd" 2>/dev/null || true
-
-    rm -rf /root/alltune2-backups 2>/dev/null || true
-    rm -rf /root/alltune2-backups-* 2>/dev/null || true
-    rm -rf /root/setup-pre-tgifd-* 2>/dev/null || true
-    rm -rf /root/tgifd-build-removed-* 2>/dev/null || true
-
-    rm -f /etc/sudoers.d/alltune2-hblink 2>/dev/null || true
-
-    rm -f /etc/cron.d/radio-log-prune 2>/dev/null || true
-    rm -f /usr/local/sbin/radio-log-prune.sh 2>/dev/null || true
 }
 
 
@@ -1836,7 +1861,6 @@ main() {
     prepare_tgifd_binary
 
     step "Applying permissions and sudoers..."
-    remove_legacy_alltune2_leftovers
     set_permissions
     create_or_update_sudoers_files
     create_or_update_logrotate_files

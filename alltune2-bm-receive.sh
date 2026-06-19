@@ -6,9 +6,11 @@ STFU_DIR="/var/www/html/alltune2/stfu"
 STFU_BIN="/var/www/html/alltune2/stfu/STFU"
 DVSWITCH_SH="/opt/MMDVM_Bridge/dvswitch.sh"
 DVSWITCH_INI="/opt/MMDVM_Bridge/DVSwitch.ini"
-PID_FILE="/var/run/alltune2-bm-receive.pid"
-STATE_FILE="/var/run/alltune2-bm-receive.state"
-LOG_FILE="/var/log/alltune2-bm-receive.log"
+RUN_DIR="/var/www/html/alltune2/run"
+LOG_DIR="/var/www/html/alltune2/logs"
+PID_FILE="$RUN_DIR/alltune2-bm-receive.pid"
+STATE_FILE="$RUN_DIR/alltune2-bm-receive.state"
+LOG_FILE="$LOG_DIR/STFU.log"
 VERSION="2026-04-08c"
 
 json_escape() {
@@ -72,12 +74,18 @@ ensure_symlink() {
     ln -sf "$DVSWITCH_INI" "$STFU_DIR/DVSwitch.ini"
 }
 
+ensure_runtime_dirs() {
+    mkdir -p "$RUN_DIR" "$LOG_DIR"
+}
+
 find_stfu_pid() {
     pgrep -f -x "$STFU_BIN" 2>/dev/null | head -n 1 || true
 }
 
 is_stfu_running() {
     local pid real_pid
+
+    ensure_runtime_dirs
 
     if [[ -f "$PID_FILE" ]]; then
         pid=$(cat "$PID_FILE" 2>/dev/null || true)
@@ -106,6 +114,7 @@ write_state() {
     local active="$1"
     local target="$2"
     local pid="${3-}"
+    ensure_runtime_dirs
     umask 022
     cat > "$STATE_FILE" <<STATE
 ACTIVE=$active
@@ -210,11 +219,12 @@ start_stfu_process() {
     fi
 
     ensure_symlink
+    ensure_runtime_dirs
     touch "$LOG_FILE"
 
     (
         cd "$STFU_DIR" || exit 1
-        nohup "$STFU_BIN" >>"$LOG_FILE" 2>&1 &
+        STFU_LOG="$LOG_DIR" nohup "$STFU_BIN" >/dev/null 2>&1 &
     )
 
     sleep 2

@@ -1,19 +1,7 @@
 # Secrets / live local config
 config.ini
-tgif-hblink/hblink.cfg
 DVSwitch.ini
 stfu/DVSwitch.ini
-tgif-hblink/MMDVM_Bridge.hblink.ini
-
-# Runtime-local TGIF/HBLink files
-tgif-hblink/MMDVM_Bridge.pre-hblink.ini
-tgif-hblink/*.bak
-tgif-hblink/MMDVM_Bridge.pre-hblink.ini.lastgood
-tgif-hblink/MMDVM_Bridge.pre-hblink.ini.bak
-tgif-hblink/MMDVM_Bridge.pre-hblink.ini.keepdonotdelete
-tgif-hblink/rules.py
-tgif-hblink/peer_ids.json
-tgif-hblink/subscriber_ids.json
 
 # Python runtime / caches
 __pycache__/
@@ -23,12 +11,7 @@ __pycache__/
 .mypy_cache/
 dmr_utils3/
 
-# TGIF/HBLink local runtime environment
-tgif-hblink/venv/
-
 # Optional upstream/dev leftovers
-tgif-hblink/.git/
-tgif-hblink/HBmonitor/
 
 # Logs / runtime state
 logs/
@@ -41,7 +24,6 @@ run/
 *.bak
 *.bak-*
 *.before-step*
-*.beforeHBLinkInstall
 *.orig
 *.old
 *.tmp
@@ -63,13 +45,6 @@ screenshot.png
 
 # Keep example/template configs and core source files tracked
 !config.ini.example
-!tgif-hblink/hblink.cfg.example
-!tgif-hblink/rules.py.template
-!tgif-hblink/MMDVM_Bridge.hblink.ini.example
-tgif-hblink/config/config.json
-tgif-hblink/config/*.local.json
-tgif-hblink/config/*.before-*
-tgif-hblink/config/*.bak
 
 # TGIFD local runtime / build artifacts
 tgif/config/tgifd.ini
