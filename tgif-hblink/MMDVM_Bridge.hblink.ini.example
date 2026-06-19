@@ -1,0 +1,98 @@
+[General]
+Callsign=N0CALL
+Id=123456701
+Timeout=180
+Duplex=0
+
+[Info]
+RXFrequency=000000000
+TXFrequency=000000000
+Power=0
+Latitude=00.000000
+Longitude=-00.000000
+Height=0
+Location=Your City, ST
+Description=AllTune2 HBLink TGIF Bridge
+URL=https://github.com/YOUR_REPO/alltune2
+
+[Log]
+DisplayLevel=1
+FileLevel=2
+FilePath=/var/log/mmdvm
+FileRoot=MMDVM_Bridge
+
+[DMR Id Lookup]
+File=/var/lib/mmdvm/DMRIds.dat
+Time=24
+
+[NXDN Id Lookup]
+File=/var/lib/mmdvm/NXDN.csv
+Time=24
+
+[Modem]
+Port=/dev/null
+RSSIMappingFile=/dev/null
+Trace=0
+Debug=0
+
+[D-Star]
+Enable=1
+Module=B
+
+[DMR]
+Enable=1
+ColorCode=1
+EmbeddedLCOnly=1
+DumpTAData=0
+
+[System Fusion]
+Enable=1
+
+[P25]
+Enable=1
+NAC=293
+
+[NXDN]
+Enable=1
+RAN=1
+Id=
+
+[D-Star Network]
+Enable=1
+GatewayAddress=127.0.0.1
+GatewayPort=20010
+LocalPort=20011
+Debug=0
+
+[DMR Network]
+Enable=1
+Address=127.0.0.1
+Port=62033
+Jitter=120
+Local=62032
+Password=homebrew
+Slot1=0
+Slot2=1
+Debug=0
+
+[System Fusion Network]
+Enable=1
+LocalAddress=0
+LocalPort=3200
+GatewayAddress=127.0.0.1
+GatewayPort=4200
+Debug=0
+
+[P25 Network]
+Enable=1
+GatewayAddress=127.0.0.1
+GatewayPort=42020
+LocalPort=32010
+Debug=0
+
+[NXDN Network]
+Enable=1
+Debug=0
+LocalPort=14021
+GatewayAddress=127.0.0.1
+GatewayPort=14020

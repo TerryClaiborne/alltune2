@@ -1319,31 +1319,6 @@ create_or_update_logrotate_files() {
 
     mkdir -p "$LOGS_DIR" "$TGIF_DIR"
 
-    # Quietly remove legacy AllTune2-created HBLink/TGIF build/root-backup leftovers.
-    # Current AllTune2 uses TGIFD and does not use the old tgif-hblink tree.
-    rm -rf \
-        "$APP_DIR/tgif-hblink" \
-        "$TGIF_DIR/src" \
-        "$TGIF_DIR/include" \
-        "$TGIF_DIR/build" \
-        "$TGIF_DIR/CMakeFiles" \
-        /root/alltune2-backups \
-        /root/alltune2-backups-* \
-        /root/setup-pre-tgifd-* \
-        /root/tgifd-build-removed-* \
-        >/dev/null 2>&1 || true
-
-    rm -f \
-        /etc/sudoers.d/alltune2-hblink \
-        "$TGIF_DIR/CMakeCache.txt" \
-        "$TGIF_DIR/cmake_install.cmake" \
-        "$TGIF_DIR/Makefile" \
-        "$TGIF_DIR/CMakeLists.txt" \
-        "$TGIF_DIR/tgifd" \
-        /etc/cron.d/radio-log-prune \
-        /usr/local/sbin/radio-log-prune.sh \
-        >/dev/null 2>&1 || true
-
     # Quietly remove stale physical log files from older AllTune2 BM/TGIFD paths.
     # Current logs are $LOGS_DIR/STFU.log and $LOGS_DIR/tgifd.log.
     rm -f \
