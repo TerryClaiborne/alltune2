@@ -215,6 +215,23 @@ refresh_private_node() {
   sleep 1.50
 }
 
+
+wait_for_private_node_link() {
+  local main_node private_node
+  main_node="$(read_mynode)"
+  private_node="$(read_private_node)"
+  [[ -n "$main_node" && -n "$private_node" ]] || return 0
+
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if link_present "$main_node" "$private_node"; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  return 0
+}
+
 settle_audio_path() {
   # Keep the private-node refresh only. COP 6 priming removed.
   sleep 1.25
@@ -288,6 +305,9 @@ start_backend() {
 
   # Do not refresh the private DVSwitch node after TGIFD is already live.
   # On faster nodes this delayed refresh can cause a second TGIF audio blip.
+  # Wait briefly for the existing TGIFD/private-node attach to settle before
+  # reporting success to the web UI.
+  wait_for_private_node_link
 
   ok_json "start" "TGIFD started." true "$target" "$pid"
 }

@@ -49,7 +49,7 @@ function shell_run(string $command): string
 
 function bm_receive_helper_path(): string
 {
-    return dirname(__DIR__) . '/alltune2-bm-receive.sh';
+    return dirname(__DIR__) . '/bmtd/alltune2-bmtd-helper.sh';
 }
 
 function bm_receive_run(string $action, ?string $target = null): array
@@ -72,7 +72,7 @@ function bm_receive_run(string $action, ?string $target = null): array
     return [
         'ok' => false,
         'action' => $action,
-        'message' => 'BM RECEIVE HELPER RETURNED INVALID JSON',
+        'message' => 'BM HELPER RETURNED INVALID JSON',
         'raw_output' => $output,
         'active' => false,
     ];
@@ -1362,6 +1362,53 @@ if (
     $action !== 'send_dtmf'
 ) {
     respond(session_payload('ERROR: INVALID ACTION'), 400);
+}
+
+
+/*
+ * BMTD early disconnect safety:
+ * Stop active BMTD before relying on PHP session state.
+ */
+if ($action === 'disconnect') {
+    $bmStatus = bm_receive_status(true);
+
+    if (!empty($bmStatus['active'])) {
+        $bmStop = bm_receive_stop();
+        pause_seconds(0.5);
+
+        if (empty($bmStop['ok'])) {
+            $_SESSION['last_status'] = 'ERROR: FAILED TO STOP BM RECEIVE';
+            respond(session_payload($_SESSION['last_status'], ['bm_receive' => $bmStop]), 500);
+        }
+
+        clear_runtime_targets();
+        clear_allstar_tracking();
+        $_SESSION['last_status'] = 'DISCONNECTED: BM';
+        respond(session_payload($_SESSION['last_status'], ['bm_receive' => $bmStop]));
+    }
+}
+
+/*
+ * TGIFD early disconnect safety:
+ * Stop active TGIFD before relying on PHP session state.
+ */
+if ($action === 'disconnect') {
+    $tgifStatus = tgifd_status(true);
+
+    if (!empty($tgifStatus['active'])) {
+        $tgifStop = tgifd_stop();
+        pause_seconds(0.5);
+
+        if (empty($tgifStop['ok'])) {
+            $_SESSION['last_status'] = 'ERROR: FAILED TO STOP TGIFD';
+            respond(session_payload($_SESSION['last_status'], ['tgifd' => $tgifStop]), 500);
+        }
+
+        clear_runtime_targets();
+        clear_allstar_tracking();
+        $_SESSION['last_status'] = 'DISCONNECTED: TGIF';
+        respond(session_payload($_SESSION['last_status'], ['tgifd' => $tgifStop]));
+    }
 }
 
 if ($action === 'send_dtmf') {

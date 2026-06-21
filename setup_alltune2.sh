@@ -3,6 +3,7 @@ set -euo pipefail
 
 APP_NAME="AllTune2"
 APP_DIR="/var/www/html/alltune2"
+SCRIPT_PATH="$(readlink -f "${BASH_SOURCE[0]:-$0}" 2>/dev/null || printf '%s' "${BASH_SOURCE[0]:-$0}")"
 PUBLIC_DIR="$APP_DIR/public"
 ASSETS_DIR="$PUBLIC_DIR/assets"
 CSS_DIR="$ASSETS_DIR/css"
@@ -13,7 +14,10 @@ DATA_DIR="$APP_DIR/data"
 DOCS_DIR="$APP_DIR/docs"
 LOGS_DIR="$APP_DIR/logs"
 RUN_DIR="$APP_DIR/run"
-LOCAL_STFU_DIR="$APP_DIR/stfu"
+LEGACY_STFU_DIR="$APP_DIR/stfu"
+BMTD_DIR="$APP_DIR/bmtd"
+BMTD_CONFIG_DIR="$BMTD_DIR/config"
+BMTD_DOCS_DIR="$BMTD_DIR/docs"
 TGIF_DIR="$APP_DIR/tgif"
 TGIF_CONFIG_DIR="$TGIF_DIR/config"
 TGIF_DOCS_DIR="$TGIF_DIR/docs"
@@ -24,8 +28,16 @@ CONFIG_EXAMPLE_FILE="$APP_DIR/config.ini.example"
 FAVORITES_FILE="$DATA_DIR/favorites.txt"
 VERSION_FILE="$APP_DIR/VERSION"
 
-BM_RECEIVE_HELPER="$APP_DIR/alltune2-bm-receive.sh"
-LOCAL_STFU_BIN="$LOCAL_STFU_DIR/STFU"
+LEGACY_BM_RECEIVE_HELPER="$APP_DIR/alltune2-bm-receive.sh"
+LEGACY_LOCAL_STFU_BIN="$LEGACY_STFU_DIR/STFU"
+
+BMTD_HELPER="$BMTD_DIR/alltune2-bmtd-helper.sh"
+BMTD_CONFIG_FILE="$BMTD_CONFIG_DIR/bmtd.ini"
+BMTD_CONFIG_CREATED_THIS_RUN=0
+BMTD_CONFIG_EXAMPLE="$BMTD_CONFIG_DIR/bmtd.ini.example"
+BMTD_BINARY="$BMTD_DIR/bin/bmtd"
+BMTD_LOG_FILE="$LOGS_DIR/bmtd.log"
+BMTD_CONFIG_HAS_PLACEHOLDERS=0
 
 TGIF_HELPER="$TGIF_DIR/alltune2-tgifd-helper.sh"
 TGIF_CONFIG_FILE="$TGIF_CONFIG_DIR/tgifd.ini"
@@ -82,20 +94,22 @@ MMDVM_BRIDGE_INI="/opt/MMDVM_Bridge/MMDVM_Bridge.ini"
 ANALOG_BRIDGE_INI="/opt/Analog_Bridge/Analog_Bridge.ini"
 
 ASTERISK_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk"
-BM_RECEIVE_SUDOERS_FILE="/etc/sudoers.d/alltune2-bm-receive"
+LEGACY_BM_RECEIVE_SUDOERS_FILE="/etc/sudoers.d/alltune2-bm-receive"
+BMTD_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-bmtd"
 TGIF_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-tgifd"
 MMDVM_BRIDGE_SUDOERS_FILE="/etc/sudoers.d/alltune2-mmdvm-bridge"
 ASTERISK_SERVICE_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk-service"
 YSFGATEWAY_SUDOERS_FILE="/etc/sudoers.d/alltune2-ysfgateway"
 
-BM_RECEIVE_LOG_FILE="$LOGS_DIR/STFU.log"
-BM_RECEIVE_LOGROTATE_FILE="/etc/logrotate.d/alltune2-bm-receive"
+LEGACY_BM_RECEIVE_LOG_FILE="$LOGS_DIR/STFU.log"
+LEGACY_BM_RECEIVE_LOGROTATE_FILE="/etc/logrotate.d/alltune2-bm-receive"
+BMTD_LOGROTATE_FILE="/etc/logrotate.d/alltune2-bmtd"
 TGIF_LOGROTATE_FILE="/etc/logrotate.d/alltune2-tgifd"
 APACHE_SECURITY_CONF_NAME="alltune2-security"
 APACHE_SECURITY_CONF_FILE="/etc/apache2/conf-available/${APACHE_SECURITY_CONF_NAME}.conf"
 
 EXPECTED_ASTERISK_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${ASTERISK_BIN}"
-EXPECTED_BM_RECEIVE_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${BM_RECEIVE_HELPER}"
+EXPECTED_BMTD_HELPER_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${BMTD_HELPER} *"
 SYSTEMCTL_BIN="/usr/bin/systemctl"
 EXPECTED_TGIF_HELPER_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${TGIF_HELPER} *"
 EXPECTED_MMDVM_BRIDGE_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mmdvm_bridge.service"
@@ -341,12 +355,12 @@ install_minimum_packages_if_possible() {
     log "Ensuring minimum runtime packages are installed when apt is available..."
 
     if [[ "$SKIP_APT" == "1" ]]; then
-        warn "ALLTUNE2_SKIP_APT=1 set. Skipping automatic package installation; required tools will be checked next."
+        quiet_detail "ALLTUNE2_SKIP_APT=1 set. Skipping automatic package installation; required tools will be checked next."
         return
     fi
 
     if ! command -v apt-get >/dev/null 2>&1; then
-        warn "apt-get not found. Skipping automatic package installation; required tools will be checked next."
+        quiet_detail "apt-get not found. Skipping automatic package installation; required tools will be checked next."
         return
     fi
 
@@ -390,7 +404,7 @@ check_runtime_tools() {
     if command -v apache2ctl >/dev/null 2>&1; then
         log "apache2ctl found."
     else
-        warn "apache2ctl not found in PATH."
+        quiet_detail "apache2ctl not found in PATH."
     fi
 }
 
@@ -405,7 +419,7 @@ check_web_user() {
 make_dirs() {
     log "Ensuring required directories exist..."
     mkdir -p "$PUBLIC_DIR" "$ASSETS_DIR" "$CSS_DIR" "$JS_DIR" "$API_DIR" "$APP_CODE_DIR"
-    mkdir -p "$DATA_DIR" "$DOCS_DIR" "$LOGS_DIR" "$RUN_DIR" "$LOCAL_STFU_DIR" "$TGIF_DIR" "$TGIF_CONFIG_DIR" "$TGIF_DOCS_DIR" "$TOOLS_DIR"
+    mkdir -p "$DATA_DIR" "$DOCS_DIR" "$LOGS_DIR" "$RUN_DIR" "$BMTD_DIR" "$BMTD_CONFIG_DIR" "$BMTD_DOCS_DIR" "$TGIF_DIR" "$TGIF_CONFIG_DIR" "$TGIF_DOCS_DIR" "$TOOLS_DIR"
 }
 
 create_config_example() {
@@ -441,7 +455,7 @@ create_config_if_missing() {
     elif [[ -f "$APP_DIR/config.ini.example" ]]; then
         log "Creating starter config.ini from config.ini.example..."
         cp -f "$APP_DIR/config.ini.example" "$CONFIG_FILE"
-        warn "Created $CONFIG_FILE with placeholder values. Edit it before using AllTune2."
+        quiet_detail "Created starter config: $CONFIG_FILE"
     else
         fail "Neither $CONFIG_FILE nor $APP_DIR/config.ini.example exists."
     fi
@@ -640,19 +654,10 @@ private_node="YOUR_DVSWITCH_NODE"
 autoload_mode=transceive
 
 [mmdvm]
-rx_frequency=YOUR_RX_FREQUENCY
-tx_frequency=YOUR_TX_FREQUENCY
-power=5
-color_code=1
-latitude=0.000000
-longitude=0.000000
-height=0
-location=YOUR_LOCATION
-description=TGIFD via AllTune2
+; TGIFD reads this section from tgifd.ini for TGIF metadata.
+; It does not mean TGIFD depends on MMDVM_Bridge.ini at runtime.
+; Keep slots=2 for the AllTune2/TLV audio path.
 slots=2
-url=https://github.com/TerryClaiborne/alltune2
-version=alltune2-tgifd
-software=TGIFD
 
 EOFTGIFDINIEXAMPLE
 
@@ -670,7 +675,7 @@ create_tgifd_config_if_missing() {
         log "Creating starter tgifd.ini from tgifd.ini.example..."
         cp -f "$TGIF_CONFIG_EXAMPLE" "$TGIF_CONFIG_FILE"
         TGIF_CONFIG_CREATED_THIS_RUN=1
-        warn "Created $TGIF_CONFIG_FILE with placeholder values. Review it before using TGIFD."
+        quiet_detail "Created starter TGIFD config: $TGIF_CONFIG_FILE"
     else
         fail "Neither $TGIF_CONFIG_FILE nor $TGIF_CONFIG_EXAMPLE exists."
     fi
@@ -737,15 +742,9 @@ sync_tgifd_config_from_system_if_safe() {
     tgifd_ini_set_if_placeholder_or_missing "private_node" "mynode" "$mynode"
     tgifd_ini_set_if_placeholder_or_missing "private_node" "private_node" "$dvswitch_node"
 
-    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "rx_frequency" "$rx_frequency"
-    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "tx_frequency" "$tx_frequency"
-    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "latitude" "$latitude"
-    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "longitude" "$longitude"
-    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "height" "$height"
-    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "location" "$location"
-    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "description" "$description"
-
-    # AllTune2 TGIFD is a TS2 path. Add the default only when the key is missing or still a placeholder.
+    # TGIFD does not depend on MMDVM_Bridge.ini at runtime.
+    # Keep only the required AllTune2/TLV slot defaults in the generated starter config.
+    tgifd_ini_set_if_placeholder_or_missing "mmdvm" "slots" "2"
     tgifd_ini_set_if_placeholder_or_missing "tlv" "inbound_slot" "2"
 
     chmod 0640 "$TGIF_CONFIG_FILE"
@@ -760,7 +759,7 @@ check_tgifd_config_content() {
     TGIFD_CONFIG_HAS_PLACEHOLDERS=0
     if grep -Eq "$placeholders_regex" "$TGIF_CONFIG_FILE"; then
         TGIFD_CONFIG_HAS_PLACEHOLDERS=1
-        warn "tgifd.ini still contains placeholder values. TGIFD may not work until it is reviewed."
+        quiet_detail "tgifd.ini still contains placeholder values. TGIFD may not work until it is reviewed."
     fi
 
     if ! grep -qE '^[[:space:]]*hotspot_radio_id[[:space:]]*=' "$TGIF_CONFIG_FILE"; then
@@ -779,7 +778,292 @@ check_tgifd_config_content() {
     ' "$TGIF_CONFIG_FILE"; then
         warn "tgifd.ini [tlv] inbound_slot is not 2. Inbound TGIF audio may be unreliable."
     fi
+
+    if ! awk -F= '
+        /^[[:space:]]*\[mmdvm\][[:space:]]*$/ {in_mmdvm=1; next}
+        /^[[:space:]]*\[/ {in_mmdvm=0}
+        in_mmdvm && $1 ~ /^[[:space:]]*slots[[:space:]]*$/ {v=$2; gsub(/[[:space:]]/, "", v); found=(v=="2")}
+        END {exit(found ? 0 : 1)}
+    ' "$TGIF_CONFIG_FILE"; then
+        warn "tgifd.ini [mmdvm] slots is not 2. TGIFD may not work correctly."
+    fi
 }
+
+
+create_bmtd_config_example_if_missing() {
+    if [[ -f "$BMTD_CONFIG_EXAMPLE" ]]; then
+        log "bmtd.ini.example already exists. Preserving repo example file."
+        chmod 0644 "$BMTD_CONFIG_EXAMPLE"
+        chown root:root "$BMTD_CONFIG_EXAMPLE"
+        return
+    fi
+
+    log "Creating starter bmtd.ini.example..."
+    mkdir -p "$BMTD_CONFIG_DIR"
+    cat > "$BMTD_CONFIG_EXAMPLE" <<'EOFBMTDINIEXAMPLE'
+; AllTune2 BMTD configuration example
+
+[general]
+log_file=/var/www/html/alltune2/logs/bmtd.log
+
+[brandmeister]
+host=3104.repeater.net
+port=54006
+password=YOUR_BRANDMEISTER_HOTSPOT_PASSWORD
+
+[identity]
+dmr_id=YOUR_DMR_ID
+callsign=YOUR_CALLSIGN
+
+[tlv]
+rx_port=31103
+tx_host=127.0.0.1
+tx_port=31100
+timeout_ms=1000
+
+[behavior]
+startup_tg=0
+keepalive_seconds=5
+rx_idle_end_ms=1500
+reconnect_delay_seconds=3
+max_missed=3
+
+[private_node]
+enabled=true
+asterisk_bin=/usr/sbin/asterisk
+mynode="YOUR_ALLSTAR_NODE"
+private_node="YOUR_DVSWITCH_NODE"
+autoload_mode=transceive
+
+EOFBMTDINIEXAMPLE
+
+    chmod 0644 "$BMTD_CONFIG_EXAMPLE"
+    chown root:root "$BMTD_CONFIG_EXAMPLE"
+}
+
+create_bmtd_config_if_missing() {
+    mkdir -p "$BMTD_CONFIG_DIR"
+    BMTD_CONFIG_CREATED_THIS_RUN=0
+
+    if [[ -f "$BMTD_CONFIG_FILE" ]]; then
+        log "Live bmtd.ini already exists. Preserving current values."
+    elif [[ -f "$BMTD_CONFIG_EXAMPLE" ]]; then
+        log "Creating starter bmtd.ini from bmtd.ini.example..."
+        cp -f "$BMTD_CONFIG_EXAMPLE" "$BMTD_CONFIG_FILE"
+        BMTD_CONFIG_CREATED_THIS_RUN=1
+        quiet_detail "Created starter BMTD config: $BMTD_CONFIG_FILE"
+    else
+        fail "Neither $BMTD_CONFIG_FILE nor $BMTD_CONFIG_EXAMPLE exists."
+    fi
+
+    chmod 0640 "$BMTD_CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$BMTD_CONFIG_FILE"
+}
+
+bmtd_ini_set_if_placeholder_or_missing() {
+    local section="$1"
+    local key="$2"
+    local value="$3"
+
+    [[ -n "$value" ]] || return 0
+    is_placeholder_value "$value" && return 0
+
+    python3 - "$BMTD_CONFIG_FILE" "$section" "$key" "$value" <<'PYBMTDINI'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+section = sys.argv[2]
+key = sys.argv[3]
+value = sys.argv[4]
+
+text = path.read_text() if path.exists() else ""
+lines = text.splitlines()
+changed = False
+
+placeholder_tokens = (
+    "", "YOUR", "Your", "CHANGE_ME", "PLACEHOLDER", "YOURCALL",
+    "YOUR_DMR_ID", "YOUR_CALLSIGN", "YOUR_BRANDMEISTER_HOTSPOT_PASSWORD",
+    "YOUR_ALLSTAR_NODE", "YOUR_DVSWITCH_NODE", "000000000"
+)
+
+def is_placeholder(v: str) -> bool:
+    raw = v.strip().strip('"')
+    if raw == "":
+        return True
+    return any(token in raw for token in placeholder_tokens if token)
+
+quoted_keys = {"password", "mynode", "private_node"}
+
+def render_value(k: str, v: str) -> str:
+    raw = v.strip().strip('"')
+    if k.lower() in quoted_keys:
+        raw = raw.replace("\\", "\\\\").replace('"', '\\"')
+        return f'"{raw}"'
+    return v.strip()
+
+def render_line(k: str, v: str) -> str:
+    return f"{k}={render_value(k, v)}"
+
+start = None
+end = len(lines)
+for i, line in enumerate(lines):
+    if line.strip().lower() == f"[{section}]".lower():
+        start = i
+        for j in range(i + 1, len(lines)):
+            if lines[j].strip().startswith("[") and lines[j].strip().endswith("]"):
+                end = j
+                break
+        break
+
+if start is None:
+    if lines and lines[-1].strip():
+        lines.append("")
+    lines.extend([f"[{section}]", render_line(key, value)])
+    changed = True
+else:
+    key_line = None
+    for i in range(start + 1, end):
+        if "=" not in lines[i]:
+            continue
+        left, right = lines[i].split("=", 1)
+        if left.strip().lower() == key.lower():
+            key_line = i
+            if is_placeholder(right):
+                lines[i] = render_line(key, value)
+                changed = True
+            break
+    if key_line is None:
+        lines.insert(end, render_line(key, value))
+        changed = True
+
+if changed:
+    path.write_text("\n".join(lines).rstrip() + "\n")
+PYBMTDINI
+}
+
+sync_bmtd_config_from_system_if_safe() {
+    if [[ "${BMTD_CONFIG_CREATED_THIS_RUN:-0}" != "1" ]]; then
+        log "Existing bmtd.ini preserved; skipping BMTD placeholder sync."
+        return 0
+    fi
+
+    log "Syncing BMTD config placeholders from existing AllTune2/Analog_Bridge settings when safe..."
+
+    local mynode=""
+    local dvswitch_node=""
+    local bm_password=""
+    local gateway_dmr_id=""
+    local callsign=""
+
+    mynode="$(config_value_or_empty MYNODE || true)"
+    dvswitch_node="$(config_value_or_empty DVSWITCH_NODE || true)"
+    bm_password="$(config_value_or_empty BM_SelfcarePassword || true)"
+    gateway_dmr_id="$(ini_value_any_section "$ANALOG_BRIDGE_INI" gatewayDmrId || true)"
+    if [[ -z "$gateway_dmr_id" ]]; then
+        gateway_dmr_id="$(ini_value_any_section "$ANALOG_BRIDGE_INI" repeaterID || true)"
+    fi
+    callsign="$(ini_value_any_section "$ANALOG_BRIDGE_INI" gatewayCallsign || true)"
+    if [[ -z "$callsign" ]]; then
+        callsign="$(ini_value_any_section "$DVSWITCH_INI" gatewayCallsign || true)"
+    fi
+    if [[ -z "$callsign" ]]; then
+        callsign="$(ini_value_any_section "$DVSWITCH_INI" callsign || true)"
+    fi
+
+    bmtd_ini_set_if_placeholder_or_missing "brandmeister" "password" "$bm_password"
+    bmtd_ini_set_if_placeholder_or_missing "identity" "dmr_id" "$gateway_dmr_id"
+    bmtd_ini_set_if_placeholder_or_missing "identity" "callsign" "$callsign"
+    bmtd_ini_set_if_placeholder_or_missing "private_node" "mynode" "$mynode"
+    bmtd_ini_set_if_placeholder_or_missing "private_node" "private_node" "$dvswitch_node"
+
+    chmod 0640 "$BMTD_CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$BMTD_CONFIG_FILE"
+}
+
+check_bmtd_config_content() {
+    log "Checking BMTD config content..."
+
+    local placeholders_regex='YOUR|Your|YOURCALL|CHANGE_ME|PLACEHOLDER|000000000'
+
+    BMTD_CONFIG_HAS_PLACEHOLDERS=0
+    if grep -Eq "$placeholders_regex" "$BMTD_CONFIG_FILE"; then
+        BMTD_CONFIG_HAS_PLACEHOLDERS=1
+        quiet_detail "bmtd.ini still contains placeholder values. BMTD may not work until it is reviewed."
+    fi
+
+    if ! grep -qE '^[[:space:]]*password[[:space:]]*=' "$BMTD_CONFIG_FILE"; then
+        warn "bmtd.ini does not define BrandMeister password. BMTD authentication will fail."
+    fi
+
+    if ! grep -qE '^[[:space:]]*dmr_id[[:space:]]*=' "$BMTD_CONFIG_FILE"; then
+        warn "bmtd.ini does not define dmr_id. BMTD will not identify correctly."
+    fi
+}
+
+prepare_bmtd_binary() {
+    log "Checking shipped BMTD binary..."
+
+    [[ -f "$BMTD_HELPER" ]] || fail "BMTD helper not found: $BMTD_HELPER"
+    [[ -f "$BMTD_BINARY" ]] || fail "BMTD binary not found: $BMTD_BINARY"
+
+    chmod 0755 "$BMTD_BINARY"
+    chown root:root "$BMTD_BINARY"
+
+    [[ -x "$BMTD_BINARY" ]] || fail "BMTD binary is not executable: $BMTD_BINARY"
+
+    local arch
+    arch="$(dpkg --print-architecture 2>/dev/null || uname -m 2>/dev/null || true)"
+    if [[ "$arch" != "arm64" && "$arch" != "aarch64" ]]; then
+        fail "BMTD binary is built for 64-bit ARM. This system reports architecture: ${arch:-unknown}"
+    fi
+
+    if command -v ldd >/dev/null 2>&1; then
+        if ldd "$BMTD_BINARY" 2>/dev/null | grep -q "not found"; then
+            ldd "$BMTD_BINARY" 2>/dev/null || true
+            fail "BMTD binary has missing runtime libraries. Install the missing runtime packages and rerun setup."
+        fi
+    fi
+}
+
+check_bmtd_binary() {
+    [[ -x "$BMTD_BINARY" ]] || fail "BMTD binary missing or not executable: $BMTD_BINARY"
+    log "BMTD binary exists: $BMTD_BINARY"
+}
+
+stop_existing_bmtd_if_running() {
+    log "Stopping any active BMTD instance before runtime/config update..."
+
+    if [[ -x "$BMTD_HELPER" ]]; then
+        "$BMTD_HELPER" stop >/dev/null 2>&1 || true
+    fi
+
+    pkill -f "$BMTD_BINARY" >/dev/null 2>&1 || true
+    sleep 1
+
+    if pgrep -f "$BMTD_BINARY" >/dev/null 2>&1; then
+        fail "BMTD process is still running after stop attempt. Stop it before continuing."
+    fi
+
+    log "No active BMTD process remains."
+}
+
+remove_legacy_stfu_runtime() {
+    log "Removing legacy STFU runtime path and sudo/logrotate rules..."
+
+    if [[ -x "$LEGACY_BM_RECEIVE_HELPER" ]]; then
+        "$LEGACY_BM_RECEIVE_HELPER" stop >/dev/null 2>&1 || true
+    fi
+
+    pkill -f "$LEGACY_LOCAL_STFU_BIN" >/dev/null 2>&1 || true
+    rm -f "$LEGACY_BM_RECEIVE_SUDOERS_FILE" >/dev/null 2>&1 || true
+    rm -f "$LEGACY_BM_RECEIVE_LOGROTATE_FILE" /etc/logrotate.d/alltune2-stfu >/dev/null 2>&1 || true
+    rm -rf "$LEGACY_STFU_DIR" >/dev/null 2>&1 || true
+    rm -f "$LEGACY_BM_RECEIVE_HELPER" >/dev/null 2>&1 || true
+
+    quiet_detail "Legacy STFU runtime/helper path removed if present. Old STFU log files are preserved."
+}
+
 
 prepare_tgifd_binary() {
     log "Checking shipped TGIFD binary..."
@@ -838,7 +1122,9 @@ check_required_repo_files() {
         "$APP_DIR/VERSION"
         "$APP_DIR/.gitignore"
         "$APP_DIR/setup_alltune2.sh"
-        "$APP_DIR/alltune2-bm-receive.sh"
+        "$BMTD_HELPER"
+        "$BMTD_BINARY"
+        "$BMTD_CONFIG_EXAMPLE"
         "$APP_DIR/app/Support/Config.php"
         "$APP_DIR/api/connect.php"
         "$APP_DIR/api/status.php"
@@ -849,7 +1135,6 @@ check_required_repo_files() {
         "$APP_DIR/public/assets/js/app.js"
         "$APP_DIR/public/assets/css/style.css"
         "$CONFIG_EXAMPLE_FILE"
-        "$LOCAL_STFU_BIN"
         "$TGIF_HELPER"
         "$TGIF_BINARY"
         "$TGIF_CONFIG_EXAMPLE"
@@ -888,38 +1173,42 @@ check_optional_files() {
     local file
     for file in "${optional_files[@]}"; do
         if [[ ! -f "$file" ]]; then
-            warn "Optional file not found: $file"
+            quiet_detail "Optional file not found: $file"
         fi
     done
 }
 
 check_dvswitch_dependencies() {
-    log "Checking DVSwitch system dependencies..."
+    log "Checking DVSwitch/Analog_Bridge system dependency hints..."
 
-    [[ -x "$DVSWITCH_SH" ]] || fail "Required DVSwitch helper not found or not executable: $DVSWITCH_SH"
-    [[ -f "$DVSWITCH_INI" ]] || fail "Required DVSwitch.ini not found: $DVSWITCH_INI"
-    [[ -f "$MMDVM_BRIDGE_INI" ]] || fail "Required MMDVM_Bridge.ini not found: $MMDVM_BRIDGE_INI"
-    [[ -f "$ANALOG_BRIDGE_INI" ]] || fail "Required Analog_Bridge.ini not found: $ANALOG_BRIDGE_INI"
+    if [[ ! -x "$DVSWITCH_SH" ]]; then
+        quiet_detail "DVSwitch helper not found or not executable: $DVSWITCH_SH. MMDVM-backed modes may need manual configuration."
+    fi
+    if [[ ! -f "$DVSWITCH_INI" ]]; then
+        quiet_detail "DVSwitch.ini not found: $DVSWITCH_INI. Starter configs will keep placeholders where needed."
+    fi
+    if [[ ! -f "$MMDVM_BRIDGE_INI" ]]; then
+        quiet_detail "MMDVM_Bridge.ini not found: $MMDVM_BRIDGE_INI. MMDVM-backed modes may need manual configuration."
+    fi
+    if [[ ! -f "$ANALOG_BRIDGE_INI" ]]; then
+        quiet_detail "Analog_Bridge.ini not found: $ANALOG_BRIDGE_INI. BMTD/TGIFD identity placeholders may need manual editing."
+    fi
 
-    log "DVSwitch dependencies look present."
+    log "DVSwitch/Analog_Bridge dependency hints checked."
 }
 
-check_helper_local_paths() {
-    log "Checking BM receive helper local paths..."
+check_bmtd_helper_local_paths() {
+    log "Checking BMTD helper local paths..."
 
-    grep -q '^STFU_DIR="/var/www/html/alltune2/stfu"$' "$BM_RECEIVE_HELPER"         || fail "alltune2-bm-receive.sh is not pointed at the AllTune2-local STFU directory."
-
-    grep -q '^STFU_BIN="/var/www/html/alltune2/stfu/STFU"$' "$BM_RECEIVE_HELPER"         || fail "alltune2-bm-receive.sh is not pointed at the AllTune2-local STFU binary."
-
-    if grep -q '/usr/local/bin/STFU' "$BM_RECEIVE_HELPER"; then
-        fail "alltune2-bm-receive.sh still references /usr/local/bin/STFU."
+    if grep -qE '/usr/local/bin/STFU|/opt/STFU|/var/www/html/alltune2/stfu|build/bmtd' "$BMTD_HELPER"; then
+        fail "BMTD helper still references a legacy STFU path or build/bmtd instead of bmtd/bin/bmtd."
     fi
 
-    if grep -q '/opt/STFU' "$BM_RECEIVE_HELPER"; then
-        fail "alltune2-bm-receive.sh still references /opt/STFU."
+    if ! grep -q 'bmtd/bin/bmtd' "$BMTD_HELPER" && ! grep -q '\$BMTD_DIR/bin/bmtd' "$BMTD_HELPER"; then
+        quiet_detail "BMTD helper does not visibly reference bmtd/bin/bmtd. Verify BIN_FILE before release."
     fi
 
-    log "BM receive helper local STFU paths look correct."
+    log "BMTD helper path check completed."
 }
 
 set_tree_mode_and_owner() {
@@ -952,7 +1241,7 @@ set_permissions() {
         "$PUBLIC_DIR"
         "$DOCS_DIR"
         "$TOOLS_DIR"
-        "$LOCAL_STFU_DIR"
+        "$BMTD_DIR"
     )
     local dir
     for dir in "${readonly_dirs[@]}"; do
@@ -978,14 +1267,16 @@ set_permissions() {
         fi
     done
 
-    chmod 0755 "$APP_DIR/setup_alltune2.sh"
-    chown root:root "$APP_DIR/setup_alltune2.sh"
+    chmod 0755 "$SCRIPT_PATH"
+    chown root:root "$SCRIPT_PATH"
 
-    chmod 0755 "$BM_RECEIVE_HELPER"
-    chown root:root "$BM_RECEIVE_HELPER"
+    chmod 0755 "$BMTD_HELPER"
+    chown root:root "$BMTD_HELPER"
 
-    chmod 0755 "$LOCAL_STFU_BIN"
-    chown root:root "$LOCAL_STFU_BIN"
+    if [[ -f "$BMTD_BINARY" ]]; then
+        chmod 0755 "$BMTD_BINARY"
+        chown root:root "$BMTD_BINARY"
+    fi
 
     chmod 0755 "$TGIF_HELPER"
     chown root:root "$TGIF_HELPER"
@@ -1017,6 +1308,15 @@ set_permissions() {
 
     chmod 0644 "$CONFIG_EXAMPLE_FILE"
     chown root:root "$CONFIG_EXAMPLE_FILE"
+
+    chmod 0755 "$BMTD_CONFIG_DIR"
+    chown root:"$WEB_GROUP" "$BMTD_CONFIG_DIR"
+
+    chmod 0640 "$BMTD_CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$BMTD_CONFIG_FILE"
+
+    chmod 0644 "$BMTD_CONFIG_EXAMPLE"
+    chown root:root "$BMTD_CONFIG_EXAMPLE"
 
     chmod 0755 "$TGIF_CONFIG_DIR"
     chown root:"$WEB_GROUP" "$TGIF_CONFIG_DIR"
@@ -1062,12 +1362,12 @@ create_or_update_sudoers_files() {
     log "Ensuring required sudoers rules exist..."
 
     [[ -x "$ASTERISK_BIN" ]] || fail "Asterisk binary not found at $ASTERISK_BIN"
-    [[ -x "$BM_RECEIVE_HELPER" ]] || fail "BM receive helper is not executable: $BM_RECEIVE_HELPER"
+    [[ -x "$BMTD_HELPER" ]] || fail "BMTD helper is not executable: $BMTD_HELPER"
     [[ -x "$TGIF_HELPER" ]] || fail "TGIF helper is not executable: $TGIF_HELPER"
     [[ -x "$SYSTEMCTL_BIN" ]] || fail "systemctl not found at $SYSTEMCTL_BIN"
 
     install_validated_sudoers_file "$ASTERISK_SUDOERS_FILE" "$EXPECTED_ASTERISK_SUDOERS_RULE"
-    install_validated_sudoers_file "$BM_RECEIVE_SUDOERS_FILE" "$EXPECTED_BM_RECEIVE_SUDOERS_RULE"
+    install_validated_sudoers_file "$BMTD_HELPER_SUDOERS_FILE" "$EXPECTED_BMTD_HELPER_SUDOERS_RULE"
     install_validated_sudoers_file "$TGIF_HELPER_SUDOERS_FILE" "$EXPECTED_TGIF_HELPER_SUDOERS_RULE"
     install_validated_sudoers_file "$MMDVM_BRIDGE_SUDOERS_FILE" "$EXPECTED_MMDVM_BRIDGE_SUDOERS_RULE"
     install_validated_sudoers_file "$ASTERISK_SERVICE_SUDOERS_FILE" "$EXPECTED_ASTERISK_SERVICE_SUDOERS_RULE"
@@ -1101,8 +1401,8 @@ check_php_syntax() {
 check_shell_syntax() {
     log "Running shell syntax checks..."
 
-    bash -n "$APP_DIR/setup_alltune2.sh" || fail "Shell syntax check failed: $APP_DIR/setup_alltune2.sh"
-    bash -n "$BM_RECEIVE_HELPER" || fail "Shell syntax check failed: $BM_RECEIVE_HELPER"
+    bash -n "$SCRIPT_PATH" || fail "Shell syntax check failed: $SCRIPT_PATH"
+    bash -n "$BMTD_HELPER" || fail "Shell syntax check failed: $BMTD_HELPER"
     bash -n "$TGIF_HELPER" || fail "Shell syntax check failed: $TGIF_HELPER"
 
     log "Shell syntax checks passed."
@@ -1117,6 +1417,17 @@ check_tgifd_runtime_files() {
     [[ -f "$TGIF_COPYRIGHT_NOTICE" ]] || fail "Missing TGIFD copyright notice: $TGIF_COPYRIGHT_NOTICE"
 
     log "TGIFD runtime checks passed."
+}
+
+
+check_bmtd_runtime_files() {
+    log "Checking BMTD runtime files..."
+
+    [[ -x "$BMTD_BINARY" ]] || fail "BMTD binary missing or not executable: $BMTD_BINARY"
+    [[ -f "$BMTD_HELPER" ]] || fail "Missing BMTD helper: $BMTD_HELPER"
+    [[ -f "$BMTD_CONFIG_EXAMPLE" ]] || fail "Missing BMTD config example: $BMTD_CONFIG_EXAMPLE"
+
+    log "BMTD runtime checks passed."
 }
 
 check_config_content() {
@@ -1152,11 +1463,15 @@ warn_if_placeholder_values_remain() {
     local placeholders_regex='YOUR NODE|YOUR DVSWITCH NODE|CHANGE_ME|YOUR_REAL_PASSWORD|YOUR_REAL_KEY|YOUR PASSWORD|YOUR KEY'
 
     if grep -Eq "$placeholders_regex" "$CONFIG_FILE"; then
-        warn "config.ini still contains placeholder values. BM/TGIF/YSF may not work until it is edited."
+        quiet_detail "config.ini still contains placeholder values. Review before first use."
     fi
 
     if grep -Eq "$placeholders_regex" "$TGIF_CONFIG_FILE"; then
-        warn "tgifd.ini still contains placeholder values. TGIFD may not work until it is reviewed."
+        quiet_detail "tgifd.ini still contains placeholder values. TGIFD may not work until it is reviewed."
+    fi
+
+    if grep -Eq "$placeholders_regex" "$BMTD_CONFIG_FILE"; then
+        quiet_detail "bmtd.ini still contains placeholder values. BMTD may not work until it is reviewed."
     fi
 
     if ! grep -Eq 'MYNODE[[:space:]]*=' "$CONFIG_FILE"; then
@@ -1172,18 +1487,18 @@ check_external_config_hints() {
     log "Checking external system config hints..."
 
     if ! grep -qE '^[[:space:]]*gatewayDmrId[[:space:]]*=' "$ANALOG_BRIDGE_INI"; then
-        warn "Analog_Bridge.ini does not contain gatewayDmrId. Local TG generation may fail."
+        quiet_detail "Analog_Bridge.ini does not contain gatewayDmrId. Local TG generation may fail."
     fi
 
     if ! grep -qE '^[[:space:]]*txTg[[:space:]]*=' "$ANALOG_BRIDGE_INI"; then
-        warn "Analog_Bridge.ini does not contain txTg. Local TG fallback may fail."
+        quiet_detail "Analog_Bridge.ini does not contain txTg. Local TG fallback may fail."
     fi
 
     if ! grep -qE '^[[:space:]]*BMPassword[[:space:]]*=' "$DVSWITCH_INI"; then
-        warn "DVSwitch.ini does not contain BMPassword. BM receive mode may not work."
+        quiet_detail "DVSwitch.ini does not contain BMPassword. BM receive mode may not work."
     fi
 
-    echo "[INFO] TGIFD reminder: if TGIF does not connect, review $TGIF_CONFIG_FILE and the Analog_Bridge identity/TLV settings."
+    quiet_detail "TGIFD reminder: if TGIF does not connect, review $TGIF_CONFIG_FILE and the Analog_Bridge identity/TLV settings."
 }
 
 
@@ -1210,12 +1525,14 @@ ensure_log_file_if_missing() {
 
     if [[ ! -e "$file" ]]; then
         touch "$file"
-        chmod 0644 "$file"
-        chown root:root "$file"
         quiet_detail "Created missing log file: $file"
     else
         quiet_detail "Existing log file preserved: $file"
     fi
+
+    chmod 0664 "$file"
+    chown "$WEB_USER":"$WEB_GROUP" "$file"
+    quiet_detail "Runtime log file permissions ready: $file"
 }
 
 install_logrotate_rule_without_duplicates() {
@@ -1233,7 +1550,7 @@ install_logrotate_rule_without_duplicates() {
         owners="$(logrotate_external_owners "$target_file" "$log_path" || true)"
         if [[ -n "$owners" ]]; then
             conflict=1
-            warn "Existing logrotate rule already manages $log_path. Preserving existing owner(s): $(echo "$owners" | paste -sd ',' -)"
+            quiet_detail "Existing logrotate rule already manages $log_path. Preserving existing owner(s): $(echo "$owners" | paste -sd ',' -)"
         else
             managed_paths+=("$log_path")
         fi
@@ -1290,7 +1607,6 @@ normalize_tgifd_log_path() {
     mkdir -p "$LOGS_DIR"
 
     # Keep TGIFD on the current AllTune2 log path for fresh installs and updates.
-    # Old physical TGIFD log leftovers are removed quietly in create_or_update_logrotate_files().
     if [[ -f "$TGIF_CONFIG_FILE" ]]; then
         current_tgifd_log_path="$(grep -E '^[[:space:]]*log_file[[:space:]]*=' "$TGIF_CONFIG_FILE" 2>/dev/null | tail -n 1 | sed -E 's/^[^=]+=//; s/^[[:space:]]*//; s/[[:space:]]*$//; s/^"//; s/"$//' || true)"
         if [[ "$current_tgifd_log_path" == "./tgifd.log" || "$current_tgifd_log_path" == "$TGIF_DIR/tgifd.log" || "$current_tgifd_log_path" == "/var/www/html/alltune2/tgif/tgifd.log" ]]; then
@@ -1319,27 +1635,11 @@ create_or_update_logrotate_files() {
 
     mkdir -p "$LOGS_DIR" "$TGIF_DIR"
 
-    # Quietly remove stale physical log files from older AllTune2 BM/TGIFD paths.
-    # Current logs are $LOGS_DIR/STFU.log and $LOGS_DIR/tgifd.log.
-    rm -f \
-        /var/log/alltune2-bm-receive.log \
-        /var/log/alltune2-bm-receive.log.* \
-        /var/log/bm-stfu.log \
-        /var/log/bm-stfu.log.* \
-        /var/log/STFU.log \
-        /var/log/STFU.log.* \
-        "$TGIF_DIR/tgifd.log" \
-        "$TGIF_DIR/tgifd.log".* \
-        "$LOGS_DIR/tgifd-helper.log" \
-        "$LOGS_DIR/tgifd-helper.log".* \
-        >/dev/null 2>&1 || true
+    # Current logs are $LOGS_DIR/bmtd.log and $LOGS_DIR/tgifd.log.
 
-    rm -f /etc/logrotate.d/alltune2-stfu >/dev/null 2>&1 || true
-    if [[ -f "$BM_RECEIVE_LOGROTATE_FILE" ]] && grep -Eq '/var/log/alltune2-bm-receive\.log|/var/log/STFU\.log|/var/log/bm-stfu\.log' "$BM_RECEIVE_LOGROTATE_FILE"; then
-        rm -f "$BM_RECEIVE_LOGROTATE_FILE" >/dev/null 2>&1 || true
-    fi
+    rm -f /etc/logrotate.d/alltune2-stfu "$LEGACY_BM_RECEIVE_LOGROTATE_FILE" >/dev/null 2>&1 || true
 
-    ensure_log_file_if_missing "$BM_RECEIVE_LOG_FILE"
+    ensure_log_file_if_missing "$BMTD_LOG_FILE"
     ensure_log_file_if_missing "$TGIF_LOG_FILE"
     normalize_tgifd_log_path
 
@@ -1353,8 +1653,8 @@ create_or_update_logrotate_files() {
     copytruncate
     su root root'
 
-    install_logrotate_rule_without_duplicates "$BM_RECEIVE_LOGROTATE_FILE" "$default_one_day_rule" \
-        "$BM_RECEIVE_LOG_FILE"
+    install_logrotate_rule_without_duplicates "$BMTD_LOGROTATE_FILE" "$default_one_day_rule" \
+        "$BMTD_LOG_FILE"
 
     install_logrotate_rule_without_duplicates "$TGIF_LOGROTATE_FILE" "$default_one_day_rule" \
         "$TGIF_LOG_FILE"
@@ -1368,7 +1668,7 @@ create_or_update_logrotate_files() {
             :
         fi
     else
-        warn "logrotate command not found. Rotation cannot run until logrotate is installed."
+        quiet_detail "logrotate command not found. Rotation cannot run until logrotate is installed."
     fi
 
     log "AllTune2 logrotate checks completed. Existing user/system rules were preserved."
@@ -1379,12 +1679,12 @@ create_or_update_apache_security_conf() {
     log "Ensuring Apache security hardening exists..."
 
     if ! command -v apache2ctl >/dev/null 2>&1; then
-        warn "apache2ctl not found. Skipping Apache security config install. Protect $APP_DIR manually before exposing it on a network."
+        quiet_detail "apache2ctl not found. Skipping Apache security config install."
         return
     fi
 
     if ! command -v a2enconf >/dev/null 2>&1; then
-        warn "a2enconf not found. Skipping Apache security config install. Protect $APP_DIR manually before exposing it on a network."
+        quiet_detail "a2enconf not found. Skipping Apache security config install."
         return
     fi
 
@@ -1403,7 +1703,7 @@ create_or_update_apache_security_conf() {
     </FilesMatch>
 </Directory>
 
-<DirectoryMatch "^$APP_DIR/(\.git|app|data|docs|logs|run|tools|stfu|tgif)(/|$)">
+<DirectoryMatch "^$APP_DIR/(\.git|app|data|docs|logs|run|tools|tgif|bmtd)(/|$)">
     Require all denied
 </DirectoryMatch>
 EOF
@@ -1412,12 +1712,12 @@ EOF
     chown root:root "$APACHE_SECURITY_CONF_FILE"
 
     a2enconf "$APACHE_SECURITY_CONF_NAME" >/dev/null || fail "Failed to enable Apache security conf: $APACHE_SECURITY_CONF_NAME"
-    apache2ctl configtest >/dev/null || fail "Apache configtest failed after installing $APACHE_SECURITY_CONF_FILE"
+    apache2ctl configtest >/dev/null 2>&1 || fail "Apache configtest failed after installing $APACHE_SECURITY_CONF_FILE"
 
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet apache2; then
         systemctl reload apache2 || fail "Failed to reload apache2 after installing $APACHE_SECURITY_CONF_FILE"
     else
-        warn "Apache service is not active or systemctl is unavailable. Installed $APACHE_SECURITY_CONF_FILE, but Apache was not reloaded automatically."
+        quiet_detail "Apache service is not active or systemctl is unavailable. Installed $APACHE_SECURITY_CONF_FILE, but Apache was not reloaded automatically."
     fi
 
     log "Installed Apache security conf: $APACHE_SECURITY_CONF_FILE"
@@ -1427,18 +1727,18 @@ create_or_update_apache_accesslog_filter() {
     log "Ensuring Apache access log filter exists for AllTune2 polling URLs..."
 
     if ! command -v apache2ctl >/dev/null 2>&1; then
-        warn "apache2ctl not found. Skipping Apache access log filter install."
+        quiet_detail "apache2ctl not found. Skipping Apache access log filter install."
         return
     fi
 
     if [[ ! -d /etc/apache2/sites-available && ! -d /etc/apache2/sites-enabled ]]; then
-        warn "Apache site directories not found. Skipping Apache access log filter install."
+        quiet_detail "Apache site directories not found. Skipping Apache access log filter install."
         return
     fi
 
     local restore_file
     restore_file="$(mktemp "${TMPDIR:-/tmp}/alltune2-apache-accesslog-restore.XXXXXX.json")" || {
-        warn "Could not create temporary restore file for Apache access log filter."
+        quiet_detail "Could not create temporary restore file for Apache access log filter."
         return
     }
     local patch_output
@@ -1565,14 +1865,14 @@ if not changed:
     print('NO_CHANGES')
 PYAPACHE
 )"; then
-        warn "Apache access log filter patch helper failed. Leaving Apache config unchanged."
+        quiet_detail "Apache access log filter patch helper failed. Leaving Apache config unchanged."
         rm -f "$restore_file"
         return
     fi
 
     if [[ "$patch_output" == *"SKIPPED"* ]]; then
         while IFS= read -r line; do
-            [[ "$line" == SKIPPED* ]] && warn "${line#SKIPPED }"
+            [[ "$line" == SKIPPED* ]] && quiet_detail "${line#SKIPPED }"
         done <<< "$patch_output"
     fi
 
@@ -1582,7 +1882,7 @@ PYAPACHE
         return
     fi
 
-    if ! apache2ctl configtest >/dev/null; then
+    if ! apache2ctl configtest >/dev/null 2>&1; then
         warn "Apache configtest failed after installing AllTune2 access log filter. Restoring Apache site files."
         if [[ -f "$restore_file" ]]; then
             python3 - "$restore_file" <<'PYRESTORE'
@@ -1598,8 +1898,8 @@ restore_file.unlink(missing_ok=True)
 PYRESTORE
         fi
 
-        if apache2ctl configtest >/dev/null; then
-            warn "Restored Apache site files. Access log filter was not installed."
+        if apache2ctl configtest >/dev/null 2>&1; then
+            quiet_detail "Restored Apache site files. Access log filter was not installed."
             rm -f "$restore_file"
             return
         fi
@@ -1613,7 +1913,7 @@ PYRESTORE
     if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet apache2; then
         systemctl reload apache2 || fail "Failed to reload apache2 after installing AllTune2 access log filter."
     else
-        warn "Apache service is not active or systemctl is unavailable. Access log filter installed, but Apache was not reloaded automatically."
+        quiet_detail "Apache service is not active or systemctl is unavailable. Access log filter installed, but Apache was not reloaded automatically."
     fi
 
     log "Installed Apache access log filter for AllTune2 status/ribbon polling URLs."
@@ -1647,7 +1947,7 @@ check_sudoers_requirement() {
 
     grep -qF "$EXPECTED_ASTERISK_SUDOERS_RULE" "$ASTERISK_SUDOERS_FILE"         || fail "Expected Asterisk sudoers rule not found in $ASTERISK_SUDOERS_FILE"
 
-    grep -qF "$EXPECTED_BM_RECEIVE_SUDOERS_RULE" "$BM_RECEIVE_SUDOERS_FILE"         || fail "Expected BM receive sudoers rule not found in $BM_RECEIVE_SUDOERS_FILE"
+    grep -qF "$EXPECTED_BMTD_HELPER_SUDOERS_RULE" "$BMTD_HELPER_SUDOERS_FILE"         || fail "Expected BMTD sudoers rule not found in $BMTD_HELPER_SUDOERS_FILE"
 
     grep -qF "$EXPECTED_TGIF_HELPER_SUDOERS_RULE" "$TGIF_HELPER_SUDOERS_FILE"         || fail "Expected TGIF helper sudoers rule not found in $TGIF_HELPER_SUDOERS_FILE"
 
@@ -1658,14 +1958,14 @@ check_sudoers_requirement() {
     grep -qF "$EXPECTED_YSFGATEWAY_SUDOERS_RULE" "$YSFGATEWAY_SUDOERS_FILE"         || fail "Expected YSFGateway sudoers rule not found in $YSFGATEWAY_SUDOERS_FILE"
 
     visudo -cf "$ASTERISK_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $ASTERISK_SUDOERS_FILE"
-    visudo -cf "$BM_RECEIVE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $BM_RECEIVE_SUDOERS_FILE"
+    visudo -cf "$BMTD_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $BMTD_HELPER_SUDOERS_FILE"
     visudo -cf "$TGIF_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $TGIF_HELPER_SUDOERS_FILE"
     visudo -cf "$MMDVM_BRIDGE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $MMDVM_BRIDGE_SUDOERS_FILE"
     visudo -cf "$ASTERISK_SERVICE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $ASTERISK_SERVICE_SUDOERS_FILE"
     visudo -cf "$YSFGATEWAY_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $YSFGATEWAY_SUDOERS_FILE"
 
     check_web_user_sudo_allowed "Asterisk CLI permission" "$ASTERISK_BIN"
-    check_web_user_sudo_allowed "BM receive helper permission" "$BM_RECEIVE_HELPER"
+    check_web_user_sudo_allowed "BMTD helper permission" "$BMTD_HELPER"
     check_web_user_sudo_allowed "TGIFD helper permission" "$TGIF_HELPER"
     check_web_user_sudo_allowed "MMDVM_Bridge start" "$SYSTEMCTL_BIN" start mmdvm_bridge.service
     check_web_user_sudo_allowed "YSFGateway start" "$SYSTEMCTL_BIN" start ysfgateway.service
@@ -1682,8 +1982,13 @@ check_status_endpoint_cli() {
     if php "$APP_DIR/api/status.php" >/dev/null 2>&1; then
         log "CLI execution of api/status.php succeeded."
     else
-        warn "CLI execution of api/status.php returned a non-zero status."
+        quiet_detail "CLI execution of api/status.php returned a non-zero status."
     fi
+}
+
+helper_status_output_has_action_status() {
+    local output="${1:-}"
+    [[ "$output" =~ \"action\"[[:space:]]*:[[:space:]]*\"status\" ]]
 }
 
 check_tgif_helper_cli() {
@@ -1691,19 +1996,19 @@ check_tgif_helper_cli() {
 
     local output
     if output="$(sudo "$TGIF_HELPER" status 2>&1)"; then
-        if [[ "$output" == *'"action": "status"'* ]]; then
+        if helper_status_output_has_action_status "$output"; then
             log "TGIFD helper root CLI status check returned JSON."
         else
-            warn "TGIFD helper root CLI status check returned unexpected output."
-            warn "$output"
+            quiet_detail "TGIFD helper root CLI status check returned unexpected output."
+            quiet_detail "$output"
         fi
     else
-        warn "TGIFD helper root CLI status check returned a non-zero status."
-        warn "$output"
+        quiet_detail "TGIFD helper root CLI status check returned a non-zero status."
+        quiet_detail "$output"
     fi
 
     if output="$(sudo -u "$WEB_USER" sudo -n "$TGIF_HELPER" status 2>&1)"; then
-        if [[ "$output" == *'"action": "status"'* ]]; then
+        if helper_status_output_has_action_status "$output"; then
             log "TGIFD helper web-user sudo status check returned JSON."
         else
             fail "TGIFD helper web-user sudo check returned unexpected output: $output"
@@ -1713,12 +2018,41 @@ check_tgif_helper_cli() {
     fi
 }
 
+
+check_bmtd_helper_cli() {
+    log "Checking BMTD helper through CLI as root and web user..."
+
+    local output
+    if output="$(sudo "$BMTD_HELPER" status 2>&1)"; then
+        if helper_status_output_has_action_status "$output"; then
+            log "BMTD helper root CLI status check returned JSON."
+        else
+            quiet_detail "BMTD helper root CLI status check returned unexpected output."
+            quiet_detail "$output"
+        fi
+    else
+        quiet_detail "BMTD helper root CLI status check returned a non-zero status."
+        quiet_detail "$output"
+    fi
+
+    if output="$(sudo -u "$WEB_USER" sudo -n "$BMTD_HELPER" status 2>&1)"; then
+        if helper_status_output_has_action_status "$output"; then
+            log "BMTD helper web-user sudo status check returned JSON."
+        else
+            fail "BMTD helper web-user sudo check returned unexpected output: $output"
+        fi
+    else
+        fail "BMTD helper web-user sudo check failed. Verify $BMTD_HELPER_SUDOERS_FILE. Output: $output"
+    fi
+}
+
 check_git_hygiene_warnings() {
     log "Checking for common local-only files that must not be committed..."
 
     local local_paths=(
         "$CONFIG_FILE"
         "$FAVORITES_FILE"
+        "$BMTD_CONFIG_FILE"
         "$TGIF_CONFIG_FILE"
         "$LOGS_DIR"
         "$RUN_DIR"
@@ -1769,38 +2103,27 @@ show_summary() {
     echo "Favorites:       $FAVORITES_FILE"
     echo "Web login:       $web_login"
     echo "Apache security: $apache_security"
+    echo "BM backend:      BMTD"
     echo "TGIF backend:    TGIFD"
     if [[ "$INSTALLER_MODE" != "verbose" ]]; then
         echo "Installer log:   $QUIET_COMMAND_LOG"
     fi
+    if [[ "${BMTD_CONFIG_HAS_PLACEHOLDERS:-0}" == "1" ]]; then
+        echo "BMTD config:     Review before first BM connect ($BMTD_CONFIG_FILE)"
+    else
+        echo "BMTD config:     Checked"
+    fi
     if [[ "${TGIFD_CONFIG_HAS_PLACEHOLDERS:-0}" == "1" ]]; then
-        echo "TGIFD config:    PLACEHOLDERS PRESENT - review $TGIF_CONFIG_FILE"
+        echo "TGIFD config:    Review before first TGIF connect ($TGIF_CONFIG_FILE)"
     else
         echo "TGIFD config:    Checked"
     fi
     echo
 
-    if [[ "${TGIFD_CONFIG_HAS_PLACEHOLDERS:-0}" == "1" ]]; then
-        echo "WARNING:"
-        echo "- TGIFD was installed, but tgifd.ini still contains placeholder values."
-        echo "- TGIF will not work correctly until $TGIF_CONFIG_FILE is reviewed."
-        echo
-    fi
-
-    echo "Important:"
-    echo "- Normal setup/update preserves config.ini, favorites.txt, and web login settings."
-    echo "- TGIFD helper must keep the stable controlled-restart retune path and must not restart mmdvm_bridge on stop."
-    echo "- TGIFD config must include [tlv] inbound_slot = 2 for reliable inbound TGIF audio."
-    echo "- To set/change the web login password:"
-    echo "  sudo /var/www/html/alltune2/setup_alltune2.sh --set-admin-password"
-    echo "- To disable web login and keep the saved password hash:"
-    echo "  sudo /var/www/html/alltune2/setup_alltune2.sh --disable-auth"
-    echo
-
-    echo "Next steps:"
-    echo "1. Open /alltune2/public/ in the browser."
-    echo "2. New installs: edit $CONFIG_FILE and $TGIF_CONFIG_FILE if placeholder values remain."
-    echo "3. Test your enabled modes."
+    echo "Notes:"
+    echo "- Existing config.ini, favorites.txt, and web login settings are preserved."
+    echo "- New installs should review config files if placeholders are shown above."
+    echo "- Open /alltune2/public/ and test your enabled modes."
     echo
 }
 
@@ -1836,6 +2159,16 @@ main() {
     check_runtime_tools
     check_web_user
 
+    step "Checking repo and system dependencies..."
+    check_required_repo_files
+    check_optional_files
+    check_dvswitch_dependencies
+    check_bmtd_helper_local_paths
+
+    step "Checking BMTD/TGIFD binaries..."
+    prepare_bmtd_binary
+    prepare_tgifd_binary
+
     step "Preparing application files..."
     make_dirs
     create_config_example
@@ -1843,22 +2176,22 @@ main() {
     ensure_auth_config_defaults
     create_favorites_if_missing
 
-    step "Stopping any active TGIFD before runtime/config changes..."
-    stop_existing_tgifd_if_running
+    step "Preparing BMTD configuration..."
+    create_bmtd_config_example_if_missing
+    create_bmtd_config_if_missing
+    sync_bmtd_config_from_system_if_safe
 
     step "Preparing TGIFD configuration..."
     create_tgifd_config_example_if_missing
     create_tgifd_config_if_missing
     sync_tgifd_config_from_system_if_safe
 
-    step "Checking repo and system dependencies..."
-    check_required_repo_files
-    check_optional_files
-    check_dvswitch_dependencies
-    check_helper_local_paths
+    step "Stopping any active BMTD/TGIFD after preflight checks..."
+    stop_existing_bmtd_if_running
+    stop_existing_tgifd_if_running
 
-    step "Checking TGIFD binary..."
-    prepare_tgifd_binary
+    step "Removing legacy STFU runtime path..."
+    remove_legacy_stfu_runtime
 
     step "Applying permissions and sudoers..."
     set_permissions
@@ -1870,14 +2203,18 @@ main() {
     step "Running installer self-checks..."
     check_php_syntax
     check_shell_syntax
+    check_bmtd_runtime_files
+    check_bmtd_binary
     check_tgifd_runtime_files
     check_tgifd_binary
     check_config_content
+    check_bmtd_config_content
     check_tgifd_config_content
     warn_if_placeholder_values_remain
     check_external_config_hints
     check_sudoers_requirement
     check_status_endpoint_cli
+    check_bmtd_helper_cli
     check_tgif_helper_cli
     check_git_hygiene_warnings
 

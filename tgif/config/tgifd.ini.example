@@ -39,16 +39,7 @@ private_node="YOUR_DVSWITCH_NODE"
 autoload_mode=transceive
 
 [mmdvm]
-rx_frequency=YOUR_RX_FREQUENCY
-tx_frequency=YOUR_TX_FREQUENCY
-power=5
-color_code=1
-latitude=0.000000
-longitude=0.000000
-height=0
-location=YOUR_LOCATION
-description=TGIFD via AllTune2
+; TGIFD reads this section from tgifd.ini for TGIF metadata.
+; It does not mean TGIFD depends on MMDVM_Bridge.ini at runtime.
+; Keep slots=2 for the AllTune2/TLV audio path.
 slots=2
-url=https://github.com/TerryClaiborne/alltune2
-version=alltune2-tgifd
-software=TGIFD

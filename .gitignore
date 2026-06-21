@@ -54,3 +54,5 @@ tgif/*.log.*
 
 # Local user data
 data/favorites.txt
+
+bmtd/config/bmtd.ini

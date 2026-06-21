@@ -730,7 +730,7 @@ function build_tracked_allstar_connected_nodes(
 
 function read_bm_receive_helper_status(): array
 {
-    $script = dirname(__DIR__) . '/alltune2-bm-receive.sh';
+    $script = dirname(__DIR__) . '/bmtd/alltune2-bmtd-helper.sh';
 
     $fallback = [
         'available' => false,
@@ -774,7 +774,7 @@ function read_bm_receive_helper_status(): array
         'active' => !empty($decoded['active']),
         'target' => trim((string) ($decoded['target'] ?? '')),
         'message' => trim((string) ($decoded['message'] ?? '')),
-        'stfu_running' => !empty($decoded['stfu_running']),
+        'stfu_running' => !empty($decoded['stfu_running']) || !empty($decoded['bmtd_running']),
         'mmdvm_bridge' => trim((string) ($decoded['mmdvm_bridge'] ?? '')),
         'pid' => trim((string) ($decoded['pid'] ?? '')),
         'version' => trim((string) ($decoded['version'] ?? '')),
@@ -926,23 +926,9 @@ $bmReceive = session_may_have_bm_runtime($selectedMode, $lastMode, $dmrNetwork, 
         'version' => '',
         'raw_output' => '',
     ];
-$tgifdRuntimeHint = is_file(dirname(__DIR__) . '/run/alltune2-tgifd.state')
-    || is_file(dirname(__DIR__) . '/run/alltune2-tgifd.pid');
-
-$tgifd = (session_may_have_tgif_runtime($selectedMode, $lastMode, $dmrNetwork, $dmrActiveNetwork, $lastStatus) || $tgifdRuntimeHint)
-    ? read_tgifd_helper_status()
-    : [
-        'available' => false,
-        'ok' => false,
-        'active' => false,
-        'target' => '',
-        'message' => '',
-        'tgif_running' => false,
-        'mmdvm_bridge' => '',
-        'analog_bridge' => '',
-        'pid' => '',
-        'raw_output' => '',
-    ];
+// TGIFD helper status is safe to read while idle. It does not start TGIFD,
+// does not require network credentials, and lets the dashboard know TGIFD is available.
+$tgifd = read_tgifd_helper_status();
 
 if ($bmReceive['active']) {
     $dmrNetwork = 'BM';
@@ -950,6 +936,17 @@ if ($bmReceive['active']) {
     $dmrActiveNetwork = 'BM';
     $dmrActiveTarget = $bmReceive['target'];
     $dvswitchLinkActive = true;
+    $lastMode = 'BM';
+    $managedDvSwitchMode = 'BM';
+    $managedDvSwitchTarget = $bmReceive['target'];
+
+    if ($bmReceive['target'] !== '') {
+        $lastTarget = $bmReceive['target'];
+        $pendingTarget = $bmReceive['target'];
+        $lastStatus = 'CONNECTED: TG ' . $bmReceive['target'] . ' (BM)';
+    } else {
+        $lastStatus = 'CONNECTED: BM';
+    }
 }
 
 if ($tgifd['active']) {
