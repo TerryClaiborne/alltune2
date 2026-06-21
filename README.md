@@ -4,7 +4,7 @@
 
 ✅ Optimized for Debian 12 & 13 on 64-bit ARM, including Raspberry Pi 4 and Raspberry Pi 5.
 
-AllTune2 is a modern control panel for **AllStarLink 3 + DVSwitch**.
+AllTune2 is a modern control panel for **AllStarLink 3 and DVSwitch-style radio systems**.
 
 It gives you one place to work with:
 
@@ -32,9 +32,9 @@ AllTune2 is meant to be a one-screen radio control center.
 
 With it, you can:
 
-- connect to BrandMeister talkgroups
-- connect to TGIF talkgroups through the native TGIFD backend
-- connect to YSF rooms / reflectors
+- connect to BrandMeister talkgroups through the native **BMTD** backend
+- connect to TGIF talkgroups through the native **TGIFD** backend
+- connect to YSF rooms / reflectors when YSF is enabled and already working on your system
 - connect to D-Star, P25, and NXDN when those modes are enabled and already working on your system
 - connect to AllStarLink nodes
 - connect to EchoLink nodes
@@ -45,7 +45,16 @@ With it, you can:
 - watch live status and activity
 - use spoken audio alerts for connects and disconnects
 
-AllTune2 does not replace ASL3, DVSwitch, Analog_Bridge, or MMDVM_Bridge. It controls them from one cleaner dashboard.
+AllTune2 does not replace ASL3 or Analog_Bridge.
+
+BrandMeister and TGIF now use AllTune2-native backends:
+
+- **BMTD** for BrandMeister
+- **TGIFD** for TGIF
+
+These two paths do **not** use STFU, HBLink, MMDVM_Bridge, `MMDVM_Bridge.ini`, or the old DVSwitch DMR sections for their network connection.
+
+YSF, D-Star, P25, and NXDN are different. Those modes still depend on your normal DVSwitch / MMDVM_Bridge setup already working before AllTune2 controls them.
 
 ---
 
@@ -73,8 +82,8 @@ Recent versions added several important improvements:
 - improved Saved Favorites stability
 - Live Status connected-node cards
 - Disconnect DVSwitch button in Live Status
-- better Local Monitor / Transceive handling for managed DVSwitch modes
-- spoken connect/disconnect alerts for managed modes, including D-Star
+- better Local Monitor / Transceive handling for supported managed modes
+- spoken connect/disconnect alerts for managed modes
 - Apache security hardening from the installer
 - optional web login for public or shared dashboards
 - View Only mode when logged out
@@ -85,7 +94,10 @@ Recent versions added several important improvements:
 - Favorites page now preserves the active sort when editing, saving, or removing entries
 - improved update lightning bolt that flashes when a newer GitHub version is available
 - hardened Apache access-log filter setup so updates safely handle combined AllTune2 + DVSwitch Cockpit polling filters
-- native TGIFD backend for TGIF, replacing the older TGIF/HBLink sidecar path
+- native **BMTD** backend for BrandMeister, replacing the older STFU path
+- native **TGIFD** backend for TGIF, replacing the older HBLink sidecar path
+- cleaner BMTD/TGIFD logging under the AllTune2 `logs/` directory
+- local BMTD/TGIFD config protection so live node credentials are not committed
 
 The dashboard is designed so you can pick a network, enter or load a target, choose Local Monitor or Transceive, and press **Connect**.
 
@@ -93,26 +105,58 @@ The dashboard is designed so you can pick a network, enter or load a target, cho
 
 ## ⚠️ BEFORE YOU INSTALL
 
-You must already have a working ASL3 / DVSwitch system.
+You must already have a working ASL3 / radio node foundation.
 
 You need:
 
 - Working AllStarLink 3
-- Working DVSwitch
-- Analog_Bridge installed and running
-- MMDVM_Bridge installed and running
+- Analog_Bridge installed and working for the audio path
+- Apache and PHP available for the web dashboard
+- A private audio node value you normally use for DVSwitch-style audio linking
 
-### DVSwitch / BM-STFU / TGIFD prerequisites
+### BrandMeister and TGIF
 
-AllTune2 expects a working ASL3 + DVSwitch installation before install.
+BrandMeister and TGIF no longer use the old MMDVM_Bridge-based DMR paths.
 
-BrandMeister support uses the included STFU helper. STFU reads its BrandMeister connection settings from the `[STFU]` section in `/opt/MMDVM_Bridge/DVSwitch.ini`. Make sure `BMAddress`, `BMPort`, `BMPassword`, `UserID`, and `TalkerAlias` are configured there before using BrandMeister from AllTune2.
+For BrandMeister, AllTune2 uses:
 
-TGIF support uses the native TGIFD backend. TGIFD does not use HBLink and does not require an HBLink-managed `MMDVM_Bridge.ini` profile. TGIFD uses its own configuration file at `/var/www/html/alltune2/tgif/config/tgifd.ini`.
+```text
+/var/www/html/alltune2/bmtd/config/bmtd.ini
+```
 
-Do not change the working `[General] Id` in `/opt/MMDVM_Bridge/MMDVM_Bridge.ini` just because TGIFD no longer uses HBLink. On many DVSwitch systems, the MMDVM_Bridge ID is a hotspot/bridge ID, often the base DMR ID with an added suffix or `+1`. If YSF, P25, NXDN, or other digital modes are already working, leave the existing `Id` alone.
+For TGIF, AllTune2 uses:
 
-Optional modes such as D-Star, P25, and NXDN should already be working in your base DVSwitch setup before enabling them in AllTune2.
+```text
+/var/www/html/alltune2/tgif/config/tgifd.ini
+```
+
+These files are created from safe example files if they do not already exist.
+
+BrandMeister and TGIF do **not** require:
+
+- STFU
+- HBLink
+- MMDVM_Bridge
+- `MMDVM_Bridge.ini`
+- the old BrandMeister/TGIF settings inside `/opt/MMDVM_Bridge/DVSwitch.ini`
+
+They still use the local Analog_Bridge / TLV audio path.
+
+### YSF, D-Star, P25, and NXDN
+
+YSF, D-Star, P25, and NXDN are separate from the new BMTD/TGIFD paths.
+
+Those modes should already be working in your base DVSwitch / MMDVM_Bridge setup before you enable or use them in AllTune2.
+
+Do not change the working `[General] Id` in:
+
+```text
+/opt/MMDVM_Bridge/MMDVM_Bridge.ini
+```
+
+just because BMTD and TGIFD no longer use MMDVM_Bridge.
+
+On many DVSwitch systems, the MMDVM_Bridge ID is a hotspot/bridge ID, often the base DMR ID with an added suffix or `+1`. If YSF, D-Star, P25, NXDN, or other MMDVM_Bridge-backed modes are already working, leave the existing `Id` alone.
 
 If your base node is broken, fix that first. AllTune2 is a control panel, not a repair tool for a broken ASL3 / DVSwitch install.
 
@@ -142,6 +186,8 @@ The setup script helps with:
 - helper permissions
 - log rotation
 - Apache security hardening
+- BMTD runtime checks
+- TGIFD runtime checks
 
 The setup script preserves your local config files when they already exist.
 
@@ -149,14 +195,26 @@ A brand-new install may still need you to review and edit:
 
 ```text
 /var/www/html/alltune2/config.ini
+/var/www/html/alltune2/bmtd/config/bmtd.ini
 /var/www/html/alltune2/tgif/config/tgifd.ini
 ```
 
 INI spacing note: AllTune2 accepts normal INI spacing with or without spaces around `=`.
-For example, `MYNODE=12345` and `MYNODE = 12345` are both valid.
 
-Do not add spaces inside TGIFD option values such as `StartRef=9050;RelinkTime=60`.
-Those embedded option values should stay in that compact form.
+For example, these are both valid:
+
+```ini
+MYNODE=12345
+MYNODE = 12345
+```
+
+Do not add spaces inside embedded option values such as:
+
+```ini
+options=StartRef=9990;RelinkTime=60
+```
+
+Those values should stay in that compact form.
 
 ---
 
@@ -173,36 +231,42 @@ git pull origin main
 
 ### Update that needs setup
 
-Run setup after pulling when the update includes installer, permissions, sudoers, Apache security, TGIFD, or other system-level changes:
+Run setup after pulling when the update includes installer, permissions, sudoers, Apache security, BMTD, TGIFD, or other system-level changes:
 
 ```bash
 cd /var/www/html/alltune2
 git pull origin main
 sudo ./setup_alltune2.sh
 ```
+
 **Note for existing users:** If `git status` shows `M data/favorites.txt` after updating, that is normal on a configured node. It only means your saved Favorites are different from the default file. Do not commit your personal `data/favorites.txt`; just run `git pull origin main` and `sudo ./setup_alltune2.sh` as usual.
 
-### Updating from older TGIF/HBLink releases
+### Updating from older STFU / HBLink releases
 
-AllTune2 now uses TGIFD for TGIF.
+AllTune2 now uses:
 
-When updating from an older AllTune2 release that used the TGIF/HBLink sidecar, run setup after pulling:
+- **BMTD** for BrandMeister
+- **TGIFD** for TGIF
+
+When updating from an older AllTune2 release that used STFU for BrandMeister or HBLink for TGIF, run setup after pulling:
 
 ```bash
 cd /var/www/html/alltune2
 git pull origin main
 sudo ./setup_alltune2.sh
 ```
+
+The installer creates BMTD/TGIFD starter configs if they are missing and preserves existing live configs when they already exist.
 
 ### Reboot when needed
 
-A reboot is recommended after updates that affect long-running runtime pieces such as TGIFD, Analog_Bridge, MMDVM_Bridge, or system service behavior.
+A reboot is recommended after updates that affect long-running runtime pieces such as Analog_Bridge, MMDVM_Bridge, YSF/D-Star/P25/NXDN services, or system service behavior.
 
 Do **not** assume every update needs setup. Many updates only need `git pull`.
 
 ---
 
-## ✏️ FILES YOU MUST EDIT
+## ✏️ FILES YOU MUST REVIEW
 
 ### 1. Main config
 
@@ -216,9 +280,7 @@ Example:
 
 ```ini
 MYNODE="YOUR NODE"
-DVSWITCH_NODE="YOUR DVSWITCH NODE"
-BM_SelfcarePassword="CHANGE_ME"
-TGIF_HotspotSecurityKey="CHANGE_ME"
+DVSWITCH_NODE="YOUR PRIVATE AUDIO NODE"
 DSTAR_ENABLED=0
 P25_ENABLED=0
 NXDN_ENABLED=0
@@ -233,19 +295,13 @@ ALLTUNE2_ADMIN_PASSWORD_HASH=""
 Your main AllStar node number.
 
 **DVSWITCH_NODE**  
-Your private DVSwitch audio node. Many systems use `1999` or `1998`, but use whatever your system is actually configured to use.
-
-**BM_SelfcarePassword**  
-Your BrandMeister SelfCare password.
-
-**TGIF_HotspotSecurityKey**  
-Your TGIF Hotspot Security Key. This is **not** your TGIF website login password.
+Your private audio node used for Local Monitor / Transceive linking. Many systems use `1999`, `1998`, or another local private node. Use whatever your system is actually configured to use.
 
 **DSTAR_ENABLED**  
-Set to `1` only if D-Star already works on your ASL3 / DVSwitch system.
+Set to `1` only if D-Star already works on your ASL3 / DVSwitch / MMDVM_Bridge system.
 
 **P25_ENABLED** and **NXDN_ENABLED**  
-Set these to `1` only if those modes already work on your ASL3 / DVSwitch system.
+Set these to `1` only if those modes already work on your ASL3 / DVSwitch / MMDVM_Bridge system.
 
 Leave optional modes disabled if you do not use them:
 
@@ -367,13 +423,122 @@ Normal setup/update does **not** ask for a password and does **not** change the 
 
 ---
 
-## 🟢 TGIF CONFIG
+## 🔵 BRANDMEISTER / BMTD CONFIG
+
+AllTune2 uses **BMTD** for BrandMeister.
+
+BMTD replaces the older STFU BrandMeister path. BMTD does not use STFU, MMDVM_Bridge, `MMDVM_Bridge.ini`, or the old BrandMeister settings in `/opt/MMDVM_Bridge/DVSwitch.ini`.
+
+Edit:
+
+```text
+/var/www/html/alltune2/bmtd/config/bmtd.ini
+```
+
+The example file is:
+
+```text
+/var/www/html/alltune2/bmtd/config/bmtd.ini.example
+```
+
+Existing `bmtd.ini` files are preserved on updates.
+
+### Important
+
+The full `bmtd.ini` file contains required settings that BMTD needs to run. Do not remove sections or change unrelated values unless you know exactly what they do.
+
+For normal setup, only edit the station-specific values below.
+
+### Values you normally need to edit
+
+```ini
+[brandmeister]
+host=3104.repeater.net
+port=54006
+password=YOUR_BRANDMEISTER_HOTSPOT_PASSWORD
+
+[identity]
+dmr_id=YOUR_DMR_ID
+callsign=YOUR_CALLSIGN
+
+[private_node]
+mynode="YOUR_ALLSTAR_NODE"
+private_node="YOUR_DVSWITCH_NODE"
+autoload_mode=transceive
+```
+
+### Field notes
+
+**host**  
+The BrandMeister master to connect to.
+
+Default example:
+
+```ini
+host=3104.repeater.net
+```
+
+**port**  
+The BrandMeister Rewind port.
+
+Default example:
+
+```ini
+port=54006
+```
+
+**password**  
+Your BrandMeister Hotspot Security password / SelfCare password for this connection.
+
+**dmr_id**  
+Your gateway/base DMR ID.
+
+**callsign**  
+Your HAM callsign.
+
+**mynode**  
+Your main AllStar node number. This should match `MYNODE` in `config.ini`.
+
+**private_node**  
+Your private audio node. This should match `DVSWITCH_NODE` in `config.ini`.
+
+**autoload_mode**  
+Typical value:
+
+```ini
+autoload_mode=transceive
+```
+
+### BMTD TLV audio ports
+
+The example config uses the AllTune2 Analog_Bridge / TLV audio port pair:
+
+```ini
+[tlv]
+rx_port=31103
+tx_host=127.0.0.1
+tx_port=31100
+```
+
+Do not change these unless your Analog_Bridge audio ports are intentionally different.
+
+### BMTD startup talkgroup
+
+The example config uses:
+
+```ini
+startup_tg=0
+```
+
+Normal dashboard use connects to the talkgroup you enter or select from Favorites. You normally do not need to set a fixed startup talkgroup.
+
+---
+
+## 🟢 TGIF / TGIFD CONFIG
 
 AllTune2 uses **TGIFD** for TGIF.
 
-TGIFD replaces the older TGIF/HBLink sidecar path. During setup, AllTune2 creates the full TGIFD config file from the example file.
-
-TGIFD reduced the TGIF runtime footprint, removed the local Python/HBLink stack, reduced disk usage, reduced CPU load compared with the previous sidecar approach, and provided cleaner TGIF audio.
+TGIFD replaces the older TGIF/HBLink sidecar path. TGIFD does not use HBLink, MMDVM_Bridge, `MMDVM_Bridge.ini`, or the old TGIF/HBLink MMDVM profile.
 
 Edit:
 
@@ -400,7 +565,7 @@ For normal setup, only edit the station-specific values below.
 ```ini
 [identity]
 callsign=YOURCALL
-dmr_id=YOUR_DMR_ID
+dmr_id=YOUR_GATEWAY_DMR_ID
 hotspot_radio_id=YOUR_HOTSPOT_ID_PLUS_1
 
 [tgif]
@@ -417,7 +582,7 @@ autoload_mode=transceive
 ### Field notes
 
 **callsign**  
-Your HAM Callsign.
+Your HAM callsign.
 
 **dmr_id**  
 Your gateway/base DMR ID.
@@ -456,7 +621,7 @@ options=StartRef=9050;RelinkTime=60
 Your main AllStar node number. This should match `MYNODE` in `config.ini`.
 
 **private_node**  
-Your private DVSwitch audio node. This should match `DVSWITCH_NODE` in `config.ini`.
+Your private audio node. This should match `DVSWITCH_NODE` in `config.ini`.
 
 **autoload_mode**  
 Typical value:
@@ -465,11 +630,46 @@ Typical value:
 autoload_mode=transceive
 ```
 
+### TGIFD TLV audio ports
+
+The example config uses the AllTune2 Analog_Bridge / TLV audio port pair:
+
+```ini
+[tlv]
+rx_port=31103
+tx_host=127.0.0.1
+tx_port=31100
+inbound_slot=2
+```
+
+Keep:
+
+```ini
+inbound_slot=2
+```
+
+for the AllTune2 TGIFD audio path.
+
+### TGIFD `[mmdvm]` note
+
+`tgifd.ini` contains a small `[mmdvm]` section for TGIFD metadata.
+
+That section does **not** mean TGIFD depends on `MMDVM_Bridge.ini` or a running MMDVM_Bridge process.
+
+Keep:
+
+```ini
+[mmdvm]
+slots=2
+```
+
+for the AllTune2 / TLV audio path.
+
 ---
 
-## 🟠 OPTIONAL D-STAR / P25 / NXDN
+## 🟠 OPTIONAL YSF / D-STAR / P25 / NXDN
 
-D-Star, P25, and NXDN are optional.
+YSF, D-Star, P25, and NXDN are optional.
 
 Enable them in AllTune2 only if they already work in your base DVSwitch / MMDVM_Bridge setup.
 
@@ -487,13 +687,18 @@ AllTune2 does not create your D-Star registration, P25 setup, NXDN setup, reflec
 
 ## 🚫 DO NOT EDIT THESE UNLESS YOU KNOW WHY
 
-These files belong to the underlying DVSwitch system:
+These files belong to the underlying system:
 
+- `/opt/Analog_Bridge/Analog_Bridge.ini`
 - `/opt/MMDVM_Bridge/DVSwitch.ini`
 - `/opt/MMDVM_Bridge/MMDVM_Bridge.ini`
-- `/opt/Analog_Bridge/Analog_Bridge.ini`
 
-If those files are wrong, AllTune2 may not work correctly.
+Important distinction:
+
+- BrandMeister/BMTD and TGIF/TGIFD use their own AllTune2 config files.
+- YSF, D-Star, P25, and NXDN still depend on your normal DVSwitch / MMDVM_Bridge configuration.
+
+If those underlying files are wrong for the modes that use them, AllTune2 may not work correctly.
 
 ---
 
@@ -558,12 +763,12 @@ Basic use:
 
 The Control Center is where you select the network, target, and Link Mode.
 
-The Link Mode dropdown controls how the private DVSwitch audio node is linked:
+The Link Mode dropdown controls how the private audio node is linked:
 
 - **Local Monitor** for monitoring/listening use
 - **Transceive** for normal radio-side transmit/receive use
 
-AllTune2 now re-applies the selected Link Mode when changing between supported managed modes, so you should not normally have to press Disconnect DVSwitch just to change Local Monitor / Transceive.
+AllTune2 re-applies the selected Link Mode when changing between supported managed modes, so you should not normally have to press Disconnect DVSwitch just to change Local Monitor / Transceive.
 
 If web login is enabled and you are logged out, the Control Center is disabled until you sign in.
 
@@ -572,6 +777,8 @@ If web login is enabled and you are logged out, the Control Center is disabled u
 ## 🔵 BRANDMEISTER
 
 Use BrandMeister for BM talkgroups.
+
+BrandMeister uses the AllTune2 **BMTD** backend.
 
 Typical workflow:
 
@@ -591,6 +798,8 @@ To change BM talkgroups:
 
 Use TGIF for TGIF talkgroups.
 
+TGIF uses the AllTune2 **TGIFD** backend.
+
 Typical workflow:
 
 - choose TGIF
@@ -607,7 +816,7 @@ To change TGIF talkgroups:
 
 ## 🟡 YSF
 
-Use YSF for YSF rooms / reflectors.
+Use YSF for YSF rooms / reflectors when YSF is already working on your base system.
 
 Typical workflow:
 
@@ -757,12 +966,13 @@ Live Status helps show:
 
 - current network / mode
 - active target
-- private DVSwitch link state
+- private audio node link state
 - AllStarLink / EchoLink connected nodes
 - keyed or active rows when activity is detected
 - D-Star, P25, and NXDN status when configured
+- BMTD and TGIFD backend status when BrandMeister or TGIF is active
 
-The **Disconnect DVSwitch** button removes the private DVSwitch link without doing a full Asterisk restart.
+The **Disconnect DVSwitch** button removes the private audio node link without doing a full Asterisk restart.
 
 The **Disconnect All** button performs a full reset and restarts Asterisk.
 
@@ -776,7 +986,7 @@ Audio alerts can announce connects and disconnects.
 
 They can be helpful when monitoring node activity without staring at the screen.
 
-Recent updates improved connect/disconnect alerts for managed digital modes, including D-Star.
+Recent updates improved connect/disconnect alerts for managed digital modes.
 
 ---
 
@@ -795,13 +1005,39 @@ The installer also protects the local `tools/` directory from direct browser acc
 ---
 
 ## 🔧 TROUBLESHOOTING BASICS
-
-### If audio stops
+### If audio on any mode becomes choppy, stutters, breaks up, or stops
 
 Try restarting Analog_Bridge:
 
 ```bash
 sudo systemctl restart analog_bridge
+```
+
+### If BrandMeister does not connect
+
+Check:
+
+- `/var/www/html/alltune2/config.ini`
+- `/var/www/html/alltune2/bmtd/config/bmtd.ini`
+- `/var/www/html/alltune2/logs/bmtd.log`
+
+Check BMTD helper status:
+
+```bash
+sudo /var/www/html/alltune2/bmtd/alltune2-bmtd-helper.sh status
+```
+
+Confirm your BMTD identity and BrandMeister values are correct:
+
+```ini
+[brandmeister]
+host=3104.repeater.net
+port=54006
+password=YOUR_BRANDMEISTER_HOTSPOT_PASSWORD
+
+[identity]
+dmr_id=YOUR_DMR_ID
+callsign=YOUR_CALLSIGN
 ```
 
 ### If TGIF does not connect
@@ -818,6 +1054,17 @@ Check TGIFD helper status:
 sudo /var/www/html/alltune2/tgif/alltune2-tgifd-helper.sh status
 ```
 
+Confirm your TGIFD identity values are correct:
+
+```ini
+callsign=YOURCALL
+dmr_id=YOUR_GATEWAY_DMR_ID
+hotspot_radio_id=YOUR_HOTSPOT_ID_PLUS_1
+security_key=YOUR_TGIF_SECURITY_KEY
+```
+
+The `hotspot_radio_id` is usually your hotspot ID plus 1.
+
 ### If TGIF connects but inbound audio is unreliable
 
 Check that this line exists under `[tlv]` in:
@@ -832,25 +1079,14 @@ Required value:
 inbound_slot=2
 ```
 
-Also confirm your TGIFD identity values are correct:
-
-```ini
-callsign=YOURCALL
-dmr_id=YOUR_DMR_ID
-hotspot_radio_id=YOUR_HOTSPOT_ID_PLUS_1
-security_key=YOUR_TGIF_SECURITY_KEY
-```
-
-The `hotspot_radio_id` is usually your hotspot ID plus 1.
-
-### If D-Star, P25, or NXDN does not show up
+### If YSF, D-Star, P25, or NXDN does not show up
 
 Check:
 
 - the mode is enabled in `config.ini`
 - your real `MYNODE` and `DVSWITCH_NODE` are set
 - `/opt/MMDVM_Bridge/dvswitch.sh` exists
-- the mode already works in the underlying DVSwitch setup
+- the mode already works in the underlying DVSwitch / MMDVM_Bridge setup
 
 ### If web login does not work
 
@@ -916,14 +1152,12 @@ Use a DDNS/domain hostname with a trusted certificate, or use Tailscale/VPN.
 
 For code-only updates, `git pull` is usually enough.
 
-If setup, permissions, sudoers, Apache security, TGIFD, or runtime helpers changed, run:
+If setup, permissions, sudoers, Apache security, BMTD, TGIFD, or runtime helpers changed, run:
 
 ```bash
 cd /var/www/html/alltune2
 sudo ./setup_alltune2.sh
 ```
-
-If TGIFD runtime code changed, rebooting once after the update is recommended.
 
 ---
 
@@ -932,17 +1166,19 @@ If TGIFD runtime code changed, rebooting once after the update is recommended.
 Edit these:
 
 - `/var/www/html/alltune2/config.ini`
+- `/var/www/html/alltune2/bmtd/config/bmtd.ini`
 - `/var/www/html/alltune2/tgif/config/tgifd.ini`
 
-Review these if TGIF needs troubleshooting:
+Review these if BrandMeister or TGIF needs troubleshooting:
 
+- `/var/www/html/alltune2/logs/bmtd.log`
 - `/var/www/html/alltune2/logs/tgifd.log`
 
 Leave these alone unless you know why:
 
+- `/opt/Analog_Bridge/Analog_Bridge.ini`
 - `/opt/MMDVM_Bridge/DVSwitch.ini`
 - `/opt/MMDVM_Bridge/MMDVM_Bridge.ini`
-- `/opt/Analog_Bridge/Analog_Bridge.ini`
 
 Remember:
 
@@ -950,18 +1186,22 @@ Remember:
 - do not paste passwords publicly
 - do not commit `config.ini`
 - do not commit `data/favorites.txt`
+- do not commit `bmtd/config/bmtd.ini`
 - do not commit `tgif/config/tgifd.ini`
-- TGIFD runs from `/var/www/html/alltune2/tgif/bin/tgifd` 
-- do not commit old local build folders such as `tgif/build/`
+- BMTD runs from `/var/www/html/alltune2/bmtd/bin/bmtd`
+- TGIFD runs from `/var/www/html/alltune2/tgif/bin/tgifd`
+- do not commit old local build folders
 - do not assume every update needs setup
 - use `--set-admin-password` to change the web login password
 - use `--disable-auth` to turn web login off
 - keep web login enabled if AllTune2 is exposed through public 80/443
 - prefer Tailscale/VPN for outside access
 - use DDNS/domain plus trusted HTTPS for public browser access
-- enable D-Star, P25, or NXDN only when those modes already work on your base system
-- keep `[tlv] inbound_slot=2` in `tgifd.ini`
-- set `hotspot_radio_id` correctly for your TGIF/DVSwitch identity
+- enable YSF, D-Star, P25, or NXDN only when those modes already work on your base system
+- keep TGIFD `[tlv] inbound_slot=2` in `tgifd.ini`
+- set `hotspot_radio_id` correctly for your TGIFD identity
+- configure BrandMeister credentials in `bmtd/config/bmtd.ini`
+- configure TGIF credentials in `tgif/config/tgifd.ini`
 
 ---
 
@@ -974,61 +1214,3 @@ Install → Configure → Open in browser → Connect → Enjoy
 ### Contact
 
 Questions? Email: [kc3kmv@yahoo.com](mailto:kc3kmv@yahoo.com)
-
----
-
-## ⚠️ IMPORTANT UPDATE NOTES
-
-Recent release series highlights:
-
-- redesigned Control Center
-- dashboard Save Favorite workflow
-- top navigation polish
-- Apache security hardening
-- STFU/BM log rotation support
-- D-Star, P25, and NXDN support when enabled
-- Live Status improvements
-- managed Local Monitor / Transceive link-mode fixes
-- D-Star/P25/NXDN audio-alert improvements
-- native TGIFD backend replacing the older TGIF/HBLink path
-- lower TGIF runtime footprint by removing the Python/HBLink sidecar stack
-- reduced CPU load and disk usage for the TGIF path compared with the old sidecar approach
-- improved TGIF audio quality in testing
-- TGIFD installer/build support
-- TGIFD log rotation and runtime config protection
-- TGIF inbound audio reliability fix using `[tlv] inbound_slot=2`
-
-For most updates:
-
-```bash
-cd /var/www/html/alltune2
-git pull origin main
-```
-
-Run setup when the release includes install/setup/system-level changes:
-
-```bash
-sudo ./setup_alltune2.sh
-```
-
-For this TGIFD release, run setup after pulling:
-
-```bash
-cd /var/www/html/alltune2
-git pull origin main
-sudo ./setup_alltune2.sh
-```
-
-For web login password changes:
-
-```bash
-sudo /var/www/html/alltune2/setup_alltune2.sh --set-admin-password
-```
-
-For disabling web login:
-
-```bash
-sudo /var/www/html/alltune2/setup_alltune2.sh --disable-auth
-```
-
-Normal setup/update preserves existing web login settings and does not ask for a web password.
