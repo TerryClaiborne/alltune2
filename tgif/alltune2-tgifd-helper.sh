@@ -5,6 +5,7 @@ APP_DIR="${APP_DIR:-/var/www/html/alltune2}"
 TGIFD_DIR="${TGIFD_DIR:-$APP_DIR/tgif}"
 CFG_FILE="${CFG_FILE:-$TGIFD_DIR/config/tgifd.ini}"
 BIN_FILE="${BIN_FILE:-$TGIFD_DIR/bin/tgifd}"
+DVSWITCH_SH="${DVSWITCH_SH:-/opt/MMDVM_Bridge/dvswitch.sh}"
 RUN_DIR="$APP_DIR/run"
 LOG_DIR="$APP_DIR/logs"
 PID_FILE="$RUN_DIR/alltune2-tgifd.pid"
@@ -242,29 +243,37 @@ settle_audio_path() {
 stop_proc() {
   local pid
   pid="$(find_pid)"
+
   if [[ -n "$pid" ]]; then
     kill "$pid" >/dev/null 2>&1 || true
-    sleep 2
+
+    for _ in 1 2 3 4 5 6 7 8 9 10; do
+      if ! kill -0 "$pid" 2>/dev/null; then
+        break
+      fi
+      sleep 0.1
+    done
+
     if kill -0 "$pid" 2>/dev/null; then
       kill -9 "$pid" >/dev/null 2>&1 || true
-      sleep 1
     fi
   fi
+
   clear_state
 }
 
 wait_for_pid() {
-  local tries=10
   local pid=""
-  while (( tries > 0 )); do
+
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
     pid="$(find_pid)"
     if [[ -n "$pid" ]]; then
       echo "$pid"
       return 0
     fi
-    sleep 1
-    tries=$((tries-1))
+    sleep 0.1
   done
+
   return 1
 }
 
@@ -286,11 +295,21 @@ sock.close()
 PY
 }
 
+
+tune_analog_bridge_target() {
+  local target="$1"
+  [[ -x "$DVSWITCH_SH" ]] || return 0
+
+  "$DVSWITCH_SH" mode DMR >/dev/null 2>&1 || true
+  "$DVSWITCH_SH" tune "$target" >/dev/null 2>&1 || true
+}
+
 start_backend() {
   local target="$1"
   sync_from_alltune
   systemctl stop mmdvm_bridge >/dev/null 2>&1 || true
   systemctl restart analog_bridge >/dev/null 2>&1 || true
+  tune_analog_bridge_target "$target"
   stop_proc
   (
     cd "$TGIFD_DIR" || exit 1
