@@ -691,11 +691,7 @@ if (!function_exists('at2r_collect')) {
 
         $disks = [
             at2r_df_info('/', '/'),
-            at2r_df_info('/tmp', '/tmp'),
             at2r_df_info('/var/log/apache2', 'apache2'),
-            at2r_df_info('/var/log/asterisk', 'asterisk'),
-            at2r_df_info('/boot/firmware', 'firmware'),
-            at2r_df_info('/var/tmp', 'vartmp'),
         ];
 
         $supportNotes = at2r_host_support_notes();
@@ -877,6 +873,7 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             scrollbar-width: thin;
             scrollbar-color: rgba(178, 123, 255, 0.55) transparent;
             padding-bottom: 1px;
+            justify-content: center;
         }
         #<?= $instanceId ?> .at2r-row::-webkit-scrollbar {
             height: 5px;

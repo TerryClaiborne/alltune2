@@ -1,51 +1,68 @@
-AllTune2 release tree
-====================
-
-Generated from the Git release index.
-Local runtime files such as config.ini, logs/, run/,
-tgif/config/tgifd.ini, tgif/build/, and TGIFD runtime logs are intentionally excluded.
-
-.gitignore
-README.md
-VERSION
-alltune2-bm-receive.sh
-api/connect.php
-api/direct_link.php
-api/favorites.php
-api/status.php
-app/Actions/ActionInterface.php
-app/Actions/AllStarAction.php
-app/Actions/BrandMeisterAction.php
-app/Actions/TGIFAction.php
-app/Actions/YSFAction.php
-app/Controllers/MainController.php
-app/Services/NetworkManager.php
-app/State/AppState.php
-app/State/MessageCatalog.php
-app/State/StatusMapper.php
-app/Support/ApiAuthGuard.php
-app/Support/AppAuth.php
-app/Support/AppCsrf.php
-app/Support/AppSession.php
-app/Support/Config.php
-app/Support/Logger.php
-config.ini.example
-data/favorites.example.txt
-data/favorites.txt
-docs/.gitkeep
-public/alltune2_ribbon_bar.php
-public/assets/css/style.css
-public/assets/js/app.js
-public/favorites.php
-public/index.php
-public/login.php
-public/logout.php
-screenshot.png
-setup_alltune2.sh
-stfu/STFU
-tgif/alltune2-tgifd-helper.sh
-tgif/bin/tgifd
-tgif/config/tgifd.ini.example
-tgif/docs/TGIFD-COPYRIGHT-NOTICE.md
-tools/alltune2_set_admin_password.php
-tree.txt
+alltune2/
++-- api
+|   +-- connect.php
+|   +-- direct_link.php
+|   +-- favorites.php
+|   `-- status.php
++-- app
+|   +-- Actions
+|   |   +-- ActionInterface.php
+|   |   +-- AllStarAction.php
+|   |   +-- BrandMeisterAction.php
+|   |   +-- TGIFAction.php
+|   |   `-- YSFAction.php
+|   +-- Controllers
+|   |   `-- MainController.php
+|   +-- Services
+|   |   `-- NetworkManager.php
+|   +-- State
+|   |   +-- AppState.php
+|   |   +-- MessageCatalog.php
+|   |   `-- StatusMapper.php
+|   `-- Support
+|       +-- ApiAuthGuard.php
+|       +-- AppAuth.php
+|       +-- AppCsrf.php
+|       +-- AppSession.php
+|       +-- Config.php
+|       `-- Logger.php
++-- bmtd
+|   +-- bin
+|   |   `-- bmtd
+|   +-- config
+|   |   `-- bmtd.ini.example
+|   +-- docs
+|   |   `-- BMTD-COPYRIGHT-NOTICE.md
+|   `-- alltune2-bmtd-helper.sh
++-- data
+|   `-- favorites.example.txt
++-- docs
+|   `-- .gitkeep
++-- public
+|   +-- assets
+|   |   +-- css
+|   |   |   `-- style.css
+|   |   `-- js
+|   |       `-- app.js
+|   +-- alltune2_ribbon_bar.php
+|   +-- favorites.php
+|   +-- index.php
+|   +-- login.php
+|   `-- logout.php
++-- tgif
+|   +-- bin
+|   |   `-- tgifd
+|   +-- config
+|   |   `-- tgifd.ini.example
+|   +-- docs
+|   |   `-- TGIFD-COPYRIGHT-NOTICE.md
+|   `-- alltune2-tgifd-helper.sh
++-- tools
+|   `-- alltune2_set_admin_password.php
++-- .gitignore
++-- config.ini.example
++-- README.md
++-- screenshot.png
++-- setup_alltune2.sh
++-- tree.txt
+`-- VERSION

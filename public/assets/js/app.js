@@ -13,9 +13,9 @@
         userSelectionHoldUntil: 0,
         cachedDvSwitchNode: '',
         preferredAslUiMode: 'ASL',
-        favoriteSortKey: 'target',
+        favoriteSortKey: 'mode',
         favoriteSortDirection: 'asc',
-        favoriteSortType: 'mixed',
+        favoriteSortType: 'text',
         favoritesRaw: [],
         saveFavoriteTargetOverride: '',
         saveFavoriteModeOverride: '',
@@ -1033,28 +1033,52 @@
             return [];
         }
 
-        if (state.favoriteSortKey === '') {
-            return items.slice();
-        }
+        const compareModeAscending = (leftItem, rightItem) => compareFavoriteValues(
+            normalizeMode(leftItem.mode ?? 'BM'),
+            normalizeMode(rightItem.mode ?? 'BM'),
+            'text',
+            'asc'
+        );
+
+        const compareTargetAscending = (leftItem, rightItem) => compareFavoriteValues(
+            favoriteFieldValue(leftItem, 'target'),
+            favoriteFieldValue(rightItem, 'target'),
+            'mixed',
+            'asc'
+        );
+
+        const compareNameAscending = (leftItem, rightItem) => compareFavoriteValues(
+            favoriteFieldValue(leftItem, 'name'),
+            favoriteFieldValue(rightItem, 'name'),
+            'text',
+            'asc'
+        );
+
+        const compareDescriptionAscending = (leftItem, rightItem) => compareFavoriteValues(
+            favoriteFieldValue(leftItem, 'description'),
+            favoriteFieldValue(rightItem, 'description'),
+            'text',
+            'asc'
+        );
 
         return items.slice().sort((leftItem, rightItem) => {
+            const key = String(state.favoriteSortKey || 'mode').trim();
+            const direction = state.favoriteSortDirection === 'desc' ? 'desc' : 'asc';
+            const type = state.favoriteSortType === 'mixed' ? 'mixed' : 'text';
+
             let primaryCompare = 0;
 
-            if (state.favoriteSortKey === 'mode') {
-                primaryCompare = compareFavoriteModes(
-                    leftItem.mode ?? 'BM',
-                    rightItem.mode ?? 'BM',
-                    state.favoriteSortDirection
-                );
+            if (key === 'mode') {
+                primaryCompare = compareModeAscending(leftItem, rightItem);
+                if (direction === 'desc') {
+                    primaryCompare *= -1;
+                }
             } else {
-                const leftValue = favoriteFieldValue(leftItem, state.favoriteSortKey);
-                const rightValue = favoriteFieldValue(rightItem, state.favoriteSortKey);
-
                 primaryCompare = compareFavoriteValues(
-                    leftValue,
-                    rightValue,
-                    state.favoriteSortType,
-                    state.favoriteSortDirection
+                    favoriteFieldValue(leftItem, key),
+                    favoriteFieldValue(rightItem, key),
+                    type,
+                    direction
                 );
             }
 
@@ -1062,36 +1086,16 @@
                 return primaryCompare;
             }
 
-            if (state.favoriteSortKey !== 'target') {
-                const secondaryCompare = compareFavoriteValues(
-                    favoriteFieldValue(leftItem, 'target'),
-                    favoriteFieldValue(rightItem, 'target'),
-                    'mixed',
-                    'asc'
-                );
-
-                if (secondaryCompare !== 0) {
-                    return secondaryCompare;
-                }
+            if (key === 'mode') {
+                return compareTargetAscending(leftItem, rightItem)
+                    || compareNameAscending(leftItem, rightItem)
+                    || compareDescriptionAscending(leftItem, rightItem);
             }
 
-            const tertiaryCompare = compareFavoriteValues(
-                favoriteFieldValue(leftItem, 'name'),
-                favoriteFieldValue(rightItem, 'name'),
-                'text',
-                'asc'
-            );
-
-            if (tertiaryCompare !== 0) {
-                return tertiaryCompare;
-            }
-
-            return compareFavoriteValues(
-                favoriteFieldValue(leftItem, 'description'),
-                favoriteFieldValue(rightItem, 'description'),
-                'text',
-                'asc'
-            );
+            return compareModeAscending(leftItem, rightItem)
+                || compareTargetAscending(leftItem, rightItem)
+                || compareNameAscending(leftItem, rightItem)
+                || compareDescriptionAscending(leftItem, rightItem);
         });
     }
 
