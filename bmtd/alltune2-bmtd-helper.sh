@@ -207,6 +207,46 @@ disconnect_private_node() {
   /usr/sbin/asterisk -rx "rpt cmd ${main_node} ilink 1 ${private_node}" >/dev/null 2>&1 || true
 }
 
+refresh_private_node() {
+  local main_node private_node
+  main_node="$(read_mynode)"
+  private_node="$(read_private_node)"
+  [[ -n "$main_node" && -n "$private_node" ]] || return 0
+
+  /usr/sbin/asterisk -rx "rpt cmd ${main_node} ilink 1 ${private_node}" >/dev/null 2>&1 || true
+  sleep 0.25
+  /usr/sbin/asterisk -rx "rpt cmd ${main_node} ilink 3 ${private_node}" >/dev/null 2>&1 || true
+
+  for _ in 1 2 3 4 5 6 7 8 9 10 11 12; do
+    if link_present "$main_node" "$private_node"; then
+      sleep 0.35
+      return 0
+    fi
+    sleep 0.10
+  done
+
+  # If Asterisk is slow to report the token, preserve a short settle instead
+  # of returning immediately and recreating the stale-link race.
+  sleep 0.75
+  return 0
+}
+
+wait_for_private_node_link() {
+  local main_node private_node
+  main_node="$(read_mynode)"
+  private_node="$(read_private_node)"
+  [[ -n "$main_node" && -n "$private_node" ]] || return 0
+
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    if link_present "$main_node" "$private_node"; then
+      return 0
+    fi
+    sleep 0.25
+  done
+
+  return 0
+}
+
 make_live_config() {
   local target="$1"
 
@@ -229,22 +269,9 @@ EOF
 }
 
 prepare_audio_path() {
-  local main_node private_node
+  local target="$1"
 
-  # 2-second target audio-safe path.
-  # This is a test. Keep private-node link and Analog_Bridge restart.
   systemctl stop mmdvm_bridge >/dev/null 2>&1 || true
-
-  main_node="$(read_mynode)"
-  private_node="$(read_private_node)"
-
-  if [[ -n "$main_node" && -n "$private_node" ]]; then
-    /usr/sbin/asterisk -rx "rpt cmd ${main_node} ilink 1 ${private_node}" >/dev/null 2>&1 || true
-    sleep 0.05
-
-    /usr/sbin/asterisk -rx "rpt cmd ${main_node} ilink 3 ${private_node}" >/dev/null 2>&1 || true
-    sleep 0.15
-  fi
 
   if systemctl is-active --quiet analog_bridge; then
     systemctl restart analog_bridge >/dev/null 2>&1 || true
@@ -252,10 +279,14 @@ prepare_audio_path() {
     systemctl start analog_bridge >/dev/null 2>&1 || true
   fi
 
-  for _ in 1 2 3; do
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
     listener_31100 && break
-    sleep 0.05
+    sleep 0.10
   done
+
+  tune_analog_bridge_target "$target"
+  refresh_private_node
+  wait_for_private_node_link
 
   return 0
 }
@@ -322,7 +353,7 @@ start_backend() {
   require_file "$CFG_FILE"
   valid_target "$target" || fail_json "start" "Invalid BM talkgroup/private target." "$target"
 
-  prepare_audio_path
+  prepare_audio_path "$target"
   stop_proc
   make_live_config "$target"
 
@@ -334,7 +365,7 @@ start_backend() {
   local pid
   pid="$(wait_for_pid)" || fail_json "start" "BMTD failed to start. Check $LOG_FILE." "$target"
 
-  tune_analog_bridge_target "$target"
+  wait_for_private_node_link
   write_state true "$target" "$pid"
   ok_json "start" "BMTD started." true "$target" "$pid"
 }
@@ -351,16 +382,9 @@ tune_mode() {
   require_file "$CFG_FILE"
   valid_target "$target" || fail_json "tune" "Invalid BM talkgroup/private target." "$target"
 
-  local pid
-  pid="$(find_pid)"
-
-  if [[ -z "$pid" ]]; then
-    start_backend "$target"
-  fi
-
-  send_tlv_tune "$target"
-  write_state true "$target" "$pid"
-  ok_json "tune" "BMTD tuned." true "$target" "$pid"
+  # Match TGIFD reliability behavior: do not quick-retune BM across a stale
+  # Analog_Bridge/private-node path. Rebuild the BM path through start_backend.
+  start_backend "$target"
 }
 
 tune_analog_bridge_target() {
@@ -370,6 +394,7 @@ tune_analog_bridge_target() {
     fail_json "start" "dvswitch.sh is missing or not executable." "$target"
   fi
 
+  "$DVSWITCH_SH" mode DMR >/dev/null 2>&1 || true
   "$DVSWITCH_SH" tune "$target" >/dev/null 2>&1 || {
     stop_proc
     reset_analog_bridge_tg0
