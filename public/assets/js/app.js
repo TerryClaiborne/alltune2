@@ -31,6 +31,8 @@
         immediateAudioEvents: new Map(),
         lastAllstarPayload: null,
         manualAutoloadPreference: null,
+        privateNodeLossCleanupInFlight: false,
+        privateNodeLossCleanupDone: false,
         endpoints: {
             status: '/alltune2/api/status.php',
             connect: '/alltune2/api/connect.php',
@@ -1434,9 +1436,35 @@
         return `This mode is not configured on this system. Update ${configPath} with real values before using it. Connect is disabled until configuration is complete.`;
     }
 
+    function payloadHasConfiguredDvSwitchNode(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return false;
+        }
+
+        const configuredNode = String(
+            payload.config?.dvswitch_node ||
+            payload.system?.config?.dvswitch_node ||
+            configuredDvSwitchNodeFromDom() ||
+            ''
+        ).trim();
+
+        if (configuredNode === '') {
+            return false;
+        }
+
+        const allstar = payload.allstar || payload.networks?.allstar || null;
+        const links = Array.isArray(allstar?.connected_nodes) ? allstar.connected_nodes : [];
+
+        return links.some((link) => String(link?.node ?? link?.target ?? '').trim() === configuredNode);
+    }
+
     function inferDvSwitchActiveFromPayload(payload) {
         if (!payload || typeof payload !== 'object') {
             return false;
+        }
+
+        if (payloadHasConfiguredDvSwitchNode(payload)) {
+            return true;
         }
 
         const system = payload.system || {};
@@ -1541,6 +1569,15 @@
             textLooksActive(nxdnText)
         ) {
             return true;
+        }
+
+        const dvswitchNode = configuredDvSwitchNodeFromDom();
+        if (dvswitchNode !== '') {
+            const allstarPayload = state.lastAllstarPayload || null;
+            const links = Array.isArray(allstarPayload?.connected_nodes) ? allstarPayload.connected_nodes : [];
+            if (links.some((link) => String(link?.node ?? link?.target ?? '').trim() === dvswitchNode)) {
+                return true;
+            }
         }
 
         const statusText = currentStatusText().toUpperCase();
@@ -2629,12 +2666,59 @@
         return payload;
     }
 
+
+    function payloadPrivateNodeLinkLost(payload) {
+        if (!payload || typeof payload !== 'object') {
+            return false;
+        }
+
+        const system = payload.system || {};
+        return !!(payload.private_node_link_lost || system.private_node_link_lost);
+    }
+
+    async function cleanupLostPrivateNodeIfNeeded(payload) {
+        const lost = payloadPrivateNodeLinkLost(payload);
+
+        if (!lost) {
+            state.privateNodeLossCleanupDone = false;
+            return;
+        }
+
+        if (state.privateNodeLossCleanupInFlight || state.privateNodeLossCleanupDone || state.busy || !authAllowsActions()) {
+            return;
+        }
+
+        state.privateNodeLossCleanupInFlight = true;
+        state.privateNodeLossCleanupDone = true;
+
+        try {
+            await requestJson(state.endpoints.connect, {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                },
+                body: JSON.stringify({
+                    action: 'private_node_lost_cleanup',
+                    action_type: 'private_node_lost_cleanup',
+                }),
+            });
+
+            queueStatusRefresh(250);
+        } catch (error) {
+            console.error(error);
+            state.privateNodeLossCleanupDone = false;
+        } finally {
+            state.privateNodeLossCleanupInFlight = false;
+        }
+    }
+
     async function loadStatus() {
         const payload = await requestJson(state.endpoints.status, {
             method: 'GET',
         });
 
         applyLiveStatus(payload, { allowFieldSync: false });
+        cleanupLostPrivateNodeIfNeeded(payload);
         return payload;
     }
 

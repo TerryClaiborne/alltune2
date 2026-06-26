@@ -870,6 +870,43 @@ function session_forces_private_node(string $selectedMode, string $lastMode, str
         || $dvswitchAutoloaded;
 }
 
+function allstar_links_contain_node(array $links, string $node): bool
+{
+    $node = trim($node);
+    if ($node === '') {
+        return false;
+    }
+
+    foreach ($links as $link) {
+        $linkNode = trim((string) ($link['node'] ?? $link['target'] ?? ''));
+        if ($linkNode === $node) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function managed_session_needs_configured_private_node(
+    string $managedMode,
+    string $dmrNetwork,
+    string $dmrActiveNetwork,
+    bool $dmrReady,
+    bool $dvswitchLinkActive,
+    array $bmReceive,
+    array $tgifd
+): bool {
+    return $dvswitchLinkActive
+        && (
+            is_managed_dvswitch_session_mode($managedMode)
+            || in_array($dmrNetwork, ['BM', 'TGIF'], true)
+            || in_array($dmrActiveNetwork, ['BM', 'TGIF'], true)
+            || $dmrReady
+            || !empty($bmReceive['active'])
+            || !empty($tgifd['active'])
+        );
+}
+
 $favorites = load_favorites_file(dirname(__DIR__) . '/data/favorites.txt');
 
 $selectedMode = normalize_mode((string) ($_SESSION['selected_mode'] ?? 'BM'));
@@ -1028,6 +1065,20 @@ if ($liveAllstar['available']) {
 
 $allstarConnectedNodes = enrich_allstar_connected_nodes($allstarConnectedNodes);
 
+$privateNodeLinkChecked = trim($dvSwitchNode) !== '' && !empty($liveAllstar['available']);
+$privateNodeLinked = $privateNodeLinkChecked && allstar_links_contain_node($allstarConnectedNodes, $dvSwitchNode);
+$privateNodeLinkLost = $privateNodeLinkChecked
+    && !$privateNodeLinked
+    && managed_session_needs_configured_private_node(
+        $managedDvSwitchMode,
+        $dmrNetwork,
+        $dmrActiveNetwork,
+        $dmrReady,
+        $dvswitchLinkActive,
+        $bmReceive,
+        $tgifd
+    );
+
 if ($allstarConnectedNodes !== []) {
     $allstarState = 'Connected: ' . count($allstarConnectedNodes);
 }
@@ -1057,6 +1108,29 @@ $ysfActive = $managedDvSwitchMode === 'YSF' && $managedDvSwitchTarget !== '';
 $dstarActive = $managedDvSwitchMode === 'DSTAR' && $managedDvSwitchTarget !== '';
 $p25Active = $managedDvSwitchMode === 'P25' && $managedDvSwitchTarget !== '';
 $nxdnActive = $managedDvSwitchMode === 'NXDN' && $managedDvSwitchTarget !== '';
+
+if ($privateNodeLinkLost) {
+    $dvswitchLinkActive = false;
+    $dmrReady = false;
+    $dmrNetwork = '';
+    $dmrActiveNetwork = '';
+    $dmrActiveTarget = '';
+    $managedDvSwitchMode = '';
+    $managedDvSwitchTarget = '';
+    $bmActive = false;
+    $tgifActive = false;
+    $ysfActive = false;
+    $dstarActive = false;
+    $p25Active = false;
+    $nxdnActive = false;
+    $bmState = 'Idle';
+    $tgifState = 'Idle';
+    $ysfState = 'Idle';
+    $dstarState = 'Idle';
+    $p25State = 'Idle';
+    $nxdnState = 'Idle';
+    $lastStatus = 'IDLE - NO CONNECTIONS';
+}
 
 $bmKeyed = $bmActive && $dvswitchNodeKeyed;
 $tgifKeyed = $tgifActive && $dvswitchNodeKeyed;
@@ -1166,6 +1240,9 @@ $payload = [
         'dmr_active_network' => $dmrActiveNetwork,
         'dmr_active_target' => $dmrActiveTarget,
         'dvswitch_link_active' => $dvswitchLinkActive,
+        'private_node_link_checked' => $privateNodeLinkChecked,
+        'private_node_linked' => $privateNodeLinked,
+        'private_node_link_lost' => $privateNodeLinkLost,
     ],
 
     'selected_mode' => $selectedMode,
@@ -1181,6 +1258,9 @@ $payload = [
     'dmr_active_network' => $dmrActiveNetwork,
     'dmr_active_target' => $dmrActiveTarget,
     'dvswitch_link_active' => $dvswitchLinkActive,
+    'private_node_link_checked' => $privateNodeLinkChecked,
+    'private_node_linked' => $privateNodeLinked,
+    'private_node_link_lost' => $privateNodeLinkLost,
 
     'bm_receive' => [
         'available' => $bmReceive['available'],

@@ -1093,10 +1093,14 @@ function disconnect_only_dvswitch_link(string $myNode, string $dvSwitchNode): vo
         pause_seconds(1.0);
     }
 
-    if ($dvswitchAutoloaded || $hasDmrRuntime || $hasYsfRuntime) {
-        asterisk_ilink_disconnect($myNode, $dvSwitchNode);
-        pause_seconds(0.5);
-    }
+    /*
+     * Disconnect DVSwitch means disconnect the configured private node itself.
+     * That must work even when the private node was loaded as a plain AllStar
+     * link and no managed BM/TGIF/YSF/D-Star/P25/NXDN session flags are active.
+     */
+    asterisk_ilink_disconnect($myNode, $dvSwitchNode);
+    pause_seconds(0.5);
+    untrack_allstar_link($dvSwitchNode);
 
     unset(
         $_SESSION['dvswitch_autoloaded'],
@@ -1359,6 +1363,7 @@ if (
     $action !== 'disconnect_all' &&
     $action !== 'disconnect_selected' &&
     $action !== 'disconnect_dvswitch' &&
+    $action !== 'private_node_lost_cleanup' &&
     $action !== 'send_dtmf'
 ) {
     respond(session_payload('ERROR: INVALID ACTION'), 400);
@@ -1491,6 +1496,32 @@ if ($action === 'disconnect_dvswitch') {
 
     $_SESSION['last_status'] = 'DISCONNECTED: DVSWITCH LINK ' . $dvSwitchNode;
     respond(session_payload($_SESSION['last_status']));
+}
+
+if ($action === 'private_node_lost_cleanup') {
+    if ($hasRealMyNode && $hasRealDvSwitchNode) {
+        disconnect_only_dvswitch_link($myNode, $dvSwitchNode);
+    } else {
+        clear_runtime_targets();
+        clear_dmr_session_state();
+        clear_dmr_active_state();
+        clear_managed_dvswitch_state();
+        unset(
+            $_SESSION['dvswitch_autoloaded'],
+            $_SESSION['dvswitch_active_mode'],
+            $_SESSION['dmr_network'],
+            $_SESSION['dmr_ready'],
+            $_SESSION['pending_tg'],
+            $_SESSION['last_mode'],
+            $_SESSION['last_target'],
+            $_SESSION['pending_target']
+        );
+    }
+
+    $_SESSION['last_status'] = 'IDLE - NO CONNECTIONS';
+    respond(session_payload($_SESSION['last_status'], [
+        'private_node_loss_cleaned' => true,
+    ]));
 }
 
 if ($action === 'disconnect_selected') {
@@ -2047,6 +2078,22 @@ if ($dvswitchAutoloaded && $hasRealDvSwitchNode) {
     unset($_SESSION['dvswitch_active_mode']);
     clear_dmr_active_state();
     $_SESSION['last_status'] = 'DISCONNECTED: DVSWITCH LINK';
+    respond(session_payload($_SESSION['last_status']));
+}
+
+/*
+ * Normal Disconnect must also clear the configured private/DVSwitch node
+ * when that node was loaded by itself as a plain AllStar link. Keep this
+ * after managed-mode cleanup so BM/TGIF/YSF/D-Star/P25/NXDN keep their
+ * existing disconnect behavior.
+ */
+if ($hasRealDvSwitchNode) {
+    asterisk_ilink_disconnect($myNode, $dvSwitchNode);
+    pause_seconds(0.5);
+    untrack_allstar_link($dvSwitchNode);
+    sync_last_direct_target_from_tracking($dvSwitchNode);
+
+    $_SESSION['last_status'] = 'DISCONNECTED: DVSWITCH LINK ' . $dvSwitchNode;
     respond(session_payload($_SESSION['last_status']));
 }
 
