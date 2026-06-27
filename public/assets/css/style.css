@@ -3289,3 +3289,113 @@ select.control {
     color: rgba(235, 220, 245, 0.92) !important;
     box-shadow: none !important;
 }
+
+
+/* AllTune2 auth buttons border-clearance fix */
+.topbar {
+    position: relative !important;
+}
+
+/* Keep the nav centered. Do not reserve side padding that shifts it left. */
+.topbar > .nav {
+    padding-right: 0 !important;
+    margin-left: auto !important;
+    margin-right: auto !important;
+    justify-content: center !important;
+}
+
+/* Wide layout: same general lower-right area as the old Normal Mode bubble. */
+.topbar > .auth-status {
+    position: absolute !important;
+    right: 22px !important;
+    bottom: 20px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: flex-end !important;
+    gap: 7px !important;
+    width: auto !important;
+    max-width: calc(100% - 44px) !important;
+    min-width: 0 !important;
+    margin: 0 !important;
+    white-space: nowrap !important;
+    z-index: 30 !important;
+}
+
+.topbar > .auth-status .auth-pill,
+.topbar > .auth-status .auth-link {
+    min-height: 26px !important;
+    height: 26px !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    padding: 0 11px !important;
+    border-radius: 9px !important;
+    font-size: 0.66rem !important;
+    font-weight: 850 !important;
+    line-height: 1 !important;
+    letter-spacing: 0.03em !important;
+    text-transform: uppercase !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+}
+
+/* Split screen: give auth its own row INSIDE the header border. */
+@media (max-width: 1180px) {
+    .topbar {
+        display: flex !important;
+        flex-wrap: wrap !important;
+        align-items: center !important;
+        height: auto !important;
+        min-height: 0 !important;
+        padding-bottom: 16px !important;
+        overflow: visible !important;
+    }
+
+    .topbar > .nav {
+        order: 20 !important;
+        flex: 0 0 100% !important;
+        width: 100% !important;
+        max-width: 100% !important;
+        padding-right: 0 !important;
+        margin-left: auto !important;
+        margin-right: auto !important;
+        justify-content: center !important;
+    }
+
+    .topbar > .auth-status {
+        order: 30 !important;
+        position: static !important;
+        flex: 0 0 auto !important;
+        margin: 8px 22px 0 auto !important;
+        align-self: flex-end !important;
+        justify-content: flex-end !important;
+        max-width: calc(100% - 44px) !important;
+        z-index: 1 !important;
+    }
+}
+
+@media (max-width: 700px) {
+    .topbar {
+        padding-bottom: 14px !important;
+    }
+
+    .topbar > .auth-status {
+        margin: 8px auto 0 !important;
+        justify-content: center !important;
+        flex-wrap: wrap !important;
+    }
+}
+/* End AllTune2 auth buttons border-clearance fix */
+
+
+/* AllTune2 logo final visual nudge */
+.topbar > .branding {
+    flex: 0 0 100% !important;
+    width: 100% !important;
+    text-align: center !important;
+}
+
+.topbar > .branding .branding-title {
+    transform: translateX(0px) !important;
+}
+/* End AllTune2 logo final visual nudge */
