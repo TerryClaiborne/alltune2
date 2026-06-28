@@ -122,6 +122,46 @@ function direct_node_status_label(string $mode): string
     return normalize_direct_ui_mode($mode) === 'ECHO' ? 'ECHOLINK NODE' : 'ALLSTAR NODE';
 }
 
+function echolink_node_from_mapped_target(string $target): string
+{
+    $target = trim($target);
+    if (preg_match('/^3(\d{6})$/', $target, $matches) !== 1) {
+        return '';
+    }
+
+    $node = ltrim($matches[1], '0');
+    return $node === '' ? '0' : $node;
+}
+
+function echolink_node_exists(string $echolinkNode): bool
+{
+    $echolinkNode = trim($echolinkNode);
+    if ($echolinkNode === '' || preg_match('/^\d+$/', $echolinkNode) !== 1) {
+        return false;
+    }
+
+    $output = shell_run('/usr/bin/timeout 5 sudo /usr/sbin/asterisk -rx ' . escapeshellarg("echolink dbget nodename {$echolinkNode}"));
+    foreach (preg_split('/\R/', $output) ?: [] as $line) {
+        if (preg_match('/^' . preg_quote($echolinkNode, '/') . '\|/', trim((string) $line)) === 1) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function validate_echolink_target_or_fail(string $target, callable $fail): void
+{
+    $echolinkNode = echolink_node_from_mapped_target($target);
+    if ($echolinkNode === '') {
+        $fail('ERROR: INVALID ECHOLINK NODE - USE 3 PLUS ZERO-PADDED 6-DIGIT NODE', 422);
+    }
+
+    if (!echolink_node_exists($echolinkNode)) {
+        $fail('ERROR: ECHOLINK NODE NOT FOUND: ' . $echolinkNode, 404);
+    }
+}
+
 function ensure_allstar_tracking_structures(): void
 {
     if (!isset($_SESSION['allstar_link_modes']) || !is_array($_SESSION['allstar_link_modes'])) {
@@ -387,6 +427,13 @@ if ($action === 'connect') {
     if ($digitsOnlyTarget === '') {
         $_SESSION['last_status'] = 'ERROR: INVALID ALLSTAR NODE';
         respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 422);
+    }
+
+    if ($uiMode === 'ECHO') {
+        validate_echolink_target_or_fail($digitsOnlyTarget, static function (string $message, int $statusCode) use ($hasRealDvSwitchNode, $dvSwitchNode): never {
+            $_SESSION['last_status'] = $message;
+            respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), $statusCode);
+        });
     }
 
     if ($disconnectBeforeConnect) {
