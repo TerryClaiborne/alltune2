@@ -60,12 +60,22 @@ YSF, D-Star, P25, and NXDN are different. Those modes still depend on your norma
 
 <p align="center">
   <a href="screenshot.png">
-    <img src="screenshot.png" alt="AllTune2 dashboard screenshot" width="850">
+    <img src="screenshot.png" alt="AllTune2 dark mode dashboard screenshot" width="850">
   </a>
 </p>
 
 <p align="center">
-  <em>AllTune2 dashboard with multi-network control, Live Status, Favorites, and connected-node tools.</em>
+  <em>AllTune2 dark mode dashboard with multi-network control, Live Status, Favorites, and connected-node tools.</em>
+</p>
+
+<p align="center">
+  <a href="screenshot-light.png">
+    <img src="screenshot-light.png" alt="AllTune2 light mode dashboard screenshot" width="850">
+  </a>
+</p>
+
+<p align="center">
+  <em>AllTune2 light mode dashboard with the Light/Dark switch, blue/white theme, Favorites, and connected-node tools.</em>
 </p>
 
 ---
