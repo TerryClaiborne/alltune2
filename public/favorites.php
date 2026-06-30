@@ -634,6 +634,44 @@ $navItems = [
             background: rgba(138, 13, 140, 0.08);
         }
 
+
+
+        /* Light theme Favorites page action button hover correction */
+        html[data-theme="light"] .favorites-manage-table .edit-link:hover,
+        html[data-theme="light"] .favorites-manage-table .edit-link:focus-visible {
+            background: #174f86 !important;
+            border-color: #0f3f70 !important;
+            color: #ffffff !important;
+            box-shadow: 0 2px 8px rgba(23, 79, 134, 0.28) !important;
+        }
+
+        html[data-theme="light"] .favorites-manage-table .favorite-remove-button:hover,
+        html[data-theme="light"] .favorites-manage-table .favorite-remove-button:focus-visible {
+            background: #d62828 !important;
+            border-color: #8f1d1d !important;
+            color: #ffffff !important;
+            box-shadow:
+                0 0 0 2px rgba(214, 40, 40, 0.22),
+                0 3px 10px rgba(143, 29, 29, 0.32) !important;
+            transform: translateY(-1px);
+        }
+
+        /* Light theme Favorites page row hover correction */
+        html[data-theme="light"] .favorites-manage-table tbody tr:hover,
+        html[data-theme="light"] .favorites-manage-table tbody tr:nth-child(odd):hover,
+        html[data-theme="light"] .favorites-manage-table tbody tr:nth-child(even):hover {
+            background: #e6f2ff !important;
+        }
+
+        html[data-theme="light"] .favorites-manage-table tbody tr:hover td,
+        html[data-theme="light"] .favorites-manage-table tbody tr:hover .favorite-target,
+        html[data-theme="light"] .favorites-manage-table tbody tr:hover .favorite-name,
+        html[data-theme="light"] .favorites-manage-table tbody tr:hover .favorite-description,
+        html[data-theme="light"] .favorites-manage-table tbody tr:hover .favorite-mode-cell {
+            background: transparent !important;
+            color: #14395f !important;
+        }
+
         .favorites-manage-table tbody tr:hover {
             background: rgba(216, 108, 242, 0.14);
         }

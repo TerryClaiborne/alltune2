@@ -4762,3 +4762,127 @@ html[data-theme="light"] .dtmf-control-label {
     color: #0f6b2a;
 }
 /* === End light theme DTMF label color correction v16 === */
+
+/* Light theme saved favorites hover correction */
+html[data-theme="light"] .favorites-table thead .favorites-sort-button:hover,
+html[data-theme="light"] .favorites-table thead .favorites-sort-button:focus-visible {
+    background: linear-gradient(180deg, #f7fbff 0%, #c9e2f8 100%) !important;
+    border-color: #245f98 !important;
+    color: #0f3154 !important;
+    box-shadow:
+        0 0 0 2px rgba(36, 95, 152, 0.24),
+        0 3px 9px rgba(36, 95, 152, 0.22) !important;
+    transform: translateY(-1px);
+}
+
+html[data-theme="light"] .favorites-table thead .favorites-sort-button:hover .favorites-sort-label,
+html[data-theme="light"] .favorites-table thead .favorites-sort-button:hover .favorites-sort-hint,
+html[data-theme="light"] .favorites-table thead .favorites-sort-button:hover .favorites-sort-indicator,
+html[data-theme="light"] .favorites-table thead .favorites-sort-button:focus-visible .favorites-sort-label,
+html[data-theme="light"] .favorites-table thead .favorites-sort-button:focus-visible .favorites-sort-hint,
+html[data-theme="light"] .favorites-table thead .favorites-sort-button:focus-visible .favorites-sort-indicator {
+    color: #0f3154 !important;
+}
+
+html[data-theme="light"] .favorites-table tbody tr[data-target]:hover {
+    background: #e6f2ff !important;
+    border-color: #5f95ca !important;
+    box-shadow: 0 3px 10px rgba(54, 93, 132, 0.16) !important;
+}
+
+html[data-theme="light"] .favorites-table tbody tr[data-target]:hover td {
+    background: transparent !important;
+}
+
+html[data-theme="light"] .favorites-table tbody tr[data-target]:hover td:nth-child(1),
+html[data-theme="light"] .favorites-table tbody tr[data-target]:hover td:nth-child(2),
+html[data-theme="light"] .favorites-table tbody tr[data-target]:hover td:nth-child(3),
+html[data-theme="light"] .favorites-table tbody tr[data-target]:hover td:nth-child(4),
+html[data-theme="light"] .favorites-table tbody tr[data-target]:hover .favorite-target,
+html[data-theme="light"] .favorites-table tbody tr[data-target]:hover .favorite-description,
+html[data-theme="light"] .favorites-table tbody tr[data-target]:hover .favorite-mode {
+    color: #14395f !important;
+}
+/* End light theme saved favorites hover correction */
+
+/* Light theme Control Center button hover polish */
+html[data-theme="light"] .connect-button:hover,
+html[data-theme="light"] #connect-button:hover,
+html[data-theme="light"] .connect-button:focus-visible,
+html[data-theme="light"] #connect-button:focus-visible {
+    background: linear-gradient(180deg, #2fa968 0%, #167a42 100%) !important;
+    border-color: #0f6234 !important;
+    color: #ffffff !important;
+    box-shadow:
+        0 0 0 2px rgba(22, 122, 66, 0.22),
+        0 3px 9px rgba(22, 122, 66, 0.26) !important;
+    transform: translateY(-1px) !important;
+}
+
+html[data-theme="light"] .disconnect-button:hover,
+html[data-theme="light"] #disconnect-button:hover,
+html[data-theme="light"] .disconnect-button:focus-visible,
+html[data-theme="light"] #disconnect-button:focus-visible {
+    background: linear-gradient(180deg, #e25b4b 0%, #b83228 100%) !important;
+    border-color: #8f261e !important;
+    color: #ffffff !important;
+    box-shadow:
+        0 0 0 2px rgba(184, 50, 40, 0.20),
+        0 3px 9px rgba(143, 38, 30, 0.26) !important;
+    transform: translateY(-1px) !important;
+}
+
+html[data-theme="light"] .disconnect-all-button:hover,
+html[data-theme="light"] #disconnect-all-button:hover,
+html[data-theme="light"] .disconnect-all-button:focus-visible,
+html[data-theme="light"] #disconnect-all-button:focus-visible {
+    background: linear-gradient(180deg, #f0a13a 0%, #c26a14 100%) !important;
+    border-color: #92500e !important;
+    color: #ffffff !important;
+    box-shadow:
+        0 0 0 2px rgba(194, 106, 20, 0.22),
+        0 3px 9px rgba(146, 80, 14, 0.28) !important;
+    transform: translateY(-1px) !important;
+}
+
+html[data-theme="light"] .control-save-favorite-button:not(:disabled):hover,
+html[data-theme="light"] .control-save-favorite-button:not(:disabled):focus-visible {
+    background: linear-gradient(180deg, #fff7cf 0%, #f2c94c 100%) !important;
+    border-color: #b98912 !important;
+    color: #4b3500 !important;
+    box-shadow:
+        0 0 0 2px rgba(185, 137, 18, 0.24),
+        0 3px 9px rgba(185, 137, 18, 0.24) !important;
+    transform: translateY(-1px) !important;
+}
+/* End light theme Control Center button hover polish */
+
+/* Light theme Disconnect DVSwitch hover polish */
+html[data-theme="light"] .disconnect-dvswitch-button:hover,
+html[data-theme="light"] #disconnect-dvswitch-button:hover,
+html[data-theme="light"] .disconnect-dvswitch-button:focus-visible,
+html[data-theme="light"] #disconnect-dvswitch-button:focus-visible {
+    background: linear-gradient(180deg, #8aa4c4 0%, #4f6f96 100%) !important;
+    border-color: #314f73 !important;
+    color: #ffffff !important;
+    box-shadow:
+        0 0 0 2px rgba(79, 111, 150, 0.22),
+        0 3px 9px rgba(49, 79, 115, 0.26) !important;
+    transform: translateY(-1px) !important;
+}
+/* End light theme Disconnect DVSwitch hover polish */
+
+/* Light theme Live Status Disconnect DVSwitch hover polish */
+html[data-theme="light"] #status-allstar-links .connected-node-button-dvswitch:hover,
+html[data-theme="light"] #status-allstar-links .connected-node-button-dvswitch:focus-visible,
+html[data-theme="light"] .connected-node-button-dvswitch:hover,
+html[data-theme="light"] .connected-node-button-dvswitch:focus-visible {
+    background: linear-gradient(180deg, #8aa4c4 0%, #4f6f96 100%) !important;
+    border-color: #314f73 !important;
+    color: #ffffff !important;
+    box-shadow:
+        0 0 0 2px rgba(79, 111, 150, 0.22),
+        0 3px 9px rgba(49, 79, 115, 0.26) !important;
+    transform: translateY(-1px) !important;
+}
+/* End light theme Live Status Disconnect DVSwitch hover polish */

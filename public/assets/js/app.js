@@ -1229,6 +1229,10 @@
         return normalizeMode(els.modeSelect?.value || '');
     }
 
+    function currentTargetValue() {
+        return String(els.targetInput?.value || '').trim();
+    }
+
     function currentStatusText() {
         return els.systemStatus
             ? String(els.systemStatus.textContent || '').trim()
@@ -1614,6 +1618,10 @@
             return false;
         }
 
+        if (currentTargetValue() === '') {
+            return false;
+        }
+
         if (isErrorStatus(statusText) || isDisconnectedStatus(statusText)) {
             return true;
         }
@@ -1654,15 +1662,17 @@
     }
 
     function shouldEnableDisconnectButton(statusText) {
-        if (isDisconnectedStatus(statusText) || isErrorStatus(statusText)) {
-            return currentAllstarCount() > 0;
+        const hasActiveLink = currentAllstarCount() > 0 || currentDvSwitchActive();
+
+        if (hasActiveLink) {
+            return true;
         }
 
         if (isWaitingStatus(statusText) || isConnectedStatus(statusText)) {
             return true;
         }
 
-        return true;
+        return false;
     }
 
     function shouldEnableDisconnectAllButton(statusText) {
@@ -2082,7 +2092,7 @@
             const isDvSwitchNode = dvswitchNode !== '' && rawNode === dvswitchNode;
             const isLocalMonitor = modeLabel.toLowerCase().includes('monitor');
             const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 1;
-            const active = (isDvSwitchNode || !isLocalMonitor) && linkLooksKeyed(link, keyedHoldSeconds);
+            const active = linkLooksKeyed(link, keyedHoldSeconds);
 
             return {
                 node: rawNode,
@@ -2206,7 +2216,7 @@
             const isDvSwitchNode = dvswitchNode !== '' && rawNode === dvswitchNode;
             const isLocalMonitor = linkModeLabel.toLowerCase().includes('monitor');
             const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 1;
-            const rowKeyed = (isDvSwitchNode || !isLocalMonitor) && linkLooksKeyed(link, keyedHoldSeconds);
+            const rowKeyed = linkLooksKeyed(link, keyedHoldSeconds);
             const bridgeAudioForNode = bridgeAudioActive && !isDvSwitchNode && !isLocalMonitor;
             const bridgeAudioForDvSwitch = isDvSwitchNode && externalBridgeAudioActive;
             const rowActive = rowKeyed || bridgeAudioForNode || bridgeAudioForDvSwitch;
@@ -2783,6 +2793,12 @@
         }
 
         if (action === 'connect' && !modeIsConfigured(els.modeSelect.value)) {
+            updateHelperText();
+            updateButtonsFromStatus(currentStatusText());
+            return;
+        }
+
+        if (action === 'connect' && currentTargetValue() === '') {
             updateHelperText();
             updateButtonsFromStatus(currentStatusText());
             return;
