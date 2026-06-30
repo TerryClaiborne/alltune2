@@ -1707,6 +1707,7 @@
     function updateButtonsFromStatus(statusText) {
         updateControlCenterWriteState();
         updateDashboardFavoritesWriteState();
+        updateSaveFavoriteButtonState();
 
         if (state.busy) {
             return;
@@ -1955,6 +1956,7 @@
         if (renderItems.length === 0) {
             els.favoritesBody.innerHTML = '<tr><td colspan="5">No favorites saved yet.</td></tr>';
             updateFavoritesSortButtons();
+            updateSaveFavoriteButtonState();
             return;
         }
 
@@ -1979,6 +1981,7 @@
         els.favoritesBody.innerHTML = rows.join('');
         updateDashboardFavoritesWriteState();
         updateFavoritesSortButtons();
+        updateSaveFavoriteButtonState();
     }
 
     function updateActivityValue(label, value) {
@@ -3082,6 +3085,7 @@
             setSelectedModeValue(mode);
             updateHelperText();
             updateButtonsFromStatus(currentStatusText());
+            updateSaveFavoriteButtonState();
 
         });
     }
@@ -3156,6 +3160,32 @@
             String(favorite?.target ?? favorite?.tg ?? '').trim() === normalizedTarget
             && normalizeMode(favorite?.mode ?? 'BM') === normalizedMode
         )) || null;
+    }
+
+    function updateSaveFavoriteButtonState() {
+        if (!els.saveFavoriteButton || !els.targetInput || !els.modeSelect) {
+            return;
+        }
+
+        const target = String(els.targetInput.value || '').trim();
+        const mode = normalizeMode(els.modeSelect.value || 'BM');
+        const existingFavorite = findExistingFavorite(target, mode);
+        const icon = els.saveFavoriteButton.querySelector('.control-save-icon');
+        const text = els.saveFavoriteButton.querySelector('.control-save-text');
+        const hasFavorite = !!existingFavorite && target !== '';
+
+        els.saveFavoriteButton.classList.toggle('is-saved-favorite', hasFavorite);
+        els.saveFavoriteButton.classList.toggle('is-new-favorite', !hasFavorite);
+        els.saveFavoriteButton.setAttribute('aria-label', hasFavorite ? 'Edit saved favorite' : 'Save favorite');
+        els.saveFavoriteButton.title = hasFavorite ? 'Edit saved favorite' : 'Save current manual entry as a favorite';
+
+        if (icon) {
+            icon.textContent = hasFavorite ? '★' : '☆';
+        }
+
+        if (text) {
+            text.innerHTML = hasFavorite ? 'Edit<br>Favorite' : 'Save<br>Favorite';
+        }
     }
 
     function openSaveFavoriteModal(prefill = null) {
@@ -3405,6 +3435,11 @@
         updateControlCenterWriteState();
         updateDashboardFavoritesWriteState();
 
+        if (els.targetInput) {
+            els.targetInput.addEventListener('input', updateSaveFavoriteButtonState);
+            els.targetInput.addEventListener('change', updateSaveFavoriteButtonState);
+        }
+
         if (els.modeSelect) {
             els.modeSelect.addEventListener('change', () => {
                 holdUserSelection();
@@ -3412,6 +3447,7 @@
                 syncAutoloadUiForMode(els.modeSelect.value);
                 updateHelperText();
                 updateButtonsFromStatus(currentStatusText());
+                updateSaveFavoriteButtonState();
             });
         }
 
@@ -3519,6 +3555,7 @@
         syncAutoloadUiForMode(currentSelectedMode());
         updateHelperText();
         updateDtmfButtonState();
+        updateSaveFavoriteButtonState();
         checkForRepoUpdate();
 
         loadStatus().catch((error) => {

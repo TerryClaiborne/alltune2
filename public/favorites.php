@@ -315,7 +315,7 @@ function save_favorites(string $path, array $favorites): bool
 }
 
 $favorites = load_favorites($favoritesPath);
-$favoriteSortKey = normalize_favorites_sort_key((string) ($_POST['sort'] ?? $_GET['sort'] ?? 'target'));
+$favoriteSortKey = normalize_favorites_sort_key((string) ($_POST['sort'] ?? $_GET['sort'] ?? 'mode'));
 $favoriteSortDirection = normalize_favorites_sort_direction((string) ($_POST['dir'] ?? $_GET['dir'] ?? 'asc'));
 $message = '';
 $messageType = 'info';
@@ -505,6 +505,16 @@ $navItems = [
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($appName) ?> Favorites</title>
+    <script>
+        (function () {
+            try {
+                var savedTheme = window.localStorage.getItem('alltune2_theme');
+                document.documentElement.setAttribute('data-theme', savedTheme === 'light' ? 'light' : 'dark');
+            } catch (error) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        }());
+    </script>
     <link rel="stylesheet" href="/alltune2/public/assets/css/style.css">
     <style>
         .favorites-page-stack {
@@ -982,6 +992,200 @@ $navItems = [
         }
 
     </style>
+    <style>
+        html[data-theme="light"] .favorites-page-stack .card-header {
+            border-bottom-color: rgba(76, 121, 178, 0.18);
+        }
+
+        html[data-theme="light"] .favorites-page-stack .meta-line {
+            color: #355f90;
+        }
+
+        html[data-theme="light"] .favorites-form-grid .control,
+        html[data-theme="light"] .favorites-form-grid select.control {
+            border-color: rgba(116, 146, 184, 0.32);
+            background: rgba(255, 255, 255, 0.96);
+            color: #18324d;
+        }
+
+        html[data-theme="light"] .favorites-form-grid .control:focus,
+        html[data-theme="light"] .favorites-form-grid select.control:hover,
+        html[data-theme="light"] .favorites-form-grid select.control:focus {
+            border-color: rgba(76, 121, 178, 0.70);
+            box-shadow: 0 0 0 2px rgba(76, 121, 178, 0.14);
+        }
+
+        html[data-theme="light"] .favorites-form-grid select.control option {
+            background: #ffffff;
+            color: #18324d;
+        }
+
+        html[data-theme="light"] .favorites-page-stack .btn-primary {
+            border-color: rgba(29, 122, 57, 0.42);
+            background: linear-gradient(180deg, rgba(29, 122, 57, 0.14), rgba(29, 122, 57, 0.08));
+            color: #1d7a39;
+        }
+
+        html[data-theme="light"] .favorites-page-stack .btn-primary:hover {
+            border-color: rgba(29, 122, 57, 0.62);
+            background: rgba(29, 122, 57, 0.14);
+        }
+
+        html[data-theme="light"] .favorites-page-stack .btn-danger {
+            border-color: rgba(199, 74, 55, 0.42);
+            background: rgba(199, 74, 55, 0.12);
+            color: #a23b2d;
+        }
+
+        html[data-theme="light"] .favorites-page-stack .btn-danger:hover {
+            background: rgba(199, 74, 55, 0.18);
+            border-color: rgba(199, 74, 55, 0.60);
+        }
+
+        html[data-theme="light"] .favorites-note {
+            border-color: rgba(175, 118, 27, 0.28);
+            background: rgba(175, 118, 27, 0.09);
+            color: #8e6416;
+        }
+
+        html[data-theme="light"] .favorites-manage-table th:nth-child(1) { color: #355f90; }
+        html[data-theme="light"] .favorites-manage-table th:nth-child(2) { color: #1d7a39; }
+        html[data-theme="light"] .favorites-manage-table th:nth-child(3) { color: #2f669b; }
+        html[data-theme="light"] .favorites-manage-table th:nth-child(4) { color: #9a6a00; }
+        html[data-theme="light"] .favorites-manage-table th:nth-child(5) { color: #7c4fb0; }
+        html[data-theme="light"] .favorites-manage-table th:nth-child(6) { color: #355f90; }
+
+        html[data-theme="light"] .favorites-manage-table .favorite-target {
+            color: #1d7a39;
+        }
+
+        html[data-theme="light"] .favorites-manage-table .favorite-name {
+            color: #2f669b;
+        }
+
+        html[data-theme="light"] .favorites-manage-table .favorite-description {
+            color: #2f4052;
+        }
+
+        html[data-theme="light"] .favorites-manage-table .favorite-mode-badge {
+            border-color: rgba(76, 121, 178, 0.28);
+            background: rgba(76, 121, 178, 0.12);
+            color: #24466d;
+        }
+
+        html[data-theme="light"] .edit-link {
+            background: rgba(76, 121, 178, 0.14);
+            color: #355f90;
+            border-color: rgba(76, 121, 178, 0.34);
+        }
+
+        html[data-theme="light"] .edit-link:hover {
+            background: rgba(76, 121, 178, 0.20);
+            border-color: rgba(76, 121, 178, 0.50);
+        }
+
+        html[data-theme="light"] .favorites-sort-link span {
+            color: #355f90;
+            opacity: 0.92;
+        }
+
+        html[data-theme="light"] .favorites-sort-link:hover,
+        html[data-theme="light"] .favorites-sort-link:focus-visible {
+            color: #24466d;
+            text-shadow: none;
+        }
+
+        html[data-theme="light"] .favorite-manage-row[data-edit-url]:focus-within,
+        html[data-theme="light"] .favorite-manage-row[data-edit-url]:hover {
+            outline-color: rgba(76, 121, 178, 0.26);
+        }
+
+        html[data-theme="light"] .favorite-remove-button {
+            border-color: rgba(199, 74, 55, 0.42);
+            background: rgba(199, 74, 55, 0.12);
+            color: #a23b2d;
+        }
+
+        html[data-theme="light"] .favorite-remove-button:hover,
+        html[data-theme="light"] .favorite-remove-button:focus-visible {
+            background: rgba(199, 74, 55, 0.18);
+            border-color: rgba(199, 74, 55, 0.60);
+            color: #812d22;
+        }
+    </style>
+
+    <style>
+        /* light theme readability correction v3 */
+        html[data-theme="light"] .favorites-page-stack .card-header .meta-line {
+            color: #d9e7f5 !important;
+        }
+
+        html[data-theme="light"] .favorites-page-stack .card-body,
+        html[data-theme="light"] .favorites-manage-table-wrap,
+        html[data-theme="light"] .favorites-manage-table,
+        html[data-theme="light"] .favorites-manage-table tbody tr,
+        html[data-theme="light"] .favorites-manage-table tbody tr:nth-child(odd),
+        html[data-theme="light"] .favorites-manage-table tbody tr:nth-child(even) {
+            background: #ffffff !important;
+            color: #22384c !important;
+        }
+
+        html[data-theme="light"] .favorites-manage-table th {
+            background: #edf4fb !important;
+        }
+
+        html[data-theme="light"] .favorites-manage-table th,
+        html[data-theme="light"] .favorites-sort-link,
+        html[data-theme="light"] .favorites-sort-link span {
+            color: #154c7d !important;
+        }
+
+        html[data-theme="light"] .favorites-manage-table .favorite-target {
+            color: #1f8d49 !important;
+            font-weight: 800 !important;
+        }
+
+        html[data-theme="light"] .favorites-manage-table .favorite-name {
+            color: #1670a6 !important;
+            font-weight: 700 !important;
+        }
+
+        html[data-theme="light"] .favorites-manage-table .favorite-description {
+            color: #2f4052 !important;
+        }
+
+        html[data-theme="light"] .favorites-manage-table .favorite-mode-badge {
+            font-weight: 800 !important;
+        }
+
+        html[data-theme="light"] .edit-link {
+            background: #eef4fb !important;
+            border-color: #b3c8df !important;
+            color: #2c5d8e !important;
+        }
+
+        html[data-theme="light"] .favorite-remove-button {
+            background: #c74a37 !important;
+            border-color: #a93b2b !important;
+            color: #ffffff !important;
+        }
+
+        html[data-theme="light"] .favorites-note {
+            color: #5a7088 !important;
+            background: #f7fafd !important;
+        }
+        /* end light theme readability correction v3 */
+    </style>
+    <!-- light theme readability correction v3 -->
+
+    <style>
+        /* favorites page description weight correction v14 */
+        .favorites-manage-table .favorite-description {
+            font-size: 0.8rem !important;
+            font-weight: 700 !important;
+            line-height: 1.18 !important;
+        }
+    </style>
 </head>
 <body>
 <div class="page">
@@ -991,28 +1195,46 @@ $navItems = [
             <div class="branding-subtitle"></div>
         </div>
 
-        <nav class="nav" aria-label="Primary">
-            <?php foreach ($navItems as $item): ?>
-                <a
-                    class="nav-button<?= !empty($item['active']) ? ' active' : '' ?>"
-                    href="<?= e($item['href']) ?>"
-                    <?= isset($item['target']) ? ' target="' . e((string) $item['target']) . '"' : '' ?>
+        <div class="nav-row">
+            <div class="theme-toggle-group" aria-label="Theme selector">
+                <span class="theme-toggle-caption">Theme</span>
+                <button
+                    type="button"
+                    class="theme-toggle"
+                    id="theme-toggle"
+                    aria-label="Toggle light and dark theme"
+                    role="switch"
+                    aria-checked="false"
                 >
-                    <?= e($item['label']) ?>
-                </a>
-            <?php endforeach; ?>
-        </nav>
+                    <span class="theme-toggle-text theme-toggle-text-light">Light</span>
+                    <span class="theme-toggle-text theme-toggle-text-dark">Dark</span>
+                    <span class="theme-toggle-thumb" aria-hidden="true"></span>
+                </button>
+            </div>
 
-        <div class="auth-status" aria-label="Authentication status">
-            <?php if (!$authEnabled): ?>
-                <span class="auth-pill auth-pill-normal">Normal Mode</span>
-            <?php elseif ($authLoggedIn): ?>
-                <span class="auth-pill auth-pill-signed-in">Signed In</span>
-                <a class="auth-link" href="/alltune2/public/logout.php">Logout</a>
-            <?php else: ?>
-                <span class="auth-pill auth-pill-view-only">View Only</span>
-                <a class="auth-link" href="/alltune2/public/login.php">Login</a>
-            <?php endif; ?>
+            <nav class="nav" aria-label="Primary">
+                <?php foreach ($navItems as $item): ?>
+                    <a
+                        class="nav-button<?= !empty($item['active']) ? ' active' : '' ?>"
+                        href="<?= e($item['href']) ?>"
+                        <?= isset($item['target']) ? ' target="' . e((string) $item['target']) . '"' : '' ?>
+                    >
+                        <?= e($item['label']) ?>
+                    </a>
+                <?php endforeach; ?>
+            </nav>
+
+            <div class="auth-status" aria-label="Authentication status">
+                <?php if (!$authEnabled): ?>
+                    <span class="auth-pill auth-pill-normal">Normal Mode</span>
+                <?php elseif ($authLoggedIn): ?>
+                    <span class="auth-pill auth-pill-signed-in">Signed In</span>
+                    <a class="auth-link" href="/alltune2/public/logout.php">Logout</a>
+                <?php else: ?>
+                    <span class="auth-pill auth-pill-view-only">View Only</span>
+                    <a class="auth-link" href="/alltune2/public/login.php">Login</a>
+                <?php endif; ?>
+            </div>
         </div>
     </header>
 
@@ -1174,6 +1396,7 @@ $navItems = [
     </main>
 </div>
 
+    <script src="/alltune2/public/assets/js/theme.js"></script>
     <script>
         document.addEventListener('click', function (event) {
             const blocked = event.target.closest('button, input, select, textarea, a, form, label');

@@ -1,68 +1,70 @@
-alltune2/
-+-- api
-|   +-- connect.php
-|   +-- direct_link.php
-|   +-- favorites.php
-|   `-- status.php
-+-- app
-|   +-- Actions
-|   |   +-- ActionInterface.php
-|   |   +-- AllStarAction.php
-|   |   +-- BrandMeisterAction.php
-|   |   +-- TGIFAction.php
-|   |   `-- YSFAction.php
-|   +-- Controllers
-|   |   `-- MainController.php
-|   +-- Services
-|   |   `-- NetworkManager.php
-|   +-- State
-|   |   +-- AppState.php
-|   |   +-- MessageCatalog.php
-|   |   `-- StatusMapper.php
-|   `-- Support
-|       +-- ApiAuthGuard.php
-|       +-- AppAuth.php
-|       +-- AppCsrf.php
-|       +-- AppSession.php
-|       +-- Config.php
-|       `-- Logger.php
-+-- bmtd
-|   +-- bin
-|   |   `-- bmtd
-|   +-- config
-|   |   `-- bmtd.ini.example
-|   +-- docs
-|   |   `-- BMTD-COPYRIGHT-NOTICE.md
-|   `-- alltune2-bmtd-helper.sh
-+-- data
-|   `-- favorites.example.txt
-+-- docs
-|   `-- .gitkeep
-+-- public
-|   +-- assets
-|   |   +-- css
-|   |   |   `-- style.css
-|   |   `-- js
-|   |       `-- app.js
-|   +-- alltune2_ribbon_bar.php
-|   +-- favorites.php
-|   +-- index.php
-|   +-- login.php
-|   `-- logout.php
-+-- tgif
-|   +-- bin
-|   |   `-- tgifd
-|   +-- config
-|   |   `-- tgifd.ini.example
-|   +-- docs
-|   |   `-- TGIFD-COPYRIGHT-NOTICE.md
-|   `-- alltune2-tgifd-helper.sh
-+-- tools
-|   `-- alltune2_set_admin_password.php
-+-- .gitignore
-+-- config.ini.example
-+-- README.md
-+-- screenshot.png
-+-- setup_alltune2.sh
-+-- tree.txt
-`-- VERSION
+.
+|-- .gitignore
+|-- README.md
+|-- VERSION
+|-- api
+|   |-- connect.php
+|   |-- direct_link.php
+|   |-- favorites.php
+|   |-- status.php
+|-- app
+|   |-- Actions
+|   |   |-- ActionInterface.php
+|   |   |-- AllStarAction.php
+|   |   |-- BrandMeisterAction.php
+|   |   |-- TGIFAction.php
+|   |   |-- YSFAction.php
+|   |-- Controllers
+|   |   |-- MainController.php
+|   |-- Services
+|   |   |-- NetworkManager.php
+|   |-- State
+|   |   |-- AppState.php
+|   |   |-- MessageCatalog.php
+|   |   |-- StatusMapper.php
+|   |-- Support
+|   |   |-- ApiAuthGuard.php
+|   |   |-- AppAuth.php
+|   |   |-- AppCsrf.php
+|   |   |-- AppSession.php
+|   |   |-- Config.php
+|   |   |-- Logger.php
+|-- bmtd
+|   |-- alltune2-bmtd-helper.sh
+|   |-- bin
+|   |   |-- bmtd
+|   |-- config
+|   |   |-- bmtd.ini.example
+|   |-- docs
+|   |   |-- BMTD-COPYRIGHT-NOTICE.md
+|-- config.ini.example
+|-- data
+|   |-- favorites.example.txt
+|-- docs
+|   |-- .gitkeep
+|-- public
+|   |-- alltune2_ribbon_bar.php
+|   |-- assets
+|   |   |-- css
+|   |   |   |-- style.css
+|   |   |-- js
+|   |   |   |-- app.js
+|   |   |   |-- theme.js
+|   |-- favorites.php
+|   |-- index.php
+|   |-- login.php
+|   |-- logout.php
+|-- screenshot-light.png
+|-- screenshot.png
+|-- setup_alltune2.sh
+|-- tgif
+|   |-- alltune2-tgifd-helper.sh
+|   |-- bin
+|   |   |-- tgifd
+|   |-- config
+|   |   |-- tgifd.ini.example
+|   |-- docs
+|   |   |-- TGIFD-COPYRIGHT-NOTICE.md
+|-- tools
+|   |-- alltune2_set_admin_password.php
+|-- tree.txt

@@ -194,6 +194,16 @@ $activityLines[] = [
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title><?= e($appName) ?></title>
+    <script>
+        (function () {
+            try {
+                var savedTheme = window.localStorage.getItem('alltune2_theme');
+                document.documentElement.setAttribute('data-theme', savedTheme === 'light' ? 'light' : 'dark');
+            } catch (error) {
+                document.documentElement.setAttribute('data-theme', 'dark');
+            }
+        }());
+    </script>
     <link rel="stylesheet" href="/alltune2/public/assets/css/style.css">
 </head>
 <body>
@@ -228,28 +238,46 @@ $activityLines[] = [
             </div>
         </div>
 
-        <nav class="nav" aria-label="Primary">
-            <?php foreach ($navItems as $item): ?>
-                <a
-                    class="nav-button<?= !empty($item['active']) ? ' active' : '' ?>"
-                    href="<?= e($item['href']) ?>"
-                    <?= isset($item['target']) ? ' target="' . e((string) $item['target']) . '"' : '' ?>
+        <div class="nav-row">
+            <div class="theme-toggle-group" aria-label="Theme selector">
+                <span class="theme-toggle-caption">Theme</span>
+                <button
+                    type="button"
+                    class="theme-toggle"
+                    id="theme-toggle"
+                    aria-label="Toggle light and dark theme"
+                    role="switch"
+                    aria-checked="false"
                 >
-                    <?= e($item['label']) ?>
-                </a>
-            <?php endforeach; ?>
-        </nav>
+                    <span class="theme-toggle-text theme-toggle-text-light">Light</span>
+                    <span class="theme-toggle-text theme-toggle-text-dark">Dark</span>
+                    <span class="theme-toggle-thumb" aria-hidden="true"></span>
+                </button>
+            </div>
 
-        <div class="auth-status" aria-label="Authentication status">
-            <?php if (!$authEnabled): ?>
-                <span class="auth-pill auth-pill-normal">Normal Mode</span>
-            <?php elseif ($authLoggedIn): ?>
-                <span class="auth-pill auth-pill-signed-in">Signed In</span>
-                <a class="auth-link" href="/alltune2/public/logout.php">Logout</a>
-            <?php else: ?>
-                <span class="auth-pill auth-pill-view-only">View Only</span>
-                <a class="auth-link" href="/alltune2/public/login.php">Login</a>
-            <?php endif; ?>
+            <nav class="nav" aria-label="Primary">
+                <?php foreach ($navItems as $item): ?>
+                    <a
+                        class="nav-button<?= !empty($item['active']) ? ' active' : '' ?>"
+                        href="<?= e($item['href']) ?>"
+                        <?= isset($item['target']) ? ' target="' . e((string) $item['target']) . '"' : '' ?>
+                    >
+                        <?= e($item['label']) ?>
+                    </a>
+                <?php endforeach; ?>
+            </nav>
+
+            <div class="auth-status" aria-label="Authentication status">
+                <?php if (!$authEnabled): ?>
+                    <span class="auth-pill auth-pill-normal">Normal Mode</span>
+                <?php elseif ($authLoggedIn): ?>
+                    <span class="auth-pill auth-pill-signed-in">Signed In</span>
+                    <a class="auth-link" href="/alltune2/public/logout.php">Logout</a>
+                <?php else: ?>
+                    <span class="auth-pill auth-pill-view-only">View Only</span>
+                    <a class="auth-link" href="/alltune2/public/login.php">Login</a>
+                <?php endif; ?>
+            </div>
         </div>
     </header>
 
@@ -688,6 +716,7 @@ window.ALLTUNE2_AUTH = {
 }());
 </script>
 
+<script src="/alltune2/public/assets/js/theme.js"></script>
 <script src="/alltune2/public/assets/js/app.js"></script>
 <script>
 (function () {

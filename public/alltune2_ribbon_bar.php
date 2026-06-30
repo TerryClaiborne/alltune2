@@ -855,10 +855,10 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             margin: 10px 0 12px;
             padding: 6px 8px;
             box-sizing: border-box;
-            border: 1px solid rgba(170, 92, 255, 0.38);
+            border: 1px solid var(--ribbon-wrap-border, rgba(170, 92, 255, 0.38));
             border-radius: 12px;
-            background: linear-gradient(180deg, rgba(28, 10, 44, 0.96), rgba(18, 7, 30, 0.96));
-            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.02) inset;
+            background: var(--ribbon-wrap-bg, linear-gradient(180deg, rgba(28, 10, 44, 0.96), rgba(18, 7, 30, 0.96)));
+            box-shadow: var(--ribbon-wrap-shadow, 0 0 0 1px rgba(255, 255, 255, 0.02) inset);
             overflow: hidden;
             font-family: Arial, Helvetica, sans-serif;
         }
@@ -871,7 +871,7 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             overflow-x: auto;
             overflow-y: hidden;
             scrollbar-width: thin;
-            scrollbar-color: rgba(178, 123, 255, 0.55) transparent;
+            scrollbar-color: var(--ribbon-scrollbar, rgba(178, 123, 255, 0.55)) transparent;
             padding-bottom: 1px;
             justify-content: center;
         }
@@ -879,14 +879,14 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             height: 5px;
         }
         #<?= $instanceId ?> .at2r-row::-webkit-scrollbar-thumb {
-            background: rgba(178, 123, 255, 0.55);
+            background: var(--ribbon-scrollbar, rgba(178, 123, 255, 0.55));
             border-radius: 999px;
         }
         #<?= $instanceId ?> .at2r-pill {
             appearance: none;
-            border: 1px solid rgba(161, 118, 221, 0.40);
-            background: linear-gradient(180deg, rgba(44, 17, 72, 0.96), rgba(24, 9, 38, 0.98));
-            color: #f7f0ff;
+            border: 1px solid var(--ribbon-pill-border, rgba(161, 118, 221, 0.40));
+            background: var(--ribbon-pill-bg, linear-gradient(180deg, rgba(44, 17, 72, 0.96), rgba(24, 9, 38, 0.98)));
+            color: var(--ribbon-pill-text, #f7f0ff);
             height: 24px;
             min-height: 24px;
             border-radius: 6px;
@@ -903,11 +903,11 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
         }
         #<?= $instanceId ?> .at2r-pill:hover,
         #<?= $instanceId ?> .at2r-pill.at2r-open {
-            border-color: rgba(217, 159, 255, 0.80);
-            background: linear-gradient(180deg, rgba(70, 25, 107, 0.98), rgba(34, 11, 55, 1));
+            border-color: var(--ribbon-pill-hover-border, rgba(217, 159, 255, 0.80));
+            background: var(--ribbon-pill-hover-bg, linear-gradient(180deg, rgba(70, 25, 107, 0.98), rgba(34, 11, 55, 1)));
         }
         #<?= $instanceId ?> .at2r-pill.at2r-na .at2r-value {
-            color: #ffd98d;
+            color: var(--ribbon-na-text, #ffd98d);
         }
         #<?= $instanceId ?> .at2r-icon {
             width: 12px;
@@ -915,7 +915,7 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             display: inline-flex;
             align-items: center;
             justify-content: center;
-            color: #8de4ff;
+            color: var(--ribbon-icon, #8de4ff);
             flex: 0 0 12px;
         }
         #<?= $instanceId ?> .at2r-icon svg {
@@ -924,16 +924,16 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             display: block;
             fill: currentColor;
         }
-        #<?= $instanceId ?> .at2r-icon.up { color: #57eeb1; }
-        #<?= $instanceId ?> .at2r-icon.down { color: #7bc2ff; }
-        #<?= $instanceId ?> .at2r-icon.temp { color: #ffb16c; }
-        #<?= $instanceId ?> .at2r-icon.disk { color: #d7c6ff; }
+        #<?= $instanceId ?> .at2r-icon.up { color: var(--ribbon-icon-up, #57eeb1); }
+        #<?= $instanceId ?> .at2r-icon.down { color: var(--ribbon-icon-down, #7bc2ff); }
+        #<?= $instanceId ?> .at2r-icon.temp { color: var(--ribbon-icon-temp, #ffb16c); }
+        #<?= $instanceId ?> .at2r-icon.disk { color: var(--ribbon-icon-disk, #d7c6ff); }
         #<?= $instanceId ?> .at2r-label {
-            color: #f4a6ff;
+            color: var(--ribbon-label, #f4a6ff);
             font-weight: 700;
         }
         #<?= $instanceId ?> .at2r-value {
-            color: #ffffff;
+            color: var(--ribbon-value, #ffffff);
             font-weight: 600;
         }
         #<?= $instanceId ?> .at2r-time .at2r-value {
@@ -944,12 +944,12 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             z-index: 99999;
             min-width: 240px;
             max-width: 320px;
-            border: 1px solid rgba(205, 150, 255, 0.65);
+            border: 1px solid var(--ribbon-popup-border, rgba(205, 150, 255, 0.65));
             border-radius: 10px;
-            background: linear-gradient(180deg, rgba(34, 11, 54, 0.99), rgba(18, 7, 30, 0.99));
-            box-shadow: 0 10px 28px rgba(0, 0, 0, 0.45);
+            background: var(--ribbon-popup-bg, linear-gradient(180deg, rgba(34, 11, 54, 0.99), rgba(18, 7, 30, 0.99)));
+            box-shadow: var(--ribbon-popup-shadow, 0 10px 28px rgba(0, 0, 0, 0.45));
             padding: 10px 11px;
-            color: #f8eeff;
+            color: var(--ribbon-popup-text, #f8eeff);
             font-family: Arial, Helvetica, sans-serif;
             font-size: 12px;
             line-height: 1.35;
@@ -961,11 +961,11 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             margin: 0 0 6px;
             font-size: 13px;
             font-weight: 700;
-            color: #ffb3ff;
+            color: var(--ribbon-popup-title, #ffb3ff);
         }
         #<?= $instanceId ?> .at2r-popup-line {
             margin: 0 0 4px;
-            color: #f7f1ff;
+            color: var(--ribbon-popup-line, #f7f1ff);
             word-break: break-word;
         }
         #<?= $instanceId ?> .at2r-popup-line:last-child {
