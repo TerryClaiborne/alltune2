@@ -54,14 +54,6 @@ function asterisk_ilink_disconnect(string $node, string $remoteNode): string
     return asterisk_rpt_cmd($node, "ilink 1 {$remoteNode}");
 }
 
-function asterisk_reset_echolink_module(): void
-{
-    shell_run('sudo /usr/sbin/asterisk -rx ' . escapeshellarg('module unload chan_echolink.so'));
-    usleep(1000000);
-    shell_run('sudo /usr/sbin/asterisk -rx ' . escapeshellarg('module load chan_echolink.so'));
-    usleep(2000000);
-}
-
 function asterisk_ilink_connect(string $node, string $remoteNode, string $linkMode): string
 {
     $ilink = $linkMode === 'local_monitor' ? '8' : '3';
@@ -71,6 +63,58 @@ function asterisk_ilink_connect(string $node, string $remoteNode, string $linkMo
 function pause_seconds(float $seconds): void
 {
     usleep((int) round($seconds * 1000000));
+}
+
+function echolink_module_info(): string
+{
+    return shell_run('/usr/bin/timeout 5 sudo /usr/sbin/asterisk -rx ' . escapeshellarg('module show like echolink'));
+}
+
+function echolink_module_use_count(): int
+{
+    $output = echolink_module_info();
+
+    if (preg_match('/^chan_echolink\.so\s+.*?\s+(\d+)\s+Running\s+/m', $output, $match)) {
+        return (int) $match[1];
+    }
+
+    return 0;
+}
+
+function echolink_module_is_loaded(): bool
+{
+    return stripos(echolink_module_info(), 'chan_echolink.so') !== false;
+}
+
+function echolink_ensure_module_loaded(): void
+{
+    if (!echolink_module_is_loaded()) {
+        shell_run('/usr/bin/timeout 8 sudo /usr/sbin/asterisk -rx ' . escapeshellarg('module load chan_echolink.so'));
+        pause_seconds(2.0);
+    }
+}
+
+function asterisk_reset_echolink_module(): void
+{
+    shell_run('/usr/bin/timeout 8 sudo /usr/sbin/asterisk -rx ' . escapeshellarg('module unload chan_echolink.so'));
+    pause_seconds(1.0);
+    shell_run('/usr/bin/timeout 8 sudo /usr/sbin/asterisk -rx ' . escapeshellarg('module load chan_echolink.so'));
+    pause_seconds(2.0);
+}
+
+function echolink_wait_for_idle(int $timeoutSeconds = 8): bool
+{
+    $deadline = microtime(true) + max(1, $timeoutSeconds);
+
+    do {
+        if (echolink_module_use_count() === 0) {
+            return true;
+        }
+
+        pause_seconds(0.5);
+    } while (microtime(true) < $deadline);
+
+    return echolink_module_use_count() === 0;
 }
 
 function normalize_mode(string $mode): string
@@ -91,6 +135,17 @@ function normalize_mode(string $mode): string
 function normalize_direct_ui_mode(string $mode): string
 {
     return normalize_mode($mode) === 'ECHO' ? 'ECHO' : 'ASL';
+}
+
+function normalize_echolink_target(string $target): string
+{
+    $digits = preg_replace('/[^0-9]/', '', $target) ?? '';
+
+    if ($digits === '') {
+        return '';
+    }
+
+    return $digits;
 }
 
 function normalize_autoload_dvswitch_mode(mixed $mode): string
@@ -122,27 +177,26 @@ function direct_node_status_label(string $mode): string
     return normalize_direct_ui_mode($mode) === 'ECHO' ? 'ECHOLINK NODE' : 'ALLSTAR NODE';
 }
 
-function echolink_node_from_mapped_target(string $target): string
+function direct_node_is_echolink(string $node, string $uiMode = ''): bool
 {
-    $target = trim($target);
-    if (preg_match('/^3(\d{6})$/', $target, $matches) !== 1) {
-        return '';
+    if (normalize_direct_ui_mode($uiMode) === 'ECHO') {
+        return true;
     }
 
-    $node = ltrim($matches[1], '0');
-    return $node === '' ? '0' : $node;
+    $node = preg_replace('/[^0-9]/', '', trim($node)) ?? '';
+    return $node !== '' && ctype_digit($node) && (int) $node >= 3000000;
 }
 
-function echolink_node_exists(string $echolinkNode): bool
+function same_echolink_node_already_tracked(string $targetNode): bool
 {
-    $echolinkNode = trim($echolinkNode);
-    if ($echolinkNode === '' || preg_match('/^\d+$/', $echolinkNode) !== 1) {
+    $targetNode = preg_replace('/[^0-9]/', '', $targetNode) ?? '';
+    if ($targetNode === '') {
         return false;
     }
 
-    $output = shell_run('/usr/bin/timeout 5 sudo /usr/sbin/asterisk -rx ' . escapeshellarg("echolink dbget nodename {$echolinkNode}"));
-    foreach (preg_split('/\R/', $output) ?: [] as $line) {
-        if (preg_match('/^' . preg_quote($echolinkNode, '/') . '\|/', trim((string) $line)) === 1) {
+    foreach (allstar_tracked_nodes_in_order(null) as $node) {
+        $node = preg_replace('/[^0-9]/', '', (string) $node) ?? '';
+        if ($node === $targetNode && direct_node_is_echolink($node, tracked_allstar_ui_mode($node))) {
             return true;
         }
     }
@@ -150,16 +204,23 @@ function echolink_node_exists(string $echolinkNode): bool
     return false;
 }
 
-function validate_echolink_target_or_fail(string $target, callable $fail): void
+
+function different_echolink_node_already_tracked(string $targetNode): bool
 {
-    $echolinkNode = echolink_node_from_mapped_target($target);
-    if ($echolinkNode === '') {
-        $fail('ERROR: INVALID ECHOLINK NODE - USE 3 PLUS ZERO-PADDED 6-DIGIT NODE', 422);
+    $targetNode = preg_replace('/[^0-9]/', '', $targetNode) ?? '';
+
+    foreach (allstar_tracked_nodes_in_order(null) as $node) {
+        $node = preg_replace('/[^0-9]/', '', (string) $node) ?? '';
+        if ($node === '') {
+            continue;
+        }
+
+        if ($node !== $targetNode && direct_node_is_echolink($node, tracked_allstar_ui_mode($node))) {
+            return true;
+        }
     }
 
-    if (!echolink_node_exists($echolinkNode)) {
-        $fail('ERROR: ECHOLINK NODE NOT FOUND: ' . $echolinkNode, 404);
-    }
+    return false;
 }
 
 function ensure_allstar_tracking_structures(): void
@@ -424,16 +485,19 @@ if ($action === 'connect') {
         $_SESSION['last_status'] = 'ERROR: INVALID DIRECT MODE';
         respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 422);
     }
+
+    if ($uiMode === 'ECHO') {
+        $digitsOnlyTarget = normalize_echolink_target($digitsOnlyTarget);
+    }
+
     if ($digitsOnlyTarget === '') {
-        $_SESSION['last_status'] = 'ERROR: INVALID ALLSTAR NODE';
+        $_SESSION['last_status'] = $uiMode === 'ECHO' ? 'ERROR: INVALID ECHOLINK NODE' : 'ERROR: INVALID ALLSTAR NODE';
         respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 422);
     }
 
-    if ($uiMode === 'ECHO') {
-        validate_echolink_target_or_fail($digitsOnlyTarget, static function (string $message, int $statusCode) use ($hasRealDvSwitchNode, $dvSwitchNode): never {
-            $_SESSION['last_status'] = $message;
-            respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), $statusCode);
-        });
+    if ($uiMode === 'ECHO' && !preg_match('/^3\d{6}$/', $digitsOnlyTarget)) {
+        $_SESSION['last_status'] = 'ERROR: INVALID ECHOLINK NODE';
+        respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 422);
     }
 
     if ($disconnectBeforeConnect) {
@@ -449,7 +513,19 @@ if ($action === 'connect') {
     }
 
     if ($uiMode === 'ECHO') {
+        /*
+         * Block a second/different dashboard-tracked EchoLink node, but do not
+         * treat chan_echolink.so Use Count alone as an active connection. ASL3
+         * can leave the module Use Count above zero even when app_rpt reports
+         * no connected EchoLink nodes.
+         */
+        if (different_echolink_node_already_tracked($digitsOnlyTarget)) {
+            $_SESSION['last_status'] = 'ERROR: ECHOLINK LINK ALREADY ACTIVE';
+            respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+        }
+
         asterisk_reset_echolink_module();
+        echolink_ensure_module_loaded();
     }
 
     asterisk_ilink_connect($myNode, $digitsOnlyTarget, $autoloadDvSwitchMode);

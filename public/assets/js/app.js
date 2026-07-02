@@ -27,8 +27,10 @@
         previousConnectedNodes: [],
         muteAudioAnnouncements: false,
         audioSettleUntil: 0,
+        directStatusCorrectionHoldUntil: 0,
         recentAudioEvents: new Map(),
         immediateAudioEvents: new Map(),
+        lastCorrectedDirectDisconnectSignature: '',
         lastAllstarPayload: null,
         manualAutoloadPreference: null,
         privateNodeLossCleanupInFlight: false,
@@ -248,6 +250,11 @@
         state.audioSettleUntil = Math.max(state.audioSettleUntil, until);
     }
 
+    function markDirectStatusCorrectionHold(milliseconds) {
+        const until = Date.now() + Math.max(0, milliseconds);
+        state.directStatusCorrectionHoldUntil = Math.max(state.directStatusCorrectionHoldUntil, until);
+    }
+
     function pruneRecentAudioEvents() {
         const cutoff = Date.now() - 6000;
 
@@ -451,6 +458,84 @@
     function parseNodeFromStatus(statusText) {
         const match = String(statusText || '').match(/(?:ALLSTAR NODE|ECHOLINK NODE|DVSWITCH LINK)\s+(\d{3,})/i);
         return match ? String(match[1]).trim() : '';
+    }
+
+
+    function directStatusDetails(statusText) {
+        const normalized = normalizeStatusText(statusText);
+        const match = normalized.match(/^(CONNECTED|DISCONNECTED):\s+(ALLSTAR NODE|ECHOLINK NODE)\s+(\d{3,})/i);
+
+        if (!match) {
+            return null;
+        }
+
+        return {
+            state: String(match[1] || '').toUpperCase(),
+            label: String(match[2] || '').toUpperCase(),
+            node: String(match[3] || '').trim(),
+        };
+    }
+
+    function liveAllstarNodeSet(allstarPayload) {
+        return new Set(connectedNodeListFromPayload(allstarPayload));
+    }
+
+    function correctDirectStatusFromLive(statusText, allstarPayload) {
+        const details = directStatusDetails(statusText);
+
+        if (!details || details.state !== 'CONNECTED' || details.node === '' || !allstarPayload || typeof allstarPayload !== 'object') {
+            return {
+                statusText: normalizeStatusText(statusText),
+                corrected: false,
+                node: '',
+            };
+        }
+
+        if (Date.now() < state.directStatusCorrectionHoldUntil) {
+            return {
+                statusText: normalizeStatusText(statusText),
+                corrected: false,
+                node: '',
+            };
+        }
+
+        const liveNodes = liveAllstarNodeSet(allstarPayload);
+        const signature = `disconnect:${details.node}`;
+
+        if (liveNodes.has(details.node)) {
+            if (state.lastCorrectedDirectDisconnectSignature === signature) {
+                state.lastCorrectedDirectDisconnectSignature = '';
+            }
+
+            return {
+                statusText: normalizeStatusText(statusText),
+                corrected: false,
+                node: '',
+            };
+        }
+
+        return {
+            statusText: `DISCONNECTED: ${details.label} ${details.node}`,
+            corrected: true,
+            node: details.node,
+        };
+    }
+
+    function announceCorrectedDirectDisconnect(correction, previousStatusText = '') {
+        if (!correction || !correction.corrected || String(correction.node || '').trim() === '') {
+            return;
+        }
+
+        const correctedStatusText = normalizeStatusText(correction.statusText || '');
+        if (correctedStatusText !== '' && normalizeStatusText(previousStatusText) === correctedStatusText) {
+            return;
+        }
+
+        const node = String(correction.node || '').trim();
+        const signature = `disconnect:${node}`;
+
+        markImmediateAudioEvent(signature);
+        announceNodeDisconnected(node);
     }
 
     function configuredDvSwitchNodeFromDom() {
@@ -1661,18 +1746,40 @@
         return true;
     }
 
+    function managedNetworkLooksDisconnectable(statusText) {
+        const networkTexts = [
+            els.statusBm,
+            els.statusTgif,
+            els.statusYsf,
+            els.statusDstar,
+            els.statusP25,
+            els.statusNxdn,
+        ].map((element) => String(element?.textContent || '').trim());
+
+        if (networkTexts.some((text) => textLooksActive(text))) {
+            return true;
+        }
+
+        const status = normalizeStatusText(statusText).toUpperCase();
+        return (
+            status.includes('(BM)') ||
+            status.includes('(TGIF)') ||
+            status.includes('CONNECTED: YSF TARGET') ||
+            status.includes('CONNECTED: D-STAR TARGET') ||
+            status.includes('CONNECTED: DSTAR TARGET') ||
+            status.includes('CONNECTED: P25 TARGET') ||
+            status.includes('CONNECTED: NXDN TARGET') ||
+            status.includes('WAITING: BM READY') ||
+            status.includes('WAITING: TGIF READY')
+        );
+    }
+
     function shouldEnableDisconnectButton(statusText) {
-        const hasActiveLink = currentAllstarCount() > 0 || currentDvSwitchActive();
-
-        if (hasActiveLink) {
+        if (currentDirectConnectedNodeCount() > 0) {
             return true;
         }
 
-        if (isWaitingStatus(statusText) || isConnectedStatus(statusText)) {
-            return true;
-        }
-
-        return false;
+        return managedNetworkLooksDisconnectable(statusText);
     }
 
     function shouldEnableDisconnectAllButton(statusText) {
@@ -1775,13 +1882,6 @@
                 els.sendDtmfButton.style.cursor = 'wait';
             }
 
-            const rowButtons = document.querySelectorAll('.allstar-disconnect-button');
-            rowButtons.forEach((button) => {
-                button.disabled = true;
-                button.style.opacity = '0.7';
-                button.style.cursor = 'wait';
-            });
-
             return;
         }
 
@@ -1812,49 +1912,49 @@
         if (mode === 'BM') {
             return disconnectFirst
                 ? 'BrandMeister is a one-step connect. Enter or load a talkgroup and press CONNECT once. After BM is connected, you can change to another BM talkgroup by entering or loading the new talkgroup and pressing CONNECT again without disconnecting first. DISCONNECT removes the current BM receive session. DISCONNECT DVSWITCH removes only the configured DVSwitch link and stops BM receive mode if it is active. DISCONNECT ALL does a full reset. With Disconnect before Connect on, the next managed DVSwitch connect clears the earlier managed DVSwitch session first.'
-                : 'BrandMeister is a one-step connect. Enter or load a talkgroup and press CONNECT once. After BM is connected, you can change to another BM talkgroup by entering or loading the new talkgroup and pressing CONNECT again without disconnecting first. DISCONNECT removes the current BM receive session. DISCONNECT DVSWITCH removes only the configured DVSwitch link and stops BM receive mode if it is active. DISCONNECT ALL does a full reset. With Disconnect before Connect off, BM can stay up while you add direct AllStarLink or EchoLink connections.';
+                : 'BrandMeister is a one-step connect. Enter or load a talkgroup and press CONNECT once. After BM is connected, you can change to another BM talkgroup by entering or loading the new talkgroup and pressing CONNECT again without disconnecting first. DISCONNECT removes the current BM receive session. DISCONNECT DVSWITCH removes only the configured DVSwitch link and stops BM receive mode if it is active. DISCONNECT ALL does a full reset. With Disconnect before Connect off, BM can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
         }
 
         if (mode === 'TGIF') {
             return disconnectFirst
                 ? 'TGIF is a one-step connect. Enter or load a talkgroup and press CONNECT once. Wait for the status to confirm the connection. After TGIF is connected, you can change to another TGIF talkgroup by entering or loading the new talkgroup and pressing CONNECT again without disconnecting first. DISCONNECT removes the current TGIF connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect on, the next managed DVSwitch connect clears the earlier managed DVSwitch session first.'
-                : 'TGIF is a one-step connect. Enter or load a talkgroup and press CONNECT once. Wait for the status to confirm the connection. After TGIF is connected, you can change to another TGIF talkgroup by entering or loading the new talkgroup and pressing CONNECT again without disconnecting first. DISCONNECT removes the current TGIF connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect off, TGIF can stay up while you add direct AllStarLink or EchoLink connections.';
+                : 'TGIF is a one-step connect. Enter or load a talkgroup and press CONNECT once. Wait for the status to confirm the connection. After TGIF is connected, you can change to another TGIF talkgroup by entering or loading the new talkgroup and pressing CONNECT again without disconnecting first. DISCONNECT removes the current TGIF connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect off, TGIF can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
         }
 
         if (mode === 'YSF') {
             return disconnectFirst
                 ? 'YSF is a one-step connect. Enter or load the YSF target and press CONNECT once. Wait for the status to confirm the connection. DISCONNECT removes the current YSF connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect on, the next managed connect clears earlier managed links first.'
-                : 'YSF is a one-step connect. Enter or load the YSF target and press CONNECT once. Wait for the status to confirm the connection. DISCONNECT removes the current YSF connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect off, YSF can stay up while you add direct AllStarLink or EchoLink connections.';
+                : 'YSF is a one-step connect. Enter or load the YSF target and press CONNECT once. Wait for the status to confirm the connection. DISCONNECT removes the current YSF connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect off, YSF can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
         }
 
         if (mode === 'DSTAR') {
             return disconnectFirst
                 ? 'D-Star is a one-step managed DVSwitch connect. Enter or load a D-Star target such as REF030EL and press CONNECT once. AllTune2 switches DVSwitch to DSTAR mode, tunes the target, and forces the private DVSwitch node link automatically. DISCONNECT removes the current D-Star connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.'
-                : 'D-Star is a one-step managed DVSwitch connect. Enter or load a D-Star target such as REF030EL and press CONNECT once. AllTune2 switches DVSwitch to DSTAR mode, tunes the target, and forces the private DVSwitch node link automatically. With Disconnect before Connect off, D-Star can stay up while you add direct AllStarLink or EchoLink connections.';
+                : 'D-Star is a one-step managed DVSwitch connect. Enter or load a D-Star target such as REF030EL and press CONNECT once. AllTune2 switches DVSwitch to DSTAR mode, tunes the target, and forces the private DVSwitch node link automatically. With Disconnect before Connect off, D-Star can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
         }
 
         if (mode === 'P25') {
             return disconnectFirst
                 ? 'P25 is a one-step managed DVSwitch connect. Enter or load a P25 target and press CONNECT once. AllTune2 switches DVSwitch to P25 mode, tunes the target, and forces the private DVSwitch node link automatically. DISCONNECT clears the P25 tune path and returns DVSwitch to DMR mode. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.'
-                : 'P25 is a one-step managed DVSwitch connect. Enter or load a P25 target and press CONNECT once. AllTune2 switches DVSwitch to P25 mode, tunes the target, and forces the private DVSwitch node link automatically. With Disconnect before Connect off, P25 can stay up while you add direct AllStarLink or EchoLink connections.';
+                : 'P25 is a one-step managed DVSwitch connect. Enter or load a P25 target and press CONNECT once. AllTune2 switches DVSwitch to P25 mode, tunes the target, and forces the private DVSwitch node link automatically. With Disconnect before Connect off, P25 can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
         }
 
         if (mode === 'NXDN') {
             return disconnectFirst
                 ? 'NXDN is a one-step managed DVSwitch connect. Enter or load an NXDN target and press CONNECT once. AllTune2 switches DVSwitch to NXDN mode, tunes the target, and forces the private DVSwitch node link automatically. DISCONNECT clears the NXDN tune path and returns DVSwitch to DMR mode. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.'
-                : 'NXDN is a one-step managed DVSwitch connect. Enter or load an NXDN target and press CONNECT once. AllTune2 switches DVSwitch to NXDN mode, tunes the target, and forces the private DVSwitch node link automatically. With Disconnect before Connect off, NXDN can stay up while you add direct AllStarLink or EchoLink connections.';
+                : 'NXDN is a one-step managed DVSwitch connect. Enter or load an NXDN target and press CONNECT once. AllTune2 switches DVSwitch to NXDN mode, tunes the target, and forces the private DVSwitch node link automatically. With Disconnect before Connect off, NXDN can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
         }
 
         if (mode === 'ASL') {
             return disconnectFirst
-                ? 'AllStarLink is a one-step connect. Enter or load a node and press CONNECT once. Wait for the status to confirm the connection. Then you can connect another direct node if your settings allow it. DISCONNECT removes the most recent direct AllStarLink node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect on, the next CONNECT replaces earlier managed links first.'
-                : 'AllStarLink is a one-step connect. Enter or load a node and press CONNECT once. Wait for the status to confirm the connection. Then you can add another direct AllStarLink node. DISCONNECT removes the most recent direct AllStarLink node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.';
+                ? 'AllStarLink is a one-step connect. Enter or load a node and press CONNECT once. Wait for the status to confirm the connection. Additional direct AllStarLink nodes can be connected. To change the same AllStarLink node between Transceive and Local Monitor, select the desired link mode and press CONNECT again. DISCONNECT removes the most recent direct AllStarLink node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.'
+                : 'AllStarLink is a one-step connect. Enter or load a node and press CONNECT once. Wait for the status to confirm the connection. Additional direct AllStarLink nodes can be connected. To change the same AllStarLink node between Transceive and Local Monitor, select the desired link mode and press CONNECT again. DISCONNECT removes the most recent direct AllStarLink node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.';
         }
 
         if (mode === 'ECHO') {
             return disconnectFirst
-                ? 'EchoLink uses the AllStarLink connect path. Enter the target as 3 plus the zero-padded 6-digit EchoLink node number, then press CONNECT once. Example: 1234 becomes 3001234. Wait for the status to confirm the connection. Then you can connect another direct node if your settings allow it. DISCONNECT removes the most recent direct node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect on, the next CONNECT replaces earlier managed links first.'
-                : 'EchoLink uses the AllStarLink connect path. Enter the target as 3 plus the zero-padded 6-digit EchoLink node number, then press CONNECT once. Example: 1234 becomes 3001234. Wait for the status to confirm the connection. Then you can add another direct node. DISCONNECT removes the most recent direct node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.';
+                ? 'EchoLink uses the AllStarLink connect path. Enter the mapped EchoLink target as 3 plus the 6-digit EchoLink node number, then press CONNECT once. Example: 3001234. Wait for the status to confirm the connection. AllTune2 allows one active dashboard-initiated EchoLink direct link at a time for ASL3 driver safety. To change the same EchoLink node between Transceive and Local Monitor, select the desired link mode and press CONNECT again. DISCONNECT removes the most recent direct node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect on, the next CONNECT replaces earlier managed links first.'
+                : 'EchoLink uses the AllStarLink connect path. Enter the mapped EchoLink target as 3 plus the 6-digit EchoLink node number, then press CONNECT once. Example: 3001234. Wait for the status to confirm the connection. AllTune2 allows one active dashboard-initiated EchoLink direct link at a time for ASL3 driver safety. To change the same EchoLink node between Transceive and Local Monitor, select the desired link mode and press CONNECT again. DISCONNECT removes the most recent direct node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.';
         }
 
         return 'Select a mode, enter or load a target, and press CONNECT. The button dims while the request runs. Wait for the status and button state to update before the next step.';
@@ -2091,7 +2191,7 @@
             const modeLabel = String(link?.mode_label ?? link?.link_mode ?? link?.mode ?? 'Connected').trim();
             const isDvSwitchNode = dvswitchNode !== '' && rawNode === dvswitchNode;
             const isLocalMonitor = modeLabel.toLowerCase().includes('monitor');
-            const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 1;
+            const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 0.5;
             const active = linkLooksKeyed(link, keyedHoldSeconds);
 
             return {
@@ -2215,7 +2315,7 @@
             const isLive = !!link.is_live;
             const isDvSwitchNode = dvswitchNode !== '' && rawNode === dvswitchNode;
             const isLocalMonitor = linkModeLabel.toLowerCase().includes('monitor');
-            const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 1;
+            const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 0.5;
             const rowKeyed = linkLooksKeyed(link, keyedHoldSeconds);
             const bridgeAudioForNode = bridgeAudioActive && !isDvSwitchNode && !isLocalMonitor;
             const bridgeAudioForDvSwitch = isDvSwitchNode && externalBridgeAudioActive;
@@ -2234,7 +2334,7 @@
 
             const pendingDisconnect = pendingDisconnectActive(rawNode);
             const actionBlocked = !authAllowsActions();
-            const disableDisconnectButton = actionBlocked || state.busy || pendingDisconnect;
+            const disableDisconnectButton = actionBlocked || pendingDisconnect;
             const actionHtml = isDvSwitchNode
                 ? `
                     <button
@@ -2445,14 +2545,12 @@
 
         const { allowFieldSync = false } = options;
         const system = payload.system || {};
-        const statusText =
+        let statusText =
             payload.status_text ||
             payload.status ||
             payload.last_status ||
             system.status_text ||
             'IDLE - NO CONNECTIONS';
-
-        setSystemStatus(statusText);
 
         const bm = payload.networks?.brandmeister || payload.brandmeister || null;
         const tgif = payload.networks?.tgif || payload.tgif || null;
@@ -2461,6 +2559,11 @@
         const p25 = payload.networks?.p25 || payload.p25 || null;
         const nxdn = payload.networks?.nxdn || payload.nxdn || null;
         const allstar = payload.allstar || payload.networks?.allstar || null;
+        const directStatusCorrection = correctDirectStatusFromLive(statusText, allstar);
+        statusText = directStatusCorrection.statusText;
+        const previousSystemStatusText = currentStatusText();
+
+        setSystemStatus(statusText);
 
         const liveFavorites = Array.isArray(payload.favorites) ? payload.favorites : state.favoritesRaw;
 
@@ -2483,6 +2586,7 @@
         applyKeyedStateToCard(els.statusNxdn, payloadModeLooksActive(nxdn) && dvswitchLinkLooksKeyed(allstar));
 
         applyImmediateAllstarSnapshot(allstar);
+        announceCorrectedDirectDisconnect(directStatusCorrection, previousSystemStatusText);
 
         if (allowFieldSync && els.modeSelect && !state.busy && !userSelectionIsHeld()) {
             if (typeof payload.selected_mode === 'string') {
@@ -2869,23 +2973,43 @@
             } else if (action === 'disconnect_all') {
                 markAudioSettleWindow(1500);
             } else {
+                const directAllstarAction = useDirectEndpoint && ['connect', 'disconnect', 'disconnect_selected'].includes(action);
                 const actionStatusText = responsePayload.status_text || responsePayload.status || responsePayload.last_status || '';
                 const actionStatusUpper = String(actionStatusText || '').toUpperCase();
 
-                /*
-                 * TGIFD now returns as soon as the backend is active so the dashboard
-                 * can sync quickly. Its helper still refreshes the private-node link
-                 * briefly in the background. Suppress that expected link flutter so a
-                 * TGIF connect/retune does not announce a false disconnect.
-                 */
-                const audioSettleMs = (
+                if (
+                    directAllstarAction &&
                     action === 'connect' &&
-                    /^CONNECTED:\s+TG\s+/i.test(String(actionStatusText || '')) &&
-                    actionStatusUpper.includes('(TGIF)')
-                ) ? 6500 : 1200;
+                    state.lastRequestedUiMode === 'ECHO' &&
+                    !isErrorStatus(actionStatusText)
+                ) {
+                    /*
+                     * EchoLink can take a few status polls to appear in live
+                     * app_rpt output after direct_link.php returns. Hold only
+                     * direct-status correction so a fresh connect is not
+                     * immediately changed to DISCONNECTED. Do not use the
+                     * normal audio-settle window here; small-button direct
+                     * disconnect audio depends on live AllStar node changes.
+                     */
+                    markDirectStatusCorrectionHold(4500);
+                }
 
-                markAudioSettleWindow(audioSettleMs);
-                announceImmediateActionAudio(actionStatusText);
+                if (!directAllstarAction) {
+                    /*
+                     * TGIFD now returns as soon as the backend is active so the dashboard
+                     * can sync quickly. Its helper still refreshes the private-node link
+                     * briefly in the background. Suppress that expected link flutter so a
+                     * TGIF connect/retune does not announce a false disconnect.
+                     */
+                    const audioSettleMs = (
+                        action === 'connect' &&
+                        /^CONNECTED:\s+TG\s+/i.test(String(actionStatusText || '')) &&
+                        actionStatusUpper.includes('(TGIF)')
+                    ) ? 6500 : 1200;
+
+                    markAudioSettleWindow(audioSettleMs);
+                    announceImmediateActionAudio(actionStatusText);
+                }
             }
 
             setBusy(false);
@@ -2978,7 +3102,7 @@
                     return;
                 }
 
-                if (state.busy || dvswitchButton.disabled) {
+                if (dvswitchButton.disabled) {
                     return;
                 }
 
@@ -3015,7 +3139,7 @@
                 return;
             }
 
-            if (state.busy || button.disabled) {
+            if (button.disabled) {
                 return;
             }
 
