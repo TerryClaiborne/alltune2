@@ -100,6 +100,8 @@ Recent versions added several important improvements:
 - disabled Control Center, Favorites actions, and Live Status disconnect buttons while logged out
 - friendlier Live Status labels using Saved Favorites and local AllStarLink description data when available
 - compact connected-node Favorite star for saving or editing AllStarLink and EchoLink nodes directly from Live Status
+- clearer AllStarLink and EchoLink direct-node help text for changing between Local Monitor and Transceive
+- EchoLink safety guard for one active dashboard-initiated EchoLink direct link at a time
 - improved Favorites page with sortable columns, row-click editing, visible Edit buttons, and per-row Remove buttons
 - Favorites page now preserves the active sort when editing, saving, or removing entries
 - improved update lightning bolt that flashes when a newer GitHub version is available
@@ -780,6 +782,8 @@ The Link Mode dropdown controls how the private audio node is linked:
 
 AllTune2 re-applies the selected Link Mode when changing between supported managed modes, so you should not normally have to press Disconnect DVSwitch just to change Local Monitor / Transceive.
 
+For connected AllStarLink and EchoLink direct nodes, you can also change the same node between **Transceive** and **Local Monitor** by selecting the desired Link Mode and pressing **Connect** again on the same node.
+
 If web login is enabled and you are logged out, the Control Center is disabled until you sign in.
 
 ---
@@ -891,6 +895,10 @@ Typical workflow:
 - watch Live Status
 - disconnect when done
 
+Additional direct AllStarLink nodes can be connected.
+
+To change the same connected AllStarLink node between **Transceive** and **Local Monitor**, select the desired Link Mode and press **Connect** again on the same node.
+
 ---
 
 ## 🟣 ECHOLINK
@@ -900,10 +908,22 @@ Use EchoLink for EchoLink node connections.
 Typical workflow:
 
 - choose EchoLink
-- enter the EchoLink node number or choose an EchoLink Favorite
+- enter the mapped EchoLink node number or choose an EchoLink Favorite
 - press Connect
 - watch Live Status
 - disconnect when done
+
+EchoLink uses the AllStarLink connect path. Enter the mapped EchoLink target as `3` plus the 6-digit EchoLink node number.
+
+Example:
+
+```text
+3001234
+```
+
+AllTune2 allows **one active dashboard-initiated EchoLink direct link at a time**. This is intentional. Testing showed that stacking multiple outbound EchoLink links can cause ASL3/app_rpt/Asterisk to become unstable. Normal AllStarLink direct nodes can still be stacked.
+
+To change the same connected EchoLink node between **Transceive** and **Local Monitor**, select the desired Link Mode and press **Connect** again on the same node.
 
 ---
 
@@ -937,6 +957,15 @@ Use it when you manually type a target and want to save it.
 If the same target and mode already exist, AllTune2 shows that it found an existing Favorite and lets you update it instead of creating a duplicate.
 
 When web login is enabled and you are logged out, Favorites are visible but view-only. Clicking a dashboard Favorite does not load it into the Control Center until you sign in.
+
+### Connected-node Favorite star
+
+When an AllStarLink or EchoLink node is connected, AllTune2 shows a small star beside the connected node number in Live Status.
+
+- `☆` means the connected node is not currently saved as a Favorite. Click it to add that connected node to Favorites.
+- `★` means the connected node already matches a saved Favorite. Click it to edit that saved Favorite.
+
+This is a quick way to save or update AllStarLink and EchoLink Favorites directly from the connected-node display.
 
 ### Favorites file
 
@@ -983,6 +1012,8 @@ Live Status helps show:
 - BMTD and TGIFD backend status when BrandMeister or TGIF is active
 
 The **Disconnect DVSwitch** button removes the private audio node link without doing a full Asterisk restart.
+
+Connected AllStarLink and EchoLink nodes include a small Favorite star. Use `☆` to add the connected node to Favorites or `★` to edit the matching saved Favorite.
 
 The **Disconnect All** button performs a full reset and restarts Asterisk.
 
@@ -1192,6 +1223,10 @@ Leave these alone unless you know why:
 
 Remember:
 
+- AllTune2 allows one active dashboard-initiated EchoLink direct link at a time
+- direct AllStarLink nodes can still be stacked normally
+- to change the same AllStarLink or EchoLink node between Transceive and Local Monitor, select the Link Mode and press Connect again
+- use the connected-node `☆` / `★` star to add or edit AllStarLink and EchoLink Favorites
 - do not guess values
 - do not paste passwords publicly
 - do not commit `config.ini`
