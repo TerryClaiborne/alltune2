@@ -54,6 +54,118 @@ function asterisk_ilink_disconnect(string $node, string $remoteNode): string
     return asterisk_rpt_cmd($node, "ilink 1 {$remoteNode}");
 }
 
+function asterisk_ilink_disconnect_live_client(string $node, string $client): string
+{
+    return asterisk_rpt_cmd($node, "ilink 11 {$client}");
+}
+
+function asterisk_cli(string $command): string
+{
+    return shell_run('/usr/bin/timeout 5 sudo /usr/sbin/asterisk -rx ' . escapeshellarg($command));
+}
+
+function valid_live_allstar_client_name(string $client): bool
+{
+    return preg_match('/^[A-Za-z0-9_.:-]{1,64}$/', $client) === 1;
+}
+
+function live_allstar_link_names(string $node): array
+{
+    $names = [];
+
+    $lstats = asterisk_cli("rpt lstats {$node}");
+    foreach (preg_split('/\R/', $lstats) ?: [] as $line) {
+        $line = trim((string) $line);
+        if ($line === '') {
+            continue;
+        }
+
+        $parts = preg_split('/\s+/', $line);
+        $candidate = trim((string) ($parts[0] ?? ''));
+        if ($candidate !== '' && valid_live_allstar_client_name($candidate)) {
+            $names[$candidate] = true;
+        }
+    }
+
+    $nodes = asterisk_cli("rpt nodes {$node}");
+    if (preg_match_all('/\b[TRLC]([A-Za-z0-9_.:-]{1,64})\b/', $nodes, $matches) === 1) {
+        foreach ($matches[1] as $candidate) {
+            $candidate = trim((string) $candidate);
+            if ($candidate !== '' && valid_live_allstar_client_name($candidate)) {
+                $names[$candidate] = true;
+            }
+        }
+    }
+
+    return array_keys($names);
+}
+
+function live_allstar_link_exists(string $node, string $remote): bool
+{
+    return in_array($remote, live_allstar_link_names($node), true);
+}
+
+function valid_asterisk_iax_channel_name(string $channel): bool
+{
+    return preg_match('/^IAX2\/[A-Za-z0-9_.:@-]{1,96}$/', $channel) === 1;
+}
+
+function live_iax_rpt_channels(string $node): array
+{
+    $channels = [];
+    $output = asterisk_cli('core show channels concise');
+
+    foreach (preg_split('/\R/', $output) ?: [] as $line) {
+        $line = trim((string) $line);
+        if ($line === '') {
+            continue;
+        }
+
+        $parts = explode('!', $line);
+        $channel = trim((string) ($parts[0] ?? ''));
+        $context = strtolower(trim((string) ($parts[1] ?? '')));
+        $extension = trim((string) ($parts[2] ?? ''));
+        $application = trim((string) ($parts[5] ?? ''));
+        $data = trim((string) ($parts[6] ?? ''));
+
+        if (!valid_asterisk_iax_channel_name($channel)) {
+            continue;
+        }
+
+        if ($application !== 'Rpt') {
+            continue;
+        }
+
+        $runsThisNode = $data === $node || str_starts_with($data, $node . '|') || $extension === $node;
+        if (!$runsThisNode) {
+            continue;
+        }
+
+        /*
+         * Pure iax.conf clients normally arrive through iaxrpt/iax-client
+         * contexts. Web Transceiver / phone-portal style clients arrive through
+         * allstar-public and are handled by the app_rpt ilink 11 path instead.
+         */
+        if (!in_array($context, ['iaxrpt', 'iax-client', 'iaxclient'], true)) {
+            continue;
+        }
+
+        $channels[$channel] = true;
+    }
+
+    return array_keys($channels);
+}
+
+function live_iax_rpt_channel_exists(string $node, string $channel): bool
+{
+    return in_array($channel, live_iax_rpt_channels($node), true);
+}
+
+function asterisk_channel_request_hangup(string $channel): string
+{
+    return asterisk_cli('channel request hangup ' . $channel);
+}
+
 function asterisk_ilink_connect(string $node, string $remoteNode, string $linkMode): string
 {
     $ilink = $linkMode === 'local_monitor' ? '8' : '3';
@@ -447,6 +559,9 @@ $request = request_data();
 $action = strtolower(trim((string) ($request['action'] ?? $request['action_type'] ?? '')));
 $rawTarget = trim((string) ($request['target'] ?? $request['tgNum'] ?? ''));
 $selectedNode = preg_replace('/[^0-9]/', '', (string) ($request['selected_node'] ?? '')) ?? '';
+$selectedLiveClient = trim((string) ($request['selected_client'] ?? $request['selected_iax_client'] ?? $request['selected_node'] ?? ''));
+$selectedIaxChannel = trim((string) ($request['selected_channel'] ?? $request['selected_iax_channel'] ?? ''));
+$selectedIaxRowNode = trim((string) ($request['selected_row_node'] ?? ''));
 $mode = normalize_mode((string) ($request['mode'] ?? ($_SESSION['selected_mode'] ?? 'ASL')));
 $uiMode = normalize_direct_ui_mode((string) ($request['ui_mode'] ?? $mode));
 
@@ -474,7 +589,7 @@ if (!$hasRealMyNode) {
     respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 500);
 }
 
-if (!in_array($action, ['connect', 'disconnect', 'disconnect_selected'], true)) {
+if (!in_array($action, ['connect', 'disconnect', 'disconnect_selected', 'disconnect_live_client', 'disconnect_iax_channel'], true)) {
     $_SESSION['last_status'] = 'ERROR: INVALID ACTION';
     respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 400);
 }
@@ -540,6 +655,62 @@ if ($action === 'connect') {
     respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''));
 }
 
+
+if ($action === 'disconnect_iax_channel') {
+    if ($selectedIaxChannel === '' || !valid_asterisk_iax_channel_name($selectedIaxChannel)) {
+        $_SESSION['last_status'] = 'ERROR: INVALID IAX CHANNEL';
+        respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 422);
+    }
+
+    if (!live_iax_rpt_channel_exists($myNode, $selectedIaxChannel)) {
+        $_SESSION['last_status'] = 'ERROR: IAX CHANNEL NOT FOUND';
+        respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 404);
+    }
+
+    asterisk_channel_request_hangup($selectedIaxChannel);
+    pause_seconds(1.0);
+
+    if ($selectedIaxRowNode !== '') {
+        untrack_allstar_link($selectedIaxRowNode);
+    }
+    untrack_allstar_link($selectedIaxChannel);
+    sync_last_direct_target_from_tracking($hasRealDvSwitchNode ? $dvSwitchNode : null);
+
+    $_SESSION['last_status'] = 'DISCONNECTED: IAX CHANNEL';
+    respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''));
+}
+
+if ($action === 'disconnect_live_client') {
+    if ($selectedLiveClient === '' || !valid_live_allstar_client_name($selectedLiveClient)) {
+        $_SESSION['last_status'] = 'ERROR: INVALID LIVE IAX CLIENT';
+        respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 422);
+    }
+
+    if (ctype_digit($selectedLiveClient)) {
+        $_SESSION['last_status'] = 'ERROR: USE ALLSTAR ROW DISCONNECT';
+        respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+    }
+
+    if ($hasRealDvSwitchNode && $selectedLiveClient === $dvSwitchNode) {
+        $_SESSION['last_status'] = 'ERROR: USE DISCONNECT DVSWITCH';
+        respond(direct_payload($_SESSION['last_status'], $dvSwitchNode), 409);
+    }
+
+    if (!live_allstar_link_exists($myNode, $selectedLiveClient)) {
+        $_SESSION['last_status'] = 'ERROR: LIVE IAX CLIENT NOT FOUND';
+        respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 404);
+    }
+
+    asterisk_ilink_disconnect_live_client($myNode, $selectedLiveClient);
+    pause_seconds(1.0);
+
+    untrack_allstar_link($selectedLiveClient);
+    sync_last_direct_target_from_tracking($hasRealDvSwitchNode ? $dvSwitchNode : null);
+
+    $_SESSION['last_status'] = 'DISCONNECTED: IAX CLIENT ' . $selectedLiveClient;
+    respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''));
+}
+
 if ($action === 'disconnect_selected') {
     if ($selectedNode === '') {
         $_SESSION['last_status'] = 'ERROR: INVALID ALLSTAR NODE';
@@ -569,6 +740,11 @@ if ($action === 'disconnect_selected') {
 
 $trackedNode = last_tracked_allstar_node($hasRealDvSwitchNode ? $dvSwitchNode : null);
 if ($trackedNode === '') {
+    if (live_iax_rpt_channels($myNode) !== []) {
+        $_SESSION['last_status'] = 'ERROR: TRUE IAX CLIENT - USE ROW DISCONNECT';
+        respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+    }
+
     $_SESSION['last_status'] = 'ERROR: NO DIRECT ALLSTAR NODE TRACKED';
     respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
 }

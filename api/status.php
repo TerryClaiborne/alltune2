@@ -230,7 +230,8 @@ function sync_live_allstar_tracking(array $links): void
 
     foreach ($links as $link) {
         $node = trim((string) ($link['node'] ?? ''));
-        if ($node === '') {
+        $connectionType = strtolower(trim((string) ($link['connection_type'] ?? $link['type'] ?? '')));
+        if ($node === '' || $connectionType === 'iax_channel') {
             continue;
         }
 
@@ -527,7 +528,7 @@ function parse_live_allstar_links_from_ami(array $xstatLines, array $sawStatLine
     foreach ($xstatLines as $line) {
         if (preg_match('/Conn:\s+(.*)/', $line, $matches) === 1) {
             $parts = preg_split('/\s+/', trim($matches[1]));
-            if (is_array($parts) && isset($parts[0]) && ctype_digit((string) $parts[0])) {
+            if (is_array($parts) && isset($parts[0]) && preg_match('/^[A-Za-z0-9_.:-]+$/', trim((string) $parts[0])) === 1) {
                 $node = trim((string) $parts[0]);
                 $connections[] = [
                     'node' => $node,
@@ -551,7 +552,7 @@ function parse_live_allstar_links_from_ami(array $xstatLines, array $sawStatLine
                     $code = substr($item, 0, 1);
                     $node = substr($item, 1);
 
-                    if (ctype_digit($node)) {
+                    if ($node !== '' && preg_match('/^[A-Za-z0-9_.:-]+$/', $node) === 1) {
                         $modeCodes[$node] = $code;
                     }
                 }
@@ -562,7 +563,7 @@ function parse_live_allstar_links_from_ami(array $xstatLines, array $sawStatLine
     foreach ($sawStatLines as $line) {
         if (preg_match('/Conn:\s+(.*)/', $line, $matches) === 1) {
             $parts = preg_split('/\s+/', trim($matches[1]));
-            if (is_array($parts) && isset($parts[0]) && ctype_digit((string) $parts[0])) {
+            if (is_array($parts) && isset($parts[0]) && preg_match('/^[A-Za-z0-9_.:-]+$/', trim((string) $parts[0])) === 1) {
                 $node = trim((string) $parts[0]);
                 $keyed[$node] = [
                     'isKeyed' => $parts[1] ?? '0',
@@ -581,7 +582,9 @@ function parse_live_allstar_links_from_ami(array $xstatLines, array $sawStatLine
 
         $links[] = [
             'node' => $node,
-            'label' => 'Connected Node',
+            'label' => ctype_digit($node) ? 'Connected Node' : 'Client / IAX',
+            'connection_type' => ctype_digit($node) ? 'node' : 'client',
+            'disconnectable' => ctype_digit($node),
             'link_mode' => $linkMode,
             'mode_label' => $linkMode === 'transceive' ? 'Transceive' : 'Local Monitor',
             'is_live' => true,
@@ -590,6 +593,284 @@ function parse_live_allstar_links_from_ami(array $xstatLines, array $sawStatLine
             'keyed' => isset($keyed[$node]) ? (($keyed[$node]['isKeyed'] ?? '0') === '1') : false,
             'last_keyed' => $keyed[$node]['lastKeyed'] ?? '-1',
         ];
+    }
+
+    return $links;
+}
+
+function valid_asterisk_iax_channel_name(string $channel): bool
+{
+    return preg_match('/^IAX2\/[A-Za-z0-9_.:@-]{1,96}$/', $channel) === 1;
+}
+
+function rpt_data_named_iax_client(string $data, string $myNode): string
+{
+    $data = trim($data);
+    $myNode = trim($myNode);
+
+    if ($data === '' || $myNode === '') {
+        return '';
+    }
+
+    $parts = explode(',', $data, 3);
+    if (count($parts) !== 3) {
+        return '';
+    }
+
+    if (trim($parts[0]) !== $myNode || strtoupper(trim($parts[1])) !== 'P') {
+        return '';
+    }
+
+    $client = trim($parts[2]);
+    if ($client === '' || preg_match('/^[A-Za-z0-9_.:@-]{1,96}$/', $client) !== 1) {
+        return '';
+    }
+
+    return $client;
+}
+
+function live_named_client_link_exists(array $links, string $clientName): bool
+{
+    $clientName = strtolower(trim($clientName));
+    if ($clientName === '') {
+        return false;
+    }
+
+    foreach ($links as $link) {
+        $node = strtolower(trim((string) ($link['node'] ?? $link['target'] ?? '')));
+        if ($node === '' || ctype_digit($node) || filter_var($node, FILTER_VALIDATE_IP)) {
+            continue;
+        }
+
+        $connectionType = strtolower(trim((string) ($link['connection_type'] ?? $link['type'] ?? '')));
+        if ($node === $clientName && ($connectionType === 'client' || $connectionType === 'iax' || $connectionType === '')) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function asterisk_cli_timed(string $command): string
+{
+    return shell_run('/usr/bin/timeout 5 sudo /usr/sbin/asterisk -rx ' . escapeshellarg($command));
+}
+
+function allstar_link_currently_keyed(array $link, int $holdSeconds = 5): bool
+{
+    if (!empty($link['keyed'])) {
+        return true;
+    }
+
+    $lastKeyedRaw = trim((string) ($link['last_keyed'] ?? '-1'));
+    return preg_match('/^-?\d+$/', $lastKeyedRaw) === 1
+        && (int) $lastKeyedRaw >= 0
+        && (int) $lastKeyedRaw <= $holdSeconds;
+}
+
+function rpt_stats_node_tx_active(string $myNode): bool
+{
+    $myNode = trim($myNode);
+    if ($myNode === '' || preg_match('/^\d+$/', $myNode) !== 1) {
+        return false;
+    }
+
+    $output = asterisk_cli_timed('rpt stats ' . $myNode);
+    if ($output === '') {
+        return false;
+    }
+
+    foreach (preg_split('/\R/', $output) ?: [] as $line) {
+        if (preg_match('/^Time out timer state\.*:\s*([A-Za-z0-9 _-]+)/i', trim((string) $line), $matches) !== 1) {
+            continue;
+        }
+
+        return strtoupper(trim((string) ($matches[1] ?? ''))) === 'ARMED';
+    }
+
+    return false;
+}
+
+function mark_all_connected_allstar_links_keyed_from_node_tx(array $links, bool $nodeTxActive): array
+{
+    if (!$nodeTxActive) {
+        return $links;
+    }
+
+    foreach ($links as &$link) {
+        if (!is_array($link)) {
+            continue;
+        }
+
+        $link['keyed'] = true;
+        $link['last_keyed'] = '0';
+        $link['keyed_source'] = 'node_tx';
+    }
+    unset($link);
+
+    return $links;
+}
+
+function live_iax_channel_peer_map(): array
+{
+    $peers = [];
+    $output = asterisk_cli_timed('iax2 show channels');
+
+    foreach (preg_split('/\R/', $output) ?: [] as $line) {
+        $line = trim((string) $line);
+        if ($line === '' || !str_starts_with($line, 'IAX2/')) {
+            continue;
+        }
+
+        $parts = preg_split('/\s+/', $line);
+        $channel = trim((string) ($parts[0] ?? ''));
+        $peer = trim((string) ($parts[1] ?? ''));
+        $username = trim((string) ($parts[2] ?? ''));
+
+        if (valid_asterisk_iax_channel_name($channel)) {
+            $peers[$channel] = [
+                'peer' => $peer,
+                'username' => $username,
+            ];
+        }
+    }
+
+    return $peers;
+}
+
+function live_pure_iax_rpt_channels(string $myNode): array
+{
+    if ($myNode === '') {
+        return [];
+    }
+
+    $peerMap = live_iax_channel_peer_map();
+    $channels = [];
+    $output = asterisk_cli_timed('core show channels concise');
+
+    foreach (preg_split('/\R/', $output) ?: [] as $line) {
+        $line = trim((string) $line);
+        if ($line === '') {
+            continue;
+        }
+
+        $parts = explode('!', $line);
+        $channel = trim((string) ($parts[0] ?? ''));
+        $context = strtolower(trim((string) ($parts[1] ?? '')));
+        $extension = trim((string) ($parts[2] ?? ''));
+        $state = trim((string) ($parts[4] ?? ''));
+        $application = trim((string) ($parts[5] ?? ''));
+        $data = trim((string) ($parts[6] ?? ''));
+
+        if (!valid_asterisk_iax_channel_name($channel) || $application !== 'Rpt') {
+            continue;
+        }
+
+        $runsThisNode = $data === $myNode || str_starts_with($data, $myNode . '|') || $extension === $myNode;
+        if (!$runsThisNode) {
+            continue;
+        }
+
+        if (!in_array($context, ['iaxrpt', 'iax-client', 'iaxclient'], true)) {
+            continue;
+        }
+
+        $linkMode = str_contains($data, '|X') ? 'transceive' : 'local_monitor';
+        $peer = trim((string) ($peerMap[$channel]['peer'] ?? ''));
+        $username = trim((string) ($peerMap[$channel]['username'] ?? ''));
+
+        $channels[] = [
+            'channel' => $channel,
+            'context' => $context,
+            'extension' => $extension,
+            'state' => $state,
+            'data' => $data,
+            'peer' => $peer,
+            'username' => $username,
+            'link_mode' => $linkMode,
+            'mode_label' => $linkMode === 'transceive' ? 'Transceive' : 'Local Monitor',
+        ];
+    }
+
+    return $channels;
+}
+
+function add_pure_iax_channel_links(array $links, string $myNode): array
+{
+    $channels = live_pure_iax_rpt_channels($myNode);
+    if ($channels === []) {
+        return $links;
+    }
+
+    $usedChannels = [];
+    foreach ($links as &$link) {
+        $existingChannel = trim((string) ($link['iax_channel'] ?? $link['channel'] ?? ''));
+        if ($existingChannel !== '') {
+            $usedChannels[$existingChannel] = true;
+        }
+    }
+    unset($link);
+
+    foreach ($channels as $channelInfo) {
+        $channel = (string) ($channelInfo['channel'] ?? '');
+        if ($channel === '' || isset($usedChannels[$channel])) {
+            continue;
+        }
+
+        $namedClient = rpt_data_named_iax_client((string) ($channelInfo['data'] ?? ''), $myNode);
+        if ($namedClient !== '' && live_named_client_link_exists($links, $namedClient)) {
+            $usedChannels[$channel] = true;
+            continue;
+        }
+
+        $peer = trim((string) ($channelInfo['peer'] ?? ''));
+        $matchedExistingPeerRow = false;
+
+        if ($peer !== '') {
+            foreach ($links as &$link) {
+                $node = trim((string) ($link['node'] ?? $link['target'] ?? ''));
+                $connectionType = strtolower(trim((string) ($link['connection_type'] ?? $link['type'] ?? '')));
+
+                if ($node === $peer && ($connectionType === 'client' || $connectionType === 'iax' || !ctype_digit($node))) {
+                    $link['connection_type'] = 'iax_channel';
+                    $link['label'] = 'IAX Client';
+                    $link['disconnectable'] = true;
+                    $link['link_mode'] = 'transceive';
+                    $link['mode_label'] = 'Transceive';
+                    $link['iax_channel'] = $channel;
+                    $link['asterisk_channel'] = $channel;
+                    $link['iax_peer'] = $peer;
+                    $link['iax_username'] = (string) ($channelInfo['username'] ?? '');
+                    $link['display_full'] = 'Direct IAX client channel ' . $channel;
+                    $matchedExistingPeerRow = true;
+                    $usedChannels[$channel] = true;
+                    break;
+                }
+            }
+            unset($link);
+        }
+
+        if ($matchedExistingPeerRow) {
+            continue;
+        }
+
+        $safeLabel = preg_replace('/[^A-Za-z0-9_.:-]/', ':', $channel) ?? $channel;
+        $links[] = [
+            'node' => $safeLabel,
+            'label' => 'IAX Client',
+            'connection_type' => 'iax_channel',
+            'disconnectable' => true,
+            'iax_channel' => $channel,
+            'asterisk_channel' => $channel,
+            'iax_peer' => $peer,
+            'iax_username' => (string) ($channelInfo['username'] ?? ''),
+            'link_mode' => (string) ($channelInfo['link_mode'] ?? 'transceive'),
+            'mode_label' => (string) ($channelInfo['mode_label'] ?? 'Transceive'),
+            'is_live' => true,
+            'direction' => 'IN',
+            'display_full' => 'Direct IAX client channel ' . $channel,
+        ];
+        $usedChannels[$channel] = true;
     }
 
     return $links;
@@ -1051,9 +1332,12 @@ if ($managedDvSwitchMode === 'NXDN' && $managedDvSwitchTarget !== '') {
     $nxdnState = 'Connected: ' . $managedDvSwitchTarget;
 }
 
+$nodeTxActive = rpt_stats_node_tx_active($myNode);
+
 $liveAllstar = fetch_live_allstar_links_via_ami($myNode);
 if ($liveAllstar['available']) {
-    $allstarConnectedNodes = $liveAllstar['links'];
+    $allstarConnectedNodes = add_pure_iax_channel_links($liveAllstar['links'], $myNode);
+    $allstarConnectedNodes = mark_all_connected_allstar_links_keyed_from_node_tx($allstarConnectedNodes, $nodeTxActive);
     sync_live_allstar_tracking($allstarConnectedNodes);
 } else {
     $allstarConnectedNodes = build_tracked_allstar_connected_nodes(
@@ -1061,6 +1345,7 @@ if ($liveAllstar['available']) {
         $lastTarget,
         $autoloadDvSwitchMode
     );
+    $allstarConnectedNodes = mark_all_connected_allstar_links_keyed_from_node_tx($allstarConnectedNodes, $nodeTxActive);
 }
 
 $allstarConnectedNodes = enrich_allstar_connected_nodes($allstarConnectedNodes);
@@ -1132,12 +1417,14 @@ if ($privateNodeLinkLost) {
     $lastStatus = 'IDLE - NO CONNECTIONS';
 }
 
-$bmKeyed = $bmActive && $dvswitchNodeKeyed;
-$tgifKeyed = $tgifActive && $dvswitchNodeKeyed;
-$ysfKeyed = $ysfActive && $dvswitchNodeKeyed;
-$dstarKeyed = $dstarActive && $dvswitchNodeKeyed;
-$p25Keyed = $p25Active && $dvswitchNodeKeyed;
-$nxdnKeyed = $nxdnActive && $dvswitchNodeKeyed;
+$nodeTxOrDvSwitchKeyed = $nodeTxActive || $dvswitchNodeKeyed;
+
+$bmKeyed = $bmActive && $nodeTxOrDvSwitchKeyed;
+$tgifKeyed = $tgifActive && $nodeTxOrDvSwitchKeyed;
+$ysfKeyed = $ysfActive && $nodeTxOrDvSwitchKeyed;
+$dstarKeyed = $dstarActive && $nodeTxOrDvSwitchKeyed;
+$p25Keyed = $p25Active && $nodeTxOrDvSwitchKeyed;
+$nxdnKeyed = $nxdnActive && $nodeTxOrDvSwitchKeyed;
 
 
 $activity = [];

@@ -349,28 +349,62 @@
         }
     }
 
-    function announceNodeConnected(node) {
+    function audioSpeechLabelForNodeId(node) {
         const normalizedNode = String(node || '').trim();
         if (normalizedNode === '') {
+            return '';
+        }
+
+        if (normalizedNode.startsWith('iax-channel:')) {
+            return 'IAX client';
+        }
+
+        return `Node ${formatNodeForSpeech(normalizedNode)}`;
+    }
+
+    function announceNodeConnected(node) {
+        const normalizedNode = String(node || '').trim();
+        const speechLabel = audioSpeechLabelForNodeId(normalizedNode);
+        if (speechLabel === '') {
             return;
         }
 
         speakAudioAlert(
-            `Node ${formatNodeForSpeech(normalizedNode)} has connected`,
+            `${speechLabel} has connected`,
             `connect:${normalizedNode}`
         );
     }
 
     function announceNodeDisconnected(node) {
         const normalizedNode = String(node || '').trim();
-        if (normalizedNode === '') {
+        const speechLabel = audioSpeechLabelForNodeId(normalizedNode);
+        if (speechLabel === '') {
             return;
         }
 
         speakAudioAlert(
-            `Node ${formatNodeForSpeech(normalizedNode)} has disconnected`,
+            `${speechLabel} has disconnected`,
             `disconnect:${normalizedNode}`
         );
+    }
+
+    function connectionTypeForLink(link) {
+        return String(link?.connection_type ?? link?.type ?? '').trim().toLowerCase();
+    }
+
+    function iaxChannelForAudioLink(link) {
+        return String(link?.iax_channel ?? link?.asterisk_channel ?? link?.channel ?? '').trim();
+    }
+
+    function audioNodeIdForLink(link) {
+        const connectionType = connectionTypeForLink(link);
+        const channel = iaxChannelForAudioLink(link);
+
+        if (connectionType === 'iax_channel' && channel !== '') {
+            return `iax-channel:${channel}`;
+        }
+
+        return String(link?.node ?? link?.target ?? '').trim();
     }
 
     function connectedNodeListFromPayload(allstarPayload) {
@@ -382,7 +416,7 @@
         const nodes = [];
 
         connected.forEach((item) => {
-            const node = String(item?.node ?? item?.target ?? '').trim();
+            const node = audioNodeIdForLink(item);
             if (node === '' || seen.has(node)) {
                 return;
             }
@@ -826,7 +860,7 @@
             return uiMode === 'ASL' || uiMode === 'ECHO';
         }
 
-        if (action === 'disconnect_selected') {
+        if (action === 'disconnect_selected' || action === 'disconnect_live_client' || action === 'disconnect_iax_channel') {
             return true;
         }
 
@@ -835,6 +869,116 @@
         }
 
         return false;
+    }
+
+
+
+    function allstarLinksFromPayload(payload) {
+        const allstar = payload?.allstar || payload?.networks?.allstar || null;
+        const links = allstar?.connected_nodes;
+        return Array.isArray(links) ? links : [];
+    }
+
+    function inboundAllstarClientNamesFromPayload(payload) {
+        const names = new Set();
+
+        allstarLinksFromPayload(payload).forEach((link) => {
+            const rawNode = String(link?.node ?? link?.target ?? '').trim();
+            if (rawNode === '') {
+                return;
+            }
+
+            const connectionType = String(link?.connection_type ?? link?.type ?? '').trim().toLowerCase();
+            if (!/^\d+$/.test(rawNode) || connectionType === 'client' || connectionType === 'iax') {
+                names.add(rawNode);
+            }
+        });
+
+        return names;
+    }
+
+    function targetValueIsInboundAllstarClient(value, payload) {
+        const target = String(value || '').trim();
+        return target !== '' && inboundAllstarClientNamesFromPayload(payload).has(target);
+    }
+
+    function targetValueLooksClientOnly(value) {
+        const target = String(value || '').trim();
+        if (target === '') {
+            return false;
+        }
+
+        return /^IAX2[:/]/i.test(target) || /-P$/i.test(target);
+    }
+
+    function iaxChannelForLink(link) {
+        return String(link?.iax_channel ?? link?.asterisk_channel ?? link?.channel ?? '').trim();
+    }
+
+    function directModeShouldUseNumericTarget(payload, system) {
+        const mode = normalizeMode(
+            payload?.selected_mode ||
+            system?.selected_mode ||
+            payload?.last_mode ||
+            system?.last_mode ||
+            currentSelectedMode()
+        );
+
+        return mode === 'ASL' || mode === 'ECHO';
+    }
+
+    function targetCandidateForFieldSync(payload, system) {
+        const candidates = [
+            payload?.pending_target,
+            system?.pending_target,
+            payload?.last_target,
+            system?.last_target,
+        ];
+
+        const directNumericOnly = directModeShouldUseNumericTarget(payload, system);
+
+        for (const candidate of candidates) {
+            const value = String(candidate || '').trim();
+            if (value === '') {
+                continue;
+            }
+
+            if (targetValueLooksClientOnly(value) || targetValueIsInboundAllstarClient(value, payload)) {
+                continue;
+            }
+
+            if (directNumericOnly && !/^\d+$/.test(value)) {
+                continue;
+            }
+
+            return value;
+        }
+
+        return '';
+    }
+
+    function syncTargetInputFromPayload(payload, system) {
+        if (!els.targetInput) {
+            return;
+        }
+
+        const nextTarget = targetCandidateForFieldSync(payload, system);
+        if (nextTarget !== '') {
+            els.targetInput.value = nextTarget;
+            return;
+        }
+
+        const currentTarget = els.targetInput.value.trim();
+        if (
+            currentTarget !== '' &&
+            (
+                targetValueLooksClientOnly(currentTarget) ||
+                targetValueIsInboundAllstarClient(currentTarget, payload) ||
+                (directModeShouldUseNumericTarget(payload, system) && !/^\d+$/.test(currentTarget))
+            )
+        ) {
+            els.targetInput.value = '';
+        }
     }
 
     function applyImmediateAllstarSnapshot(allstarPayload) {
@@ -2189,17 +2333,28 @@
         const linksSignature = JSON.stringify(links.map((link) => {
             const rawNode = String(link?.node ?? link?.target ?? '').trim();
             const modeLabel = String(link?.mode_label ?? link?.link_mode ?? link?.mode ?? 'Connected').trim();
+            const connectionType = String(link?.connection_type ?? link?.type ?? '').trim().toLowerCase();
+            const iaxChannel = iaxChannelForLink(link);
+            const elapsed = String(link?.elapsed ?? '').trim();
+            const keyed = !!link?.keyed;
+            const lastKeyed = String(link?.last_keyed ?? '').trim();
             const isDvSwitchNode = dvswitchNode !== '' && rawNode === dvswitchNode;
             const isLocalMonitor = modeLabel.toLowerCase().includes('monitor');
             const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 0.5;
             const active = linkLooksKeyed(link, keyedHoldSeconds);
+            const pendingKey = connectionType === 'iax_channel' && iaxChannel !== '' ? iaxChannel : rawNode;
 
             return {
                 node: rawNode,
+                type: connectionType,
+                iaxChannel,
                 mode: modeLabel,
                 live: !!link?.is_live,
+                elapsed,
+                keyed,
+                lastKeyed,
                 active,
-                pending: pendingDisconnectActive(rawNode),
+                pending: pendingDisconnectActive(pendingKey),
             };
         }));
 
@@ -2241,6 +2396,46 @@
                     className: 'dvswitch',
                     description: 'Private DVSwitch audio link',
                     fullDescription: 'Private DVSwitch audio link',
+                    canSaveFavorite: false,
+                    favoriteMode: '',
+                    favoriteName: '',
+                    favoriteDescription: '',
+                    isSavedFavorite: false,
+                };
+            }
+
+            const connectionType = String(link?.connection_type ?? link?.type ?? '').trim().toLowerCase();
+            const isNumericNode = /^\d+$/.test(rawNode);
+
+            if (connectionType === 'iax_channel') {
+                const channel = iaxChannelForLink(link);
+                const description = channel !== ''
+                    ? `Direct IAX client channel ${channel}`
+                    : 'Direct IAX client channel';
+                return {
+                    label: 'IAX',
+                    sublabel: 'Channel',
+                    className: 'asl',
+                    description,
+                    fullDescription: description,
+                    canSaveFavorite: false,
+                    favoriteMode: '',
+                    favoriteName: '',
+                    favoriteDescription: '',
+                    isSavedFavorite: false,
+                };
+            }
+
+            if (!isNumericNode || connectionType === 'client' || connectionType === 'iax') {
+                const payloadParts = payloadDisplayParts(link);
+                const looksAppRptClient = /-P$/i.test(rawNode);
+                const description = payloadParts.full || (looksAppRptClient ? 'IAX / app_rpt client' : 'IAX / Web Transceiver client');
+                return {
+                    label: 'IAX',
+                    sublabel: 'Client',
+                    className: 'asl',
+                    description,
+                    fullDescription: description,
                     canSaveFavorite: false,
                     favoriteMode: '',
                     favoriteName: '',
@@ -2314,6 +2509,10 @@
             const elapsed = escapeHtml(String(link.elapsed ?? '').trim());
             const isLive = !!link.is_live;
             const isDvSwitchNode = dvswitchNode !== '' && rawNode === dvswitchNode;
+            const connectionType = String(link?.connection_type ?? link?.type ?? '').trim().toLowerCase();
+            const iaxChannel = iaxChannelForLink(link);
+            const isPureIaxChannelLink = connectionType === 'iax_channel' && iaxChannel !== '';
+            const isIaxClientLink = rawNode !== '' && !isDvSwitchNode && !isPureIaxChannelLink && (!/^\d+$/.test(rawNode) || connectionType === 'client' || connectionType === 'iax');
             const isLocalMonitor = linkModeLabel.toLowerCase().includes('monitor');
             const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 0.5;
             const rowKeyed = linkLooksKeyed(link, keyedHoldSeconds);
@@ -2332,9 +2531,11 @@
                 ? `<span class="connected-node-meta-item">Connected ${elapsed}</span>`
                 : '';
 
-            const pendingDisconnect = pendingDisconnectActive(rawNode);
+            const disconnectKey = isPureIaxChannelLink ? iaxChannel : rawNode;
+            const pendingDisconnect = pendingDisconnectActive(disconnectKey);
             const actionBlocked = !authAllowsActions();
             const disableDisconnectButton = actionBlocked || pendingDisconnect;
+            const canDisconnectLink = isDvSwitchNode || isPureIaxChannelLink || isIaxClientLink || (/^\d+$/.test(rawNode) && link?.disconnectable !== false);
             const actionHtml = isDvSwitchNode
                 ? `
                     <button
@@ -2346,6 +2547,37 @@
                         ${pendingDisconnect ? 'Disconnecting...' : 'Disconnect DVSwitch'}
                     </button>
                 `
+                : isPureIaxChannelLink
+                ? `
+                    <button
+                        type="button"
+                        class="connected-node-button allstar-disconnect-button ${pendingDisconnect ? 'connected-node-button-pending' : ''}"
+                        data-disconnect-iax-channel="${escapeHtml(iaxChannel)}"
+                        data-disconnect-iax-row-node="${node}"
+                        ${disableDisconnectButton ? 'disabled' : ''} ${authLoginRequired() ? 'title="Login required to control AllTune2"' : 'title="Disconnect direct IAX channel"'}
+                    >
+                        ${pendingDisconnect ? 'Disconnecting...' : 'Disconnect IAX'}
+                    </button>
+                `
+                : isIaxClientLink
+                ? `
+                    <button
+                        type="button"
+                        class="connected-node-button allstar-disconnect-button ${pendingDisconnect ? 'connected-node-button-pending' : ''}"
+                        data-disconnect-live-client="${node}"
+                        ${disableDisconnectButton ? 'disabled' : ''} ${authLoginRequired() ? 'title="Login required to control AllTune2"' : 'title="Disconnect inbound IAX / Web Transceiver client"'}
+                    >
+                        ${pendingDisconnect ? 'Disconnecting...' : `Disconnect ${node}`}
+                    </button>
+                `
+                : !canDisconnectLink
+                ? `
+                    <button
+                        type="button"
+                        class="connected-node-button"
+                        disabled
+                    >Disconnect</button>
+                `
                 : `
                     <button
                         type="button"
@@ -2356,6 +2588,10 @@
                         ${pendingDisconnect ? 'Disconnecting...' : `Disconnect ${node}`}
                     </button>
                 `;
+
+            const titleLabel = isPureIaxChannelLink && iaxChannel !== ''
+                ? escapeHtml(iaxChannel)
+                : `Node ${node}`;
 
             const favoriteButtonHtml = network.canSaveFavorite
                 ? `
@@ -2383,7 +2619,7 @@
                     </div>
 
                     <div class="connected-node-main">
-                        <div class="connected-node-title">Node ${node}${favoriteButtonHtml}</div>
+                        <div class="connected-node-title">${titleLabel}${favoriteButtonHtml}</div>
                         <div class="connected-node-description" title="${escapeHtml(network.fullDescription || network.description)}">${escapeHtml(network.description)}</div>
                     </div>
 
@@ -2597,13 +2833,7 @@
         }
 
         if (allowFieldSync && els.targetInput && !userIsEditingTarget() && !state.busy && !userSelectionIsHeld()) {
-            if (typeof payload.pending_target === 'string' && payload.pending_target !== '') {
-                els.targetInput.value = payload.pending_target;
-            } else if (typeof system.pending_target === 'string' && system.pending_target !== '') {
-                els.targetInput.value = system.pending_target;
-            } else if (typeof payload.last_target === 'string' && payload.last_target !== '') {
-                els.targetInput.value = payload.last_target;
-            }
+            syncTargetInputFromPayload(payload, system);
         }
 
         if (allowFieldSync && typeof payload.autoload_dvswitch !== 'undefined' && els.autoloadCheckbox && !state.busy) {
@@ -2664,13 +2894,7 @@
         }
 
         if (!preserveTarget && els.targetInput && !userIsEditingTarget()) {
-            if (typeof payload.pending_target === 'string' && payload.pending_target !== '') {
-                els.targetInput.value = payload.pending_target;
-            } else if (typeof system.pending_target === 'string' && system.pending_target !== '') {
-                els.targetInput.value = system.pending_target;
-            } else if (typeof payload.last_target === 'string' && payload.last_target !== '') {
-                els.targetInput.value = payload.last_target;
-            }
+            syncTargetInputFromPayload(payload, system);
         }
 
         if (typeof payload.autoload_dvswitch !== 'undefined' && els.autoloadCheckbox) {
@@ -2951,7 +3175,9 @@
             const uiPayload = useDirectEndpoint && (
                 action === 'connect' ||
                 action === 'disconnect' ||
-                action === 'disconnect_selected'
+                action === 'disconnect_selected' ||
+                action === 'disconnect_live_client' ||
+                action === 'disconnect_iax_channel'
             )
                 ? withoutAllstarSnapshot(responsePayload)
                 : responsePayload;
@@ -2973,7 +3199,7 @@
             } else if (action === 'disconnect_all') {
                 markAudioSettleWindow(1500);
             } else {
-                const directAllstarAction = useDirectEndpoint && ['connect', 'disconnect', 'disconnect_selected'].includes(action);
+                const directAllstarAction = useDirectEndpoint && ['connect', 'disconnect', 'disconnect_selected', 'disconnect_live_client', 'disconnect_iax_channel'].includes(action);
                 const actionStatusText = responsePayload.status_text || responsePayload.status || responsePayload.last_status || '';
                 const actionStatusUpper = String(actionStatusText || '').toUpperCase();
 
@@ -3121,6 +3347,83 @@
                 dvswitchButton.textContent = 'Disconnecting...';
 
                 sendAction('disconnect_dvswitch', {
+                    target: '',
+                    tgNum: '',
+                });
+                return;
+            }
+
+
+            const iaxChannelButton = event.target.closest('[data-disconnect-iax-channel]');
+            if (iaxChannelButton) {
+                if (!authAllowsActions()) {
+                    setSystemStatus(loginRequiredMessage());
+                    updateActivityValue('Current Status', loginRequiredMessage());
+                    updateButtonsFromStatus(currentStatusText());
+                    return;
+                }
+
+                if (iaxChannelButton.disabled) {
+                    return;
+                }
+
+                const selectedChannel = String(iaxChannelButton.getAttribute('data-disconnect-iax-channel') || '').trim();
+                const selectedRowNode = String(iaxChannelButton.getAttribute('data-disconnect-iax-row-node') || '').trim();
+                if (!selectedChannel) {
+                    return;
+                }
+
+                notePendingDisconnect(selectedChannel);
+
+                iaxChannelButton.disabled = true;
+                iaxChannelButton.classList.add('connected-node-button-pending');
+                iaxChannelButton.textContent = 'Disconnecting...';
+
+                const card = iaxChannelButton.closest('.connected-node-card');
+                if (card) {
+                    card.classList.add('disconnecting');
+                }
+
+                sendAction('disconnect_iax_channel', {
+                    selected_channel: selectedChannel,
+                    selected_row_node: selectedRowNode,
+                    target: '',
+                    tgNum: '',
+                });
+                return;
+            }
+
+            const liveClientButton = event.target.closest('[data-disconnect-live-client]');
+            if (liveClientButton) {
+                if (!authAllowsActions()) {
+                    setSystemStatus(loginRequiredMessage());
+                    updateActivityValue('Current Status', loginRequiredMessage());
+                    updateButtonsFromStatus(currentStatusText());
+                    return;
+                }
+
+                if (liveClientButton.disabled) {
+                    return;
+                }
+
+                const selectedClient = String(liveClientButton.getAttribute('data-disconnect-live-client') || '').trim();
+                if (!selectedClient) {
+                    return;
+                }
+
+                notePendingDisconnect(selectedClient);
+
+                liveClientButton.disabled = true;
+                liveClientButton.classList.add('connected-node-button-pending');
+                liveClientButton.textContent = 'Disconnecting...';
+
+                const card = liveClientButton.closest('.connected-node-card');
+                if (card) {
+                    card.classList.add('disconnecting');
+                }
+
+                sendAction('disconnect_live_client', {
+                    selected_client: selectedClient,
                     target: '',
                     tgNum: '',
                 });
