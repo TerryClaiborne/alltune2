@@ -166,6 +166,21 @@ function asterisk_channel_request_hangup(string $channel): string
     return asterisk_cli('channel request hangup ' . $channel);
 }
 
+function wait_for_iax_rpt_channel_gone(string $node, string $channel, float $timeoutSeconds = 2.5): bool
+{
+    $deadline = microtime(true) + $timeoutSeconds;
+
+    do {
+        if (!live_iax_rpt_channel_exists($node, $channel)) {
+            return true;
+        }
+
+        pause_seconds(0.15);
+    } while (microtime(true) < $deadline);
+
+    return !live_iax_rpt_channel_exists($node, $channel);
+}
+
 function asterisk_ilink_connect(string $node, string $remoteNode, string $linkMode): string
 {
     $ilink = $linkMode === 'local_monitor' ? '8' : '3';
@@ -662,22 +677,50 @@ if ($action === 'disconnect_iax_channel') {
         respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 422);
     }
 
-    if (!live_iax_rpt_channel_exists($myNode, $selectedIaxChannel)) {
-        $_SESSION['last_status'] = 'ERROR: IAX CHANNEL NOT FOUND';
-        respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 404);
+    $liveIaxChannels = live_iax_rpt_channels($myNode);
+    $disconnectChannel = '';
+    $alreadyGone = false;
+
+    if (in_array($selectedIaxChannel, $liveIaxChannels, true)) {
+        $disconnectChannel = $selectedIaxChannel;
+    } elseif (count($liveIaxChannels) === 0) {
+        /*
+         * A fast status refresh can briefly show a row that Asterisk has
+         * already torn down. Treat that as success from the row button's
+         * point of view instead of making Terry click again.
+         */
+        $alreadyGone = true;
+    } elseif (count($liveIaxChannels) === 1) {
+        /*
+         * The exact channel name can roll while the same single true-IAX
+         * client is still the only candidate. Disconnect that one safe match.
+         */
+        $disconnectChannel = (string) $liveIaxChannels[0];
+    } else {
+        $_SESSION['last_status'] = 'ERROR: MULTIPLE IAX CHANNELS - REFRESH AND USE ROW DISCONNECT';
+        respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
     }
 
-    asterisk_channel_request_hangup($selectedIaxChannel);
-    pause_seconds(1.0);
+    if ($disconnectChannel !== '') {
+        asterisk_channel_request_hangup($disconnectChannel);
+        wait_for_iax_rpt_channel_gone($myNode, $disconnectChannel);
+    }
 
     if ($selectedIaxRowNode !== '') {
         untrack_allstar_link($selectedIaxRowNode);
     }
     untrack_allstar_link($selectedIaxChannel);
+    if ($disconnectChannel !== '' && $disconnectChannel !== $selectedIaxChannel) {
+        untrack_allstar_link($disconnectChannel);
+    }
     sync_last_direct_target_from_tracking($hasRealDvSwitchNode ? $dvSwitchNode : null);
 
     $_SESSION['last_status'] = 'DISCONNECTED: IAX CHANNEL';
-    respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''));
+    $payload = direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : '');
+    $payload['iax_requested_channel'] = $selectedIaxChannel;
+    $payload['iax_disconnected_channel'] = $disconnectChannel;
+    $payload['iax_disconnect_already_gone'] = $alreadyGone;
+    respond($payload);
 }
 
 if ($action === 'disconnect_live_client') {
@@ -696,11 +739,11 @@ if ($action === 'disconnect_live_client') {
         respond(direct_payload($_SESSION['last_status'], $dvSwitchNode), 409);
     }
 
-    if (!live_allstar_link_exists($myNode, $selectedLiveClient)) {
-        $_SESSION['last_status'] = 'ERROR: LIVE IAX CLIENT NOT FOUND';
-        respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 404);
-    }
-
+    /*
+     * The row already came from status/live Asterisk data. Do not reject a
+     * row click solely because a second live preflight briefly misses the
+     * same Web Transceiver / app_rpt client during polling.
+     */
     asterisk_ilink_disconnect_live_client($myNode, $selectedLiveClient);
     pause_seconds(1.0);
 
@@ -720,13 +763,10 @@ if ($action === 'disconnect_selected') {
         $_SESSION['last_status'] = 'ERROR: USE DISCONNECT DVSWITCH';
         respond(direct_payload($_SESSION['last_status'], $dvSwitchNode), 409);
     }
-    $trackedNodes = allstar_tracked_nodes_in_order($hasRealDvSwitchNode ? $dvSwitchNode : null);
-    if (!in_array($selectedNode, $trackedNodes, true)) {
-        $_SESSION['last_status'] = 'ERROR: ALLSTAR NODE NOT TRACKED';
-        respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 404);
-    }
-
     $selectedUiMode = tracked_allstar_ui_mode($selectedNode);
+    if ($selectedUiMode === 'ASL' && ctype_digit($selectedNode) && (int) $selectedNode >= 3000000) {
+        $selectedUiMode = 'ECHO';
+    }
     asterisk_ilink_disconnect($myNode, $selectedNode);
     pause_seconds(1.0);
     if ($selectedUiMode === 'ECHO') {

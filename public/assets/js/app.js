@@ -915,6 +915,14 @@
         return String(link?.iax_channel ?? link?.asterisk_channel ?? link?.channel ?? '').trim();
     }
 
+    function disconnectKeyForLink(link) {
+        const rawNode = String(link?.node ?? link?.target ?? '').trim();
+        const connectionType = String(link?.connection_type ?? link?.type ?? '').trim().toLowerCase();
+        const iaxChannel = iaxChannelForLink(link);
+
+        return connectionType === 'iax_channel' && iaxChannel !== '' ? iaxChannel : rawNode;
+    }
+
     function directModeShouldUseNumericTarget(payload, system) {
         const mode = normalizeMode(
             payload?.selected_mode ||
@@ -2292,7 +2300,7 @@
         const now = Date.now();
 
         state.pendingDisconnectNodes.forEach((expiresAt, node) => {
-            if (now > Number(expiresAt || 0) || (activeNodes && !activeNodes.has(node))) {
+            if (now > Number(expiresAt || 0)) {
                 state.pendingDisconnectNodes.delete(node);
                 state.allstarLinksSignature = '';
             }
@@ -2327,22 +2335,17 @@
             });
         });
 
-        const activeNodeSet = new Set(links.map((link) => String(link?.node ?? link?.target ?? '').trim()).filter(Boolean));
-        prunePendingDisconnectNodes(activeNodeSet);
+        const activeDisconnectKeySet = new Set(links.map((link) => disconnectKeyForLink(link)).filter(Boolean));
+        prunePendingDisconnectNodes(activeDisconnectKeySet);
 
-        const linksSignature = JSON.stringify(links.map((link) => {
+        const displayLinks = links.filter((link) => !pendingDisconnectActive(disconnectKeyForLink(link)));
+
+        const linksSignature = JSON.stringify(displayLinks.map((link) => {
             const rawNode = String(link?.node ?? link?.target ?? '').trim();
             const modeLabel = String(link?.mode_label ?? link?.link_mode ?? link?.mode ?? 'Connected').trim();
             const connectionType = String(link?.connection_type ?? link?.type ?? '').trim().toLowerCase();
             const iaxChannel = iaxChannelForLink(link);
-            const elapsed = String(link?.elapsed ?? '').trim();
-            const keyed = !!link?.keyed;
-            const lastKeyed = String(link?.last_keyed ?? '').trim();
-            const isDvSwitchNode = dvswitchNode !== '' && rawNode === dvswitchNode;
-            const isLocalMonitor = modeLabel.toLowerCase().includes('monitor');
-            const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 0.5;
-            const active = linkLooksKeyed(link, keyedHoldSeconds);
-            const pendingKey = connectionType === 'iax_channel' && iaxChannel !== '' ? iaxChannel : rawNode;
+            const pendingKey = disconnectKeyForLink(link);
 
             return {
                 node: rawNode,
@@ -2350,28 +2353,9 @@
                 iaxChannel,
                 mode: modeLabel,
                 live: !!link?.is_live,
-                elapsed,
-                keyed,
-                lastKeyed,
-                active,
                 pending: pendingDisconnectActive(pendingKey),
             };
         }));
-
-        if (!force && linksSignature === state.allstarLinksSignature) {
-            return;
-        }
-
-        state.allstarLinksSignature = linksSignature;
-
-        if (links.length === 0) {
-            els.statusAllstarLinks.innerHTML = `
-                <div class="allstar-links-empty">
-                    No AllStarLink / EchoLink links detected.
-                </div>
-            `;
-            return;
-        }
 
         function normalizeLinkModeLabel(link) {
             const raw = String(link?.mode_label ?? link?.link_mode ?? link?.mode ?? 'Connected').trim();
@@ -2485,12 +2469,12 @@
             };
         }
 
-        const bridgeAudioActive = dvswitchNode !== '' && links.some((link) => {
+        const bridgeAudioActive = dvswitchNode !== '' && displayLinks.some((link) => {
             const rawNode = String(link?.node ?? link?.target ?? '').trim();
             return rawNode === dvswitchNode && linkLooksKeyed(link, state.dvswitchKeyedHoldSeconds);
         });
 
-        const externalBridgeAudioActive = dvswitchNode !== '' && links.some((link) => {
+        const externalBridgeAudioActive = dvswitchNode !== '' && displayLinks.some((link) => {
             const rawNode = String(link?.node ?? link?.target ?? '').trim();
             const label = normalizeLinkModeLabel(link).toLowerCase();
             const isLocalMonitor = label.includes('monitor');
@@ -2501,7 +2485,70 @@
                 && linkLooksKeyed(link, 1);
         });
 
-        const rows = links.map((link) => {
+        if (!force && linksSignature === state.allstarLinksSignature) {
+            const renderedCards = els.statusAllstarLinks.querySelectorAll('.connected-node-card');
+
+            if (renderedCards.length === displayLinks.length) {
+                displayLinks.forEach((link, index) => {
+                    const card = renderedCards[index];
+
+                    if (!card) {
+                        return;
+                    }
+
+                    const rawNode = String(link.node ?? link.target ?? '').trim();
+                    const linkModeLabel = normalizeLinkModeLabel(link);
+                    const isDvSwitchNode = dvswitchNode !== '' && rawNode === dvswitchNode;
+                    const isLocalMonitor = linkModeLabel.toLowerCase().includes('monitor');
+                    const keyedHoldSeconds = isDvSwitchNode ? state.dvswitchKeyedHoldSeconds : 0.5;
+                    const rowKeyed = linkLooksKeyed(link, keyedHoldSeconds);
+                    const bridgeAudioForNode = bridgeAudioActive && !isDvSwitchNode && !isLocalMonitor;
+                    const bridgeAudioForDvSwitch = isDvSwitchNode && externalBridgeAudioActive;
+                    const rowActive = rowKeyed || bridgeAudioForNode || bridgeAudioForDvSwitch;
+
+                    card.classList.toggle('keyed', rowActive);
+                    card.classList.toggle('bridge-audio', bridgeAudioForNode);
+
+                    const stateEl = card.querySelector('.connected-node-state');
+
+                    if (stateEl) {
+                        const mode = escapeHtml(linkModeLabel);
+                        const elapsed = escapeHtml(String(link.elapsed ?? '').trim());
+                        const liveLabel = link.is_live ? 'Live AMI' : 'Tracked';
+                        const keyedText = rowKeyed
+                            ? '<span class="connected-node-keyed">Audio Active</span>'
+                            : (bridgeAudioForDvSwitch
+                                ? '<span class="connected-node-keyed">Bridge Audio Active</span>'
+                                : (bridgeAudioForNode ? '<span class="connected-node-keyed">Audio via DVSwitch</span>' : ''));
+                        const elapsedText = elapsed !== ''
+                            ? `<span class="connected-node-meta-item">Connected ${elapsed}</span>`
+                            : '';
+
+                        stateEl.innerHTML = `
+                            <span class="connected-node-mode">${mode}</span>
+                            <span class="connected-node-source">${escapeHtml(liveLabel)}</span>
+                            ${elapsedText}
+                            ${keyedText}
+                        `;
+                    }
+                });
+
+                return;
+            }
+        }
+
+        state.allstarLinksSignature = linksSignature;
+
+        if (displayLinks.length === 0) {
+            els.statusAllstarLinks.innerHTML = `
+                <div class="allstar-links-empty">
+                    No AllStarLink / EchoLink links detected.
+                </div>
+            `;
+            return;
+        }
+
+        const rows = displayLinks.map((link) => {
             const rawNode = String(link.node ?? link.target ?? '').trim();
             const node = escapeHtml(rawNode);
             const linkModeLabel = normalizeLinkModeLabel(link);
@@ -2640,7 +2687,7 @@
         els.statusAllstarLinks.innerHTML = `
             <div class="connected-nodes-header">
                 <span>Connected Nodes</span>
-                <span>${links.length} active</span>
+                <span>${displayLinks.length} active</span>
             </div>
             <div class="connected-nodes-helper">
                 Each row has its own disconnect action. The DVSwitch private link uses Disconnect DVSwitch.
@@ -3202,6 +3249,19 @@
                 const directAllstarAction = useDirectEndpoint && ['connect', 'disconnect', 'disconnect_selected', 'disconnect_live_client', 'disconnect_iax_channel'].includes(action);
                 const actionStatusText = responsePayload.status_text || responsePayload.status || responsePayload.last_status || '';
                 const actionStatusUpper = String(actionStatusText || '').toUpperCase();
+
+                if (action === 'disconnect_iax_channel') {
+                    [
+                        responsePayload.iax_requested_channel,
+                        responsePayload.iax_disconnected_channel,
+                    ].forEach((channel) => {
+                        const normalizedChannel = String(channel || '').trim();
+
+                        if (normalizedChannel !== '') {
+                            notePendingDisconnect(normalizedChannel, 8000);
+                        }
+                    });
+                }
 
                 if (
                     directAllstarAction &&
