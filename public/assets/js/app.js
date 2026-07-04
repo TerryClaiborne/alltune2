@@ -2213,6 +2213,11 @@
         state.favoritesSignature = signature;
         state.favoritesRaw = normalizedItems;
 
+        state.allstarLinksSignature = '';
+        if (state.lastAllstarPayload) {
+            renderAllstarLinks(state.lastAllstarPayload, { force: true });
+        }
+
         const renderItems = getSortedFavorites(state.favoritesRaw);
 
         if (renderItems.length === 0) {

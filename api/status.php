@@ -702,6 +702,15 @@ function mark_all_connected_allstar_links_keyed_from_node_tx(array $links, bool 
             continue;
         }
 
+        $linkMode = strtolower(trim((string) ($link['link_mode'] ?? $link['mode'] ?? '')));
+        $modeLabel = strtolower(trim((string) ($link['mode_label'] ?? '')));
+        $isLocalMonitor = $linkMode === 'local_monitor'
+            || str_contains($modeLabel, 'monitor');
+
+        if ($isLocalMonitor) {
+            continue;
+        }
+
         $link['keyed'] = true;
         $link['last_keyed'] = '0';
         $link['keyed_source'] = 'node_tx';
