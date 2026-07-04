@@ -471,6 +471,7 @@ password=YOUR_BRANDMEISTER_HOTSPOT_PASSWORD
 
 [identity]
 dmr_id=YOUR_DMR_ID
+hotspot_radio_id=YOUR_BRANDMEISTER_HOTSPOT_ID
 callsign=YOUR_CALLSIGN
 
 [private_node]
@@ -504,6 +505,36 @@ Your BrandMeister Hotspot Security password / SelfCare password for this connect
 
 **dmr_id**  
 Your gateway/base DMR ID.
+
+**hotspot_radio_id**  
+Your BrandMeister hotspot/radio ID for this BMTD bridge.
+
+This is the hotspot ID BrandMeister expects for the AllTune2 BrandMeister connection.
+
+Example:
+
+```text
+Base DMR ID:         3220008
+BM hotspot ID:       322000811
+hotspot_radio_id:    322000811
+```
+
+Do not use the TGIFD `hotspot_radio_id` value unless it is also the correct BrandMeister hotspot ID for your setup.
+
+For many AllTune2 systems:
+
+```text
+BrandMeister hotspot_radio_id = BrandMeister hotspot ID
+TGIFD hotspot_radio_id        = BrandMeister hotspot ID plus 1
+```
+
+Example:
+
+```text
+Base DMR ID:                 3220008
+BrandMeister hotspot ID:     322000811
+TGIFD hotspot ID:            322000812
+```
 
 **callsign**  
 Your HAM callsign.
@@ -1078,6 +1109,7 @@ password=YOUR_BRANDMEISTER_HOTSPOT_PASSWORD
 
 [identity]
 dmr_id=YOUR_DMR_ID
+hotspot_radio_id=YOUR_BRANDMEISTER_HOTSPOT_ID
 callsign=YOUR_CALLSIGN
 ```
 
@@ -1244,6 +1276,7 @@ Remember:
 - use DDNS/domain plus trusted HTTPS for public browser access
 - enable YSF, D-Star, P25, or NXDN only when those modes already work on your base system
 - keep TGIFD `[tlv] inbound_slot=2` in `tgifd.ini`
+- set `hotspot_radio_id` correctly for your BMTD BrandMeister identity
 - set `hotspot_radio_id` correctly for your TGIFD identity
 - configure BrandMeister credentials in `bmtd/config/bmtd.ini`
 - configure TGIF credentials in `tgif/config/tgifd.ini`
