@@ -4,7 +4,25 @@ set -uo pipefail
 APP_DIR="${APP_DIR:-/var/www/html/alltune2}"
 BMTD_DIR="${BMTD_DIR:-$APP_DIR/bmtd}"
 CFG_FILE="${CFG_FILE:-$BMTD_DIR/config/bmtd.ini}"
-BIN_FILE="${BIN_FILE:-$BMTD_DIR/bin/bmtd}"
+default_backend_binary() {
+  local arch
+  arch="$(dpkg --print-architecture 2>/dev/null || uname -m 2>/dev/null || true)"
+
+  case "$arch" in
+    amd64|x86_64)
+      printf '%s\n' "$BMTD_DIR/bin/bmtdamd"
+      ;;
+    arm64|aarch64)
+      printf '%s\n' "$BMTD_DIR/bin/bmtd"
+      ;;
+    *)
+      echo "Unsupported architecture for BMTD helper: ${arch:-unknown}. Supported: arm64/aarch64 and amd64/x86_64." >&2
+      return 1
+      ;;
+  esac
+}
+
+BIN_FILE="${BIN_FILE:-$(default_backend_binary)}" || exit 1
 DVSWITCH_SH="${DVSWITCH_SH:-/opt/MMDVM_Bridge/dvswitch.sh}"
 RUN_DIR="$APP_DIR/run"
 LOG_DIR="$APP_DIR/logs"

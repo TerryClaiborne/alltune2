@@ -4,7 +4,25 @@ set -euo pipefail
 APP_DIR="${APP_DIR:-/var/www/html/alltune2}"
 TGIFD_DIR="${TGIFD_DIR:-$APP_DIR/tgif}"
 CFG_FILE="${CFG_FILE:-$TGIFD_DIR/config/tgifd.ini}"
-BIN_FILE="${BIN_FILE:-$TGIFD_DIR/bin/tgifd}"
+default_backend_binary() {
+  local arch
+  arch="$(dpkg --print-architecture 2>/dev/null || uname -m 2>/dev/null || true)"
+
+  case "$arch" in
+    amd64|x86_64)
+      printf '%s\n' "$TGIFD_DIR/bin/tgifdamd"
+      ;;
+    arm64|aarch64)
+      printf '%s\n' "$TGIFD_DIR/bin/tgifd"
+      ;;
+    *)
+      echo "Unsupported architecture for TGIFD helper: ${arch:-unknown}. Supported: arm64/aarch64 and amd64/x86_64." >&2
+      return 1
+      ;;
+  esac
+}
+
+BIN_FILE="${BIN_FILE:-$(default_backend_binary)}" || exit 1
 DVSWITCH_SH="${DVSWITCH_SH:-/opt/MMDVM_Bridge/dvswitch.sh}"
 RUN_DIR="$APP_DIR/run"
 LOG_DIR="$APP_DIR/logs"

@@ -35,7 +35,9 @@ BMTD_HELPER="$BMTD_DIR/alltune2-bmtd-helper.sh"
 BMTD_CONFIG_FILE="$BMTD_CONFIG_DIR/bmtd.ini"
 BMTD_CONFIG_CREATED_THIS_RUN=0
 BMTD_CONFIG_EXAMPLE="$BMTD_CONFIG_DIR/bmtd.ini.example"
-BMTD_BINARY="$BMTD_DIR/bin/bmtd"
+BMTD_BINARY_ARM="$BMTD_DIR/bin/bmtd"
+BMTD_BINARY_AMD="$BMTD_DIR/bin/bmtdamd"
+BMTD_BINARY="${BMTD_BINARY:-$BMTD_BINARY_ARM}"
 BMTD_LOG_FILE="$LOGS_DIR/bmtd.log"
 BMTD_CONFIG_HAS_PLACEHOLDERS=0
 
@@ -43,7 +45,9 @@ TGIF_HELPER="$TGIF_DIR/alltune2-tgifd-helper.sh"
 TGIF_CONFIG_FILE="$TGIF_CONFIG_DIR/tgifd.ini"
 TGIF_CONFIG_CREATED_THIS_RUN=0
 TGIF_CONFIG_EXAMPLE="$TGIF_CONFIG_DIR/tgifd.ini.example"
-TGIF_BINARY="$TGIF_DIR/bin/tgifd"
+TGIF_BINARY_ARM="$TGIF_DIR/bin/tgifd"
+TGIF_BINARY_AMD="$TGIF_DIR/bin/tgifdamd"
+TGIF_BINARY="${TGIF_BINARY:-$TGIF_BINARY_ARM}"
 TGIF_COPYRIGHT_NOTICE="$TGIF_DOCS_DIR/TGIFD-COPYRIGHT-NOTICE.md"
 TGIF_LOG_FILE="$LOGS_DIR/tgifd.log"
 TGIFD_CONFIG_HAS_PLACEHOLDERS=0
@@ -414,6 +418,32 @@ check_web_user() {
     else
         fail "Web user does not exist: $WEB_USER"
     fi
+}
+
+detect_system_arch() {
+    dpkg --print-architecture 2>/dev/null || uname -m 2>/dev/null || true
+}
+
+select_backend_binaries_for_arch() {
+    local arch
+    arch="$(detect_system_arch)"
+
+    case "$arch" in
+        arm64|aarch64)
+            BMTD_BINARY="$BMTD_BINARY_ARM"
+            TGIF_BINARY="$TGIF_BINARY_ARM"
+            ;;
+        amd64|x86_64)
+            BMTD_BINARY="$BMTD_BINARY_AMD"
+            TGIF_BINARY="$TGIF_BINARY_AMD"
+            ;;
+        *)
+            fail "Unsupported architecture for BMTD/TGIFD binaries: ${arch:-unknown}. Supported: arm64/aarch64 and amd64/x86_64."
+            ;;
+    esac
+
+    quiet_detail "Selected BMTD binary for ${arch}: $BMTD_BINARY"
+    quiet_detail "Selected TGIFD binary for ${arch}: $TGIF_BINARY"
 }
 
 make_dirs() {
@@ -1013,10 +1043,14 @@ prepare_bmtd_binary() {
     [[ -x "$BMTD_BINARY" ]] || fail "BMTD binary is not executable: $BMTD_BINARY"
 
     local arch
-    arch="$(dpkg --print-architecture 2>/dev/null || uname -m 2>/dev/null || true)"
-    if [[ "$arch" != "arm64" && "$arch" != "aarch64" ]]; then
-        fail "BMTD binary is built for 64-bit ARM. This system reports architecture: ${arch:-unknown}"
-    fi
+    arch="$(detect_system_arch)"
+    case "$arch" in
+        arm64|aarch64|amd64|x86_64) ;;
+        *)
+            fail "Unsupported architecture for BMTD binary: ${arch:-unknown}. Supported: arm64/aarch64 and amd64/x86_64."
+            ;;
+    esac
+    quiet_detail "BMTD binary selected for ${arch}: $BMTD_BINARY"
 
     if command -v ldd >/dev/null 2>&1; then
         if ldd "$BMTD_BINARY" 2>/dev/null | grep -q "not found"; then
@@ -1038,12 +1072,18 @@ stop_existing_bmtd_if_running() {
         "$BMTD_HELPER" stop >/dev/null 2>&1 || true
     fi
 
-    pkill -f "$BMTD_BINARY" >/dev/null 2>&1 || true
+    for binary in "$BMTD_BINARY" "$BMTD_BINARY_ARM" "$BMTD_BINARY_AMD"; do
+        if [[ -n "$binary" ]]; then
+            pkill -f "$binary" >/dev/null 2>&1 || true
+        fi
+    done
     sleep 1
 
-    if pgrep -f "$BMTD_BINARY" >/dev/null 2>&1; then
-        fail "BMTD process is still running after stop attempt. Stop it before continuing."
-    fi
+    for binary in "$BMTD_BINARY" "$BMTD_BINARY_ARM" "$BMTD_BINARY_AMD"; do
+        if [[ -n "$binary" ]] && pgrep -f "$binary" >/dev/null 2>&1; then
+            fail "BMTD process is still running after stop attempt: $binary"
+        fi
+    done
 
     log "No active BMTD process remains."
 }
@@ -1077,10 +1117,14 @@ prepare_tgifd_binary() {
     [[ -x "$TGIF_BINARY" ]] || fail "TGIFD binary is not executable: $TGIF_BINARY"
 
     local arch
-    arch="$(dpkg --print-architecture 2>/dev/null || uname -m 2>/dev/null || true)"
-    if [[ "$arch" != "arm64" && "$arch" != "aarch64" ]]; then
-        fail "TGIFD binary is built for 64-bit ARM. This system reports architecture: ${arch:-unknown}"
-    fi
+    arch="$(detect_system_arch)"
+    case "$arch" in
+        arm64|aarch64|amd64|x86_64) ;;
+        *)
+            fail "Unsupported architecture for TGIFD binary: ${arch:-unknown}. Supported: arm64/aarch64 and amd64/x86_64."
+            ;;
+    esac
+    quiet_detail "TGIFD binary selected for ${arch}: $TGIF_BINARY"
 
     if command -v ldd >/dev/null 2>&1; then
         if ldd "$TGIF_BINARY" 2>/dev/null | grep -q "not found"; then
@@ -1102,12 +1146,18 @@ stop_existing_tgifd_if_running() {
         "$TGIF_HELPER" stop >/dev/null 2>&1 || true
     fi
 
-    pkill -f "$TGIF_BINARY" >/dev/null 2>&1 || true
+    for binary in "$TGIF_BINARY" "$TGIF_BINARY_ARM" "$TGIF_BINARY_AMD"; do
+        if [[ -n "$binary" ]]; then
+            pkill -f "$binary" >/dev/null 2>&1 || true
+        fi
+    done
     sleep 1
 
-    if pgrep -f "$TGIF_BINARY" >/dev/null 2>&1; then
-        fail "TGIFD process is still running after stop attempt. Stop it before continuing."
-    fi
+    for binary in "$TGIF_BINARY" "$TGIF_BINARY_ARM" "$TGIF_BINARY_AMD"; do
+        if [[ -n "$binary" ]] && pgrep -f "$binary" >/dev/null 2>&1; then
+            fail "TGIFD process is still running after stop attempt: $binary"
+        fi
+    done
 
     log "No active TGIFD process remains."
 }
@@ -1273,18 +1323,22 @@ set_permissions() {
     chmod 0755 "$BMTD_HELPER"
     chown root:root "$BMTD_HELPER"
 
-    if [[ -f "$BMTD_BINARY" ]]; then
-        chmod 0755 "$BMTD_BINARY"
-        chown root:root "$BMTD_BINARY"
-    fi
+    for file in "$BMTD_BINARY_ARM" "$BMTD_BINARY_AMD"; do
+        if [[ -f "$file" ]]; then
+            chmod 0755 "$file"
+            chown root:root "$file"
+        fi
+    done
 
     chmod 0755 "$TGIF_HELPER"
     chown root:root "$TGIF_HELPER"
 
-    if [[ -f "$TGIF_BINARY" ]]; then
-        chmod 0755 "$TGIF_BINARY"
-        chown root:root "$TGIF_BINARY"
-    fi
+    for file in "$TGIF_BINARY_ARM" "$TGIF_BINARY_AMD"; do
+        if [[ -f "$file" ]]; then
+            chmod 0755 "$file"
+            chown root:root "$file"
+        fi
+    done
 
     if [[ -f "$TOOLS_DIR/alltune2_set_admin_password.php" ]]; then
         chmod 0750 "$TOOLS_DIR/alltune2_set_admin_password.php"
@@ -2158,6 +2212,7 @@ main() {
     install_minimum_packages_if_possible
     check_runtime_tools
     check_web_user
+    select_backend_binaries_for_arch
 
     step "Checking repo and system dependencies..."
     check_required_repo_files
