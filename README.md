@@ -2,7 +2,7 @@
 
 ## One Dashboard. All Your Networks.
 
-✅ Optimized for Debian 12 & 13 on 64-bit ARM, including Raspberry Pi 4 and Raspberry Pi 5.
+✅ Optimized for Debian 12 & 13 on 64-bit ARM (including Raspberry Pi 4/5) and AMD64 (x86_64) platforms.
 
 AllTune2 is a modern control panel for **AllStarLink 3 and DVSwitch-style radio systems**.
 
@@ -110,6 +110,7 @@ Recent versions added several important improvements:
 - native **TGIFD** backend for TGIF, replacing the older HBLink sidecar path
 - cleaner BMTD/TGIFD logging under the AllTune2 `logs/` directory
 - local BMTD/TGIFD config protection so live node credentials are not committed
+- AMD64 (x86_64) backend support for BMTD and TGIFD, while keeping the existing ARM/aarch64 path
 
 The dashboard is designed so you can pick a network, enter or load a target, choose Local Monitor or Transceive, and press **Connect**.
 
@@ -143,6 +144,13 @@ For TGIF, AllTune2 uses:
 ```
 
 These files are created from safe example files if they do not already exist.
+
+AllTune2 uses architecture-matched backend binaries for BrandMeister and TGIF:
+
+- ARM/aarch64 systems use `bmtd/bin/bmtd` and `tgif/bin/tgifd`
+- AMD64/x86_64 systems use `bmtd/bin/bmtdamd` and `tgif/bin/tgifdamd`
+
+Both architectures use the same live config files shown above. Separate AMD config files are not needed.
 
 BrandMeister and TGIF do **not** require:
 
@@ -195,6 +203,7 @@ The setup script helps with:
 - sudoers rules
 - config examples
 - preserving existing local config files
+- architecture detection for BMTD/TGIFD backend binaries
 - helper permissions
 - log rotation
 - Apache security hardening
@@ -250,6 +259,8 @@ cd /var/www/html/alltune2
 git pull origin main
 sudo ./setup_alltune2.sh
 ```
+
+**Important for existing users:** After updates that include BMTD/TGIFD backend binary, helper, installer, or permission changes, run `sudo ./setup_alltune2.sh` after pulling. Setup detects the system architecture, checks the matching ARM or AMD64 backend binaries, applies permissions, and reruns the installer self-checks.
 
 **Note for existing users:** If `git status` shows `M data/favorites.txt` after updating, that is normal on a configured node. It only means your saved Favorites are different from the default file. Do not commit your personal `data/favorites.txt`; just run `git pull origin main` and `sudo ./setup_alltune2.sh` as usual.
 
@@ -455,6 +466,13 @@ The example file is:
 
 Existing `bmtd.ini` files are preserved on updates.
 
+BMTD uses an architecture-matched backend binary:
+
+- ARM/aarch64 systems use `/var/www/html/alltune2/bmtd/bin/bmtd`
+- AMD64/x86_64 systems use `/var/www/html/alltune2/bmtd/bin/bmtdamd`
+
+Both architectures use the same live `bmtd.ini` file.
+
 ### Important
 
 The full `bmtd.ini` file contains required settings that BMTD needs to run. Do not remove sections or change unrelated values unless you know exactly what they do.
@@ -596,6 +614,13 @@ The example file is:
 ```
 
 Existing `tgifd.ini` files are preserved on updates.
+
+TGIFD uses an architecture-matched backend binary:
+
+- ARM/aarch64 systems use `/var/www/html/alltune2/tgif/bin/tgifd`
+- AMD64/x86_64 systems use `/var/www/html/alltune2/tgif/bin/tgifdamd`
+
+Both architectures use the same live `tgifd.ini` file.
 
 ### Important
 
@@ -1225,7 +1250,7 @@ Use a DDNS/domain hostname with a trusted certificate, or use Tailscale/VPN.
 
 For code-only updates, `git pull` is usually enough.
 
-If setup, permissions, sudoers, Apache security, BMTD, TGIFD, or runtime helpers changed, run:
+If setup, permissions, sudoers, Apache security, BMTD, TGIFD, backend binaries, or runtime helpers changed, run:
 
 ```bash
 cd /var/www/html/alltune2
@@ -1265,8 +1290,8 @@ Remember:
 - do not commit `data/favorites.txt`
 - do not commit `bmtd/config/bmtd.ini`
 - do not commit `tgif/config/tgifd.ini`
-- BMTD runs from `/var/www/html/alltune2/bmtd/bin/bmtd`
-- TGIFD runs from `/var/www/html/alltune2/tgif/bin/tgifd`
+- BMTD uses the architecture-selected backend binary: `bmtd/bin/bmtd` on ARM/aarch64 or `bmtd/bin/bmtdamd` on AMD64/x86_64
+- TGIFD uses the architecture-selected backend binary: `tgif/bin/tgifd` on ARM/aarch64 or `tgif/bin/tgifdamd` on AMD64/x86_64
 - do not commit old local build folders
 - do not assume every update needs setup
 - use `--set-admin-password` to change the web login password
