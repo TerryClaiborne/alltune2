@@ -6,54 +6,57 @@
 |   |-- connect.php
 |   |-- direct_link.php
 |   |-- favorites.php
-|   |-- status.php
+|   `-- status.php
 |-- app
 |   |-- Actions
 |   |   |-- ActionInterface.php
 |   |   |-- AllStarAction.php
 |   |   |-- BrandMeisterAction.php
 |   |   |-- TGIFAction.php
-|   |   |-- YSFAction.php
+|   |   `-- YSFAction.php
 |   |-- Controllers
-|   |   |-- MainController.php
+|   |   `-- MainController.php
 |   |-- Services
-|   |   |-- NetworkManager.php
+|   |   `-- NetworkManager.php
 |   |-- State
 |   |   |-- AppState.php
 |   |   |-- MessageCatalog.php
-|   |   |-- StatusMapper.php
-|   |-- Support
-|   |   |-- ApiAuthGuard.php
-|   |   |-- AppAuth.php
-|   |   |-- AppCsrf.php
-|   |   |-- AppSession.php
-|   |   |-- Config.php
-|   |   |-- Logger.php
+|   |   `-- StatusMapper.php
+|   `-- Support
+|       |-- ApiAuthGuard.php
+|       |-- AppAuth.php
+|       |-- AppCsrf.php
+|       |-- AppSession.php
+|       |-- Config.php
+|       `-- Logger.php
 |-- bmtd
 |   |-- alltune2-bmtd-helper.sh
 |   |-- bin
 |   |   |-- bmtd
+|   |   `-- bmtdamd
 |   |-- config
-|   |   |-- bmtd.ini.example
-|   |-- docs
-|   |   |-- BMTD-COPYRIGHT-NOTICE.md
+|   |   `-- bmtd.ini.example
+|   `-- docs
+|       `-- BMTD-COPYRIGHT-NOTICE.md
 |-- config.ini.example
 |-- data
-|   |-- favorites.example.txt
+|   `-- favorites.example.txt
 |-- docs
-|   |-- .gitkeep
+|   `-- .gitkeep
+|-- logs
+|   `-- .gitkeep
 |-- public
 |   |-- alltune2_ribbon_bar.php
 |   |-- assets
 |   |   |-- css
-|   |   |   |-- style.css
-|   |   |-- js
-|   |   |   |-- app.js
-|   |   |   |-- theme.js
+|   |   |   `-- style.css
+|   |   `-- js
+|   |       |-- app.js
+|   |       `-- theme.js
 |   |-- favorites.php
 |   |-- index.php
 |   |-- login.php
-|   |-- logout.php
+|   `-- logout.php
 |-- screenshot-light.png
 |-- screenshot.png
 |-- setup_alltune2.sh
@@ -61,10 +64,11 @@
 |   |-- alltune2-tgifd-helper.sh
 |   |-- bin
 |   |   |-- tgifd
+|   |   `-- tgifdamd
 |   |-- config
-|   |   |-- tgifd.ini.example
-|   |-- docs
-|   |   |-- TGIFD-COPYRIGHT-NOTICE.md
+|   |   `-- tgifd.ini.example
+|   `-- docs
+|       `-- TGIFD-COPYRIGHT-NOTICE.md
 |-- tools
-|   |-- alltune2_set_admin_password.php
-|-- tree.txt
+|   `-- alltune2_set_admin_password.php
+`-- tree.txt
