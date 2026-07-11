@@ -6,6 +6,7 @@
         busy: false,
         pollTimer: null,
         quickStatusTimers: [],
+        statusRequest: null,
         pollIntervalMs: 1000,
         fastPollIntervalMs: 650,
         dvswitchKeyedHoldSeconds: 2,
@@ -3106,13 +3107,22 @@
     }
 
     async function loadStatus() {
-        const payload = await requestJson(state.endpoints.status, {
+        if (state.statusRequest) {
+            return state.statusRequest;
+        }
+
+        state.statusRequest = requestJson(state.endpoints.status, {
             method: 'GET',
         });
 
-        applyLiveStatus(payload, { allowFieldSync: false });
-        cleanupLostPrivateNodeIfNeeded(payload);
-        return payload;
+        try {
+            const payload = await state.statusRequest;
+            applyLiveStatus(payload, { allowFieldSync: false });
+            cleanupLostPrivateNodeIfNeeded(payload);
+            return payload;
+        } finally {
+            state.statusRequest = null;
+        }
     }
 
     function clearQuickStatusRefreshes() {
@@ -3127,7 +3137,7 @@
         const timer = window.setTimeout(() => {
             state.quickStatusTimers = state.quickStatusTimers.filter((item) => item !== timer);
 
-            if (state.busy) {
+            if (state.busy || state.statusRequest) {
                 return;
             }
 

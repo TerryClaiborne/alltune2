@@ -16,7 +16,7 @@ function respond(array $payload, int $statusCode = 200): never
 {
     http_response_code($statusCode);
 
-    $json = json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+    $json = json_encode($payload, JSON_UNESCAPED_SLASHES);
 
     if ($json === false) {
         http_response_code(500);
@@ -26,7 +26,7 @@ function respond(array $payload, int $statusCode = 200): never
             'status_text' => 'ERROR: JSON ENCODE FAILED',
             'last_status' => 'ERROR: JSON ENCODE FAILED',
             'json_error' => json_last_error_msg(),
-        ], JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
+        ], JSON_UNESCAPED_SLASHES);
         exit;
     }
 
@@ -164,6 +164,58 @@ function config_flag_enabled(Config $config, string $key): bool
 {
     $value = strtolower(trim((string) $config->get($key, '0')));
     return in_array($value, ['1', 'true', 'yes', 'on', 'enabled'], true);
+}
+
+function external_dvswitch_runtime_status(): array
+{
+    $log = '/var/log/dvswitch/Analog_Bridge.log';
+    $mode = '';
+    $target = '';
+
+    if (is_readable($log)) {
+        $output = shell_run('/usr/bin/tail -n 3000 ' . escapeshellarg($log));
+
+        foreach (preg_split('/\R/', $output) ?: [] as $line) {
+            $line = trim((string) $line);
+
+            if (preg_match('/Setting mode to\s+([A-Z0-9_-]+)/i', $line, $matches) === 1) {
+                $nextMode = normalize_mode((string) $matches[1]);
+                if ($nextMode !== $mode) {
+                    $target = '';
+                }
+                $mode = $nextMode;
+                continue;
+            }
+
+            if (preg_match('/\bambeMode\s*=\s*([A-Z0-9_-]+)/i', $line, $matches) === 1) {
+                $nextMode = normalize_mode((string) $matches[1]);
+                if ($nextMode !== $mode) {
+                    $target = '';
+                }
+                $mode = $nextMode;
+                continue;
+            }
+
+            if (preg_match('/\btxTg\s*[=:]+\s*([A-Za-z0-9._:-]+)/i', $line, $matches) === 1) {
+                $target = trim((string) $matches[1]);
+                continue;
+            }
+
+            if ($target === '' && preg_match('/\bdst=([A-Za-z0-9._:-]+)/i', $line, $matches) === 1) {
+                $target = trim((string) $matches[1]);
+            }
+        }
+    }
+
+    if (!in_array($mode, ['YSF', 'DSTAR', 'P25', 'NXDN'], true)) {
+        return ['mode' => '', 'target' => ''];
+    }
+
+    if ($target === '0') {
+        $target = '';
+    }
+
+    return ['mode' => $mode, 'target' => $target];
 }
 
 function load_favorites_file(string $path): array
@@ -1197,8 +1249,6 @@ function managed_session_needs_configured_private_node(
         );
 }
 
-$favorites = load_favorites_file(dirname(__DIR__) . '/data/favorites.txt');
-
 $selectedMode = normalize_mode((string) ($_SESSION['selected_mode'] ?? 'BM'));
 $lastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
 $lastTarget = trim((string) ($_SESSION['last_target'] ?? ''));
@@ -1238,6 +1288,12 @@ $dvswitchLinkActive = $dvswitchAutoloaded || $dmrReady || $managedDvSwitchMode !
 
 $forcedPrivateNode = session_forces_private_node($selectedMode, $managedDvSwitchMode !== '' ? $managedDvSwitchMode : $lastMode, $dmrNetwork, $dmrActiveNetwork, $dmrReady, $dvswitchAutoloaded);
 $autoloadDvSwitch = $autoloadDvSwitch || $forcedPrivateNode;
+
+// All session-backed UI state has now been read. Release the lock before
+// helper, Asterisk, AMI, log, and Favorites work so other requests can run.
+session_write_close();
+
+$favorites = load_favorites_file(dirname(__DIR__) . '/data/favorites.txt');
 
 $bmReceive = session_may_have_bm_runtime($selectedMode, $lastMode, $dmrNetwork, $dmrActiveNetwork, $lastStatus)
     ? read_bm_receive_helper_status()
@@ -1347,7 +1403,11 @@ $liveAllstar = fetch_live_allstar_links_via_ami($myNode);
 if ($liveAllstar['available']) {
     $allstarConnectedNodes = add_pure_iax_channel_links($liveAllstar['links'], $myNode);
     $allstarConnectedNodes = mark_all_connected_allstar_links_keyed_from_node_tx($allstarConnectedNodes, $nodeTxActive);
+
+    // Reopen only long enough to persist the three tracking arrays.
+    \App\Support\AppSession::start();
     sync_live_allstar_tracking($allstarConnectedNodes);
+    session_write_close();
 } else {
     $allstarConnectedNodes = build_tracked_allstar_connected_nodes(
         $lastMode,
@@ -1361,6 +1421,35 @@ $allstarConnectedNodes = enrich_allstar_connected_nodes($allstarConnectedNodes);
 
 $privateNodeLinkChecked = trim($dvSwitchNode) !== '' && !empty($liveAllstar['available']);
 $privateNodeLinked = $privateNodeLinkChecked && allstar_links_contain_node($allstarConnectedNodes, $dvSwitchNode);
+
+if ($privateNodeLinked && $managedDvSwitchMode === '') {
+    $runtime = external_dvswitch_runtime_status();
+    $runtimeMode = normalize_mode((string) ($runtime['mode'] ?? ''));
+    $runtimeTarget = trim((string) ($runtime['target'] ?? ''));
+
+    if (in_array($runtimeMode, ['YSF', 'DSTAR', 'P25', 'NXDN'], true)) {
+        $managedDvSwitchMode = $runtimeMode;
+        $managedDvSwitchTarget = $runtimeTarget !== '' ? $runtimeTarget : 'Runtime detected';
+        $dvswitchLinkActive = true;
+        $lastMode = $runtimeMode;
+        $lastStatus = 'CONNECTED: ' . managed_digital_mode_label($runtimeMode) . ($runtimeTarget !== '' ? ' TARGET ' . $runtimeTarget : ' RUNTIME DETECTED');
+
+        if ($runtimeTarget !== '') {
+            $lastTarget = $runtimeTarget;
+            $pendingTarget = $runtimeTarget;
+        }
+
+        if ($runtimeMode === 'YSF') {
+            $ysfState = 'Connected: ' . $managedDvSwitchTarget;
+        } elseif ($runtimeMode === 'DSTAR') {
+            $dstarState = 'Connected: ' . $managedDvSwitchTarget;
+        } elseif ($runtimeMode === 'P25') {
+            $p25State = 'Connected: ' . $managedDvSwitchTarget;
+        } elseif ($runtimeMode === 'NXDN') {
+            $nxdnState = 'Connected: ' . $managedDvSwitchTarget;
+        }
+    }
+}
 $privateNodeLinkLost = $privateNodeLinkChecked
     && !$privateNodeLinked
     && managed_session_needs_configured_private_node(
@@ -1513,6 +1602,61 @@ $activity[] = [
     'value' => $lastStatus,
 ];
 
+$networkStatus = [
+    'brandmeister' => [
+        'state' => $bmState,
+        'label' => $bmState,
+        'status' => $bmState,
+        'active' => $bmActive,
+        'receive_mode_active' => $bmReceive['active'],
+        'receive_mode_target' => $bmReceive['target'],
+        'keyed' => $bmKeyed,
+    ],
+    'tgif' => [
+        'state' => $tgifState,
+        'label' => $tgifState,
+        'status' => $tgifState,
+        'active' => $tgifActive,
+        'keyed' => $tgifKeyed,
+    ],
+    'ysf' => [
+        'state' => $ysfState,
+        'label' => $ysfState,
+        'status' => $ysfState,
+        'active' => $ysfActive,
+        'keyed' => $ysfKeyed,
+    ],
+    'dstar' => [
+        'state' => $dstarState,
+        'label' => $dstarState,
+        'status' => $dstarState,
+        'active' => $dstarActive,
+        'keyed' => $dstarKeyed,
+    ],
+    'p25' => [
+        'state' => $p25State,
+        'label' => $p25State,
+        'status' => $p25State,
+        'active' => $p25Active,
+        'keyed' => $p25Keyed,
+    ],
+    'nxdn' => [
+        'state' => $nxdnState,
+        'label' => $nxdnState,
+        'status' => $nxdnState,
+        'active' => $nxdnActive,
+        'keyed' => $nxdnKeyed,
+    ],
+    'allstar' => [
+        'state' => $allstarState,
+        'label' => $allstarState,
+        'status' => $allstarState,
+        'connected_nodes_count' => count($allstarConnectedNodes),
+        'connected_nodes' => $allstarConnectedNodes,
+        'keyed' => $allstarKeyed,
+    ],
+];
+
 $payload = [
     'ok' => true,
     'status' => $lastStatus,
@@ -1600,113 +1744,16 @@ $payload = [
     'favorites' => $favorites,
     'favorites_count' => count($favorites),
 
-    'networks' => [
-        'brandmeister' => [
-            'state' => $bmState,
-            'label' => $bmState,
-            'status' => $bmState,
-            'active' => $bmActive,
-            'receive_mode_active' => $bmReceive['active'],
-            'receive_mode_target' => $bmReceive['target'],
-            'keyed' => $bmKeyed,
-        ],
-        'tgif' => [
-            'state' => $tgifState,
-            'label' => $tgifState,
-            'status' => $tgifState,
-            'active' => $tgifActive,
-            'keyed' => $tgifKeyed,
-        ],
-        'ysf' => [
-            'state' => $ysfState,
-            'label' => $ysfState,
-            'status' => $ysfState,
-            'active' => $ysfActive,
-            'keyed' => $ysfKeyed,
-        ],
-        'dstar' => [
-            'state' => $dstarState,
-            'label' => $dstarState,
-            'status' => $dstarState,
-            'active' => $dstarActive,
-            'keyed' => $dstarKeyed,
-        ],
-        'p25' => [
-            'state' => $p25State,
-            'label' => $p25State,
-            'status' => $p25State,
-            'active' => $p25Active,
-            'keyed' => $p25Keyed,
-        ],
-        'nxdn' => [
-            'state' => $nxdnState,
-            'label' => $nxdnState,
-            'status' => $nxdnState,
-            'active' => $nxdnActive,
-            'keyed' => $nxdnKeyed,
-        ],
-        'allstar' => [
-            'state' => $allstarState,
-            'label' => $allstarState,
-            'status' => $allstarState,
-            'connected_nodes_count' => count($allstarConnectedNodes),
-            'connected_nodes' => $allstarConnectedNodes,
-            'keyed' => $allstarKeyed,
-        ],
-    ],
+    'networks' => $networkStatus,
 
-    'brandmeister' => [
-        'state' => $bmState,
-        'label' => $bmState,
-        'status' => $bmState,
-        'active' => $bmActive,
-        'receive_mode_active' => $bmReceive['active'],
-        'receive_mode_target' => $bmReceive['target'],
-        'keyed' => $bmKeyed,
-    ],
-    'tgif' => [
-        'state' => $tgifState,
-        'label' => $tgifState,
-        'status' => $tgifState,
-        'active' => $tgifActive,
-        'keyed' => $tgifKeyed,
-    ],
-    'ysf' => [
-        'state' => $ysfState,
-        'label' => $ysfState,
-        'status' => $ysfState,
-        'active' => $ysfActive,
-        'keyed' => $ysfKeyed,
-    ],
-    'dstar' => [
-        'state' => $dstarState,
-        'label' => $dstarState,
-        'status' => $dstarState,
-        'active' => $dstarActive,
-        'keyed' => $dstarKeyed,
-    ],
-    'p25' => [
-        'state' => $p25State,
-        'label' => $p25State,
-        'status' => $p25State,
-        'active' => $p25Active,
-        'keyed' => $p25Keyed,
-    ],
-    'nxdn' => [
-        'state' => $nxdnState,
-        'label' => $nxdnState,
-        'status' => $nxdnState,
-        'active' => $nxdnActive,
-        'keyed' => $nxdnKeyed,
-    ],
+    'brandmeister' => $networkStatus['brandmeister'],
+    'tgif' => $networkStatus['tgif'],
+    'ysf' => $networkStatus['ysf'],
+    'dstar' => $networkStatus['dstar'],
+    'p25' => $networkStatus['p25'],
+    'nxdn' => $networkStatus['nxdn'],
 
-    'allstar' => [
-        'state' => $allstarState,
-        'label' => $allstarState,
-        'status' => $allstarState,
-        'connected_nodes_count' => count($allstarConnectedNodes),
-        'connected_nodes' => $allstarConnectedNodes,
-        'keyed' => $allstarKeyed,
+    'allstar' => $networkStatus['allstar'] + [
         'local_nodes' => array_values(array_filter([
             $myNode,
             $dvSwitchNode,
