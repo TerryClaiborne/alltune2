@@ -555,25 +555,50 @@ $activityLines[] = [
 
     <section class="favorites-section" id="favorites-section">
         <article class="card favorites-card">
-            <div class="card-header">
-                <span>Saved Favorites</span>
+            <div class="card-header favorites-card-header">
+                <span class="favorites-card-title">Saved Favorites</span>
+                <div class="favorites-header-controls" aria-label="Saved Favorites controls">
+                    <label class="favorites-search-control" for="favorites-search">
+                        <span class="favorites-search-label">Search</span>
+                        <input
+                            type="search"
+                            id="favorites-search"
+                            class="favorites-search-input"
+                            placeholder="Search favorites…"
+                            autocomplete="off"
+                            spellcheck="false"
+                        >
+                        <button
+                            type="button"
+                            id="favorites-search-clear"
+                            class="favorites-search-clear"
+                            aria-label="Clear favorites search"
+                            title="Clear favorites search"
+                            hidden
+                        >×</button>
+                    </label>
+                    <label class="favorites-sort-control" for="favorites-sort-select">
+                        <span class="favorites-control-label">Sort</span>
+                        <select id="favorites-sort-select" class="favorites-sort-select">
+                            <option value="mode-target">Mode + TG / Node</option>
+                            <option value="mode-name">Mode + Station Name</option>
+                            <option value="mode-description">Mode + Description</option>
+                            <option value="name">Station Name</option>
+                            <option value="description">Description</option>
+                            <option value="target">TG / Node</option>
+                        </select>
+                    </label>
+                    <button
+                        type="button"
+                        id="favorites-sort-direction"
+                        class="favorites-sort-direction"
+                        aria-label="Reverse favorites sort order"
+                        title="Reverse favorites sort order"
+                    >A–Z</button>
+                    <span id="favorites-result-count" class="favorites-result-count" aria-live="polite"></span>
+                </div>
                 <span class="meta-line favorites-network-line">
-                    <span class="shared-label">Shared —</span>
-                    <span class="net-bm">BM</span>
-                    <span class="separator">/</span>
-                    <span class="net-tgif">TGIF</span>
-                    <span class="separator">/</span>
-                    <span class="net-ysf">YSF</span>
-                    <span class="separator">/</span>
-                    <span class="net-dstar">D-Star</span>
-                    <span class="separator">/</span>
-                    <span class="net-p25">P25</span>
-                    <span class="separator">/</span>
-                    <span class="net-nxdn">NXDN</span>
-                    <span class="separator">/</span>
-                    <span class="net-asl">AllStar</span>
-                    <span class="separator">/</span>
-                    <span class="net-echo">EchoLink</span>
+                    <span class="shared-label">Shared - All Networks</span>
                 </span>
             </div>
             <div class="card-body card-body-tight">
@@ -589,6 +614,13 @@ $activityLines[] = [
                                 </button>
                             </th>
                             <th>
+                                <button type="button" class="favorites-sort-button" data-sort-key="mode" data-sort-type="text" title="Sort by Mode">
+                                    <span class="favorites-sort-label">Mode</span>
+                                    <span class="favorites-sort-hint">sort network</span>
+                                    <span class="favorites-sort-indicator" aria-hidden="true"></span>
+                                </button>
+                            </th>
+                            <th>
                                 <button type="button" class="favorites-sort-button" data-sort-key="name" data-sort-type="text" title="Sort by Station Name">
                                     <span class="favorites-sort-label">Station Name</span>
                                     <span class="favorites-sort-hint">sort name</span>
@@ -599,13 +631,6 @@ $activityLines[] = [
                                 <button type="button" class="favorites-sort-button" data-sort-key="description" data-sort-type="text" title="Sort by Description">
                                     <span class="favorites-sort-label">Description</span>
                                     <span class="favorites-sort-hint">sort notes</span>
-                                    <span class="favorites-sort-indicator" aria-hidden="true"></span>
-                                </button>
-                            </th>
-                            <th>
-                                <button type="button" class="favorites-sort-button" data-sort-key="mode" data-sort-type="text" title="Sort by Mode">
-                                    <span class="favorites-sort-label">Mode</span>
-                                    <span class="favorites-sort-hint">sort network</span>
                                     <span class="favorites-sort-indicator" aria-hidden="true"></span>
                                 </button>
                             </th>

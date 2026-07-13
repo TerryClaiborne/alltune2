@@ -14,9 +14,11 @@
         userSelectionHoldUntil: 0,
         cachedDvSwitchNode: '',
         preferredAslUiMode: 'ASL',
+        favoriteSortPreset: 'mode-target',
         favoriteSortKey: 'mode',
         favoriteSortDirection: 'asc',
         favoriteSortType: 'text',
+        favoriteSearchQuery: '',
         favoritesRaw: [],
         saveFavoriteTargetOverride: '',
         saveFavoriteModeOverride: '',
@@ -65,6 +67,11 @@
         helperText: document.getElementById('helper-text'),
         systemStatus: document.getElementById('system-status'),
         favoritesBody: document.getElementById('favorites-body'),
+        favoritesSearch: document.getElementById('favorites-search'),
+        favoritesSearchClear: document.getElementById('favorites-search-clear'),
+        favoritesSortSelect: document.getElementById('favorites-sort-select'),
+        favoritesSortDirection: document.getElementById('favorites-sort-direction'),
+        favoritesResultCount: document.getElementById('favorites-result-count'),
         statusBm: document.getElementById('status-bm'),
         statusTgif: document.getElementById('status-tgif'),
         statusYsf: document.getElementById('status-ysf'),
@@ -1268,85 +1275,124 @@
         );
     }
 
+    function favoriteSearchText(item) {
+        return [
+            favoriteFieldValue(item, 'target'),
+            favoriteFieldValue(item, 'mode'),
+            normalizeMode(item?.mode ?? 'BM'),
+            favoriteFieldValue(item, 'name'),
+            favoriteFieldValue(item, 'description'),
+        ].join(' ').toLocaleLowerCase();
+    }
+
+    function favoriteSortPrimaryKey(preset) {
+        if (preset === 'name') {
+            return 'name';
+        }
+
+        if (preset === 'description') {
+            return 'description';
+        }
+
+        if (preset === 'target') {
+            return 'target';
+        }
+
+        return 'mode';
+    }
+
+    function favoriteSortChain(preset) {
+        switch (preset) {
+            case 'mode-name':
+                return [
+                    ['mode', 'text'],
+                    ['name', 'text'],
+                    ['target', 'mixed'],
+                    ['description', 'text'],
+                ];
+            case 'mode-description':
+                return [
+                    ['mode', 'text'],
+                    ['description', 'text'],
+                    ['target', 'mixed'],
+                    ['name', 'text'],
+                ];
+            case 'name':
+                return [
+                    ['name', 'text'],
+                    ['mode', 'text'],
+                    ['target', 'mixed'],
+                    ['description', 'text'],
+                ];
+            case 'description':
+                return [
+                    ['description', 'text'],
+                    ['mode', 'text'],
+                    ['target', 'mixed'],
+                    ['name', 'text'],
+                ];
+            case 'target':
+                return [
+                    ['target', 'mixed'],
+                    ['mode', 'text'],
+                    ['name', 'text'],
+                    ['description', 'text'],
+                ];
+            case 'mode-target':
+            default:
+                return [
+                    ['mode', 'text'],
+                    ['target', 'mixed'],
+                    ['name', 'text'],
+                    ['description', 'text'],
+                ];
+        }
+    }
+
     function getSortedFavorites(items) {
         if (!Array.isArray(items)) {
             return [];
         }
 
-        const compareModeAscending = (leftItem, rightItem) => compareFavoriteValues(
-            normalizeMode(leftItem.mode ?? 'BM'),
-            normalizeMode(rightItem.mode ?? 'BM'),
-            'text',
-            'asc'
-        );
+        const query = String(state.favoriteSearchQuery || '').trim().toLocaleLowerCase();
+        const filteredItems = query === ''
+            ? items.slice()
+            : items.filter((item) => favoriteSearchText(item).includes(query));
+        const preset = String(state.favoriteSortPreset || 'mode-target').trim();
+        const direction = state.favoriteSortDirection === 'desc' ? 'desc' : 'asc';
+        const chain = favoriteSortChain(preset);
 
-        const compareTargetAscending = (leftItem, rightItem) => compareFavoriteValues(
-            favoriteFieldValue(leftItem, 'target'),
-            favoriteFieldValue(rightItem, 'target'),
-            'mixed',
-            'asc'
-        );
-
-        const compareNameAscending = (leftItem, rightItem) => compareFavoriteValues(
-            favoriteFieldValue(leftItem, 'name'),
-            favoriteFieldValue(rightItem, 'name'),
-            'text',
-            'asc'
-        );
-
-        const compareDescriptionAscending = (leftItem, rightItem) => compareFavoriteValues(
-            favoriteFieldValue(leftItem, 'description'),
-            favoriteFieldValue(rightItem, 'description'),
-            'text',
-            'asc'
-        );
-
-        return items.slice().sort((leftItem, rightItem) => {
-            const key = String(state.favoriteSortKey || 'mode').trim();
-            const direction = state.favoriteSortDirection === 'desc' ? 'desc' : 'asc';
-            const type = state.favoriteSortType === 'mixed' ? 'mixed' : 'text';
-
-            let primaryCompare = 0;
-
-            if (key === 'mode') {
-                primaryCompare = compareModeAscending(leftItem, rightItem);
-                if (direction === 'desc') {
-                    primaryCompare *= -1;
-                }
-            } else {
-                primaryCompare = compareFavoriteValues(
+        return filteredItems.sort((leftItem, rightItem) => {
+            for (const [key, type] of chain) {
+                const compare = compareFavoriteValues(
                     favoriteFieldValue(leftItem, key),
                     favoriteFieldValue(rightItem, key),
                     type,
                     direction
                 );
+
+                if (compare !== 0) {
+                    return compare;
+                }
             }
 
-            if (primaryCompare !== 0) {
-                return primaryCompare;
-            }
-
-            if (key === 'mode') {
-                return compareTargetAscending(leftItem, rightItem)
-                    || compareNameAscending(leftItem, rightItem)
-                    || compareDescriptionAscending(leftItem, rightItem);
-            }
-
-            return compareModeAscending(leftItem, rightItem)
-                || compareTargetAscending(leftItem, rightItem)
-                || compareNameAscending(leftItem, rightItem)
-                || compareDescriptionAscending(leftItem, rightItem);
+            return 0;
         });
     }
 
-    function updateFavoritesSortButtons() {
+    function updateFavoritesSortControls() {
+        const preset = String(state.favoriteSortPreset || 'mode-target').trim();
+        const primaryKey = favoriteSortPrimaryKey(preset);
         const buttons = document.querySelectorAll('.favorites-sort-button');
+
+        state.favoriteSortKey = primaryKey;
+        state.favoriteSortType = primaryKey === 'target' ? 'mixed' : 'text';
 
         buttons.forEach((button) => {
             const key = String(button.getAttribute('data-sort-key') || '').trim();
             const indicator = button.querySelector('.favorites-sort-indicator');
 
-            if (key !== '' && key === state.favoriteSortKey) {
+            if (key !== '' && key === primaryKey) {
                 button.setAttribute(
                     'aria-sort',
                     state.favoriteSortDirection === 'desc' ? 'descending' : 'ascending'
@@ -1363,6 +1409,35 @@
                 }
             }
         });
+
+        if (els.favoritesSortSelect && els.favoritesSortSelect.value !== preset) {
+            els.favoritesSortSelect.value = preset;
+        }
+
+        if (els.favoritesSortDirection) {
+            const descending = state.favoriteSortDirection === 'desc';
+            els.favoritesSortDirection.textContent = descending ? 'Z–A' : 'A–Z';
+            els.favoritesSortDirection.setAttribute(
+                'aria-label',
+                descending ? 'Sort favorites ascending' : 'Sort favorites descending'
+            );
+            els.favoritesSortDirection.setAttribute(
+                'title',
+                descending ? 'Sort favorites ascending' : 'Sort favorites descending'
+            );
+        }
+    }
+
+    function updateFavoritesResultCount(visibleCount, totalCount) {
+        if (!els.favoritesResultCount) {
+            return;
+        }
+
+        const queryActive = String(state.favoriteSearchQuery || '').trim() !== '';
+        const totalLabel = `${totalCount} favorite${totalCount === 1 ? '' : 's'}`;
+        els.favoritesResultCount.textContent = queryActive
+            ? `${visibleCount} of ${totalLabel}`
+            : totalLabel;
     }
 
     function rememberPreferredAslUiMode(mode) {
@@ -2220,10 +2295,14 @@
         }
 
         const renderItems = getSortedFavorites(state.favoritesRaw);
+        updateFavoritesResultCount(renderItems.length, state.favoritesRaw.length);
 
         if (renderItems.length === 0) {
-            els.favoritesBody.innerHTML = '<tr><td colspan="5">No favorites saved yet.</td></tr>';
-            updateFavoritesSortButtons();
+            const emptyMessage = state.favoritesRaw.length === 0
+                ? 'No favorites saved yet.'
+                : 'No favorites match your search.';
+            els.favoritesBody.innerHTML = `<tr><td colspan="5">${emptyMessage}</td></tr>`;
+            updateFavoritesSortControls();
             updateSaveFavoriteButtonState();
             return;
         }
@@ -2238,17 +2317,17 @@
             return `
                 <tr data-target="${target}" data-mode="${escapeHtml(mode)}">
                     <td class="favorite-target">${target}</td>
-                    <td>${name}</td>
-                    <td>${description}</td>
-                    <td class="favorite-mode">${modeDisplay}</td>
-                    <td><span class="load-button">Load</span></td>
+                    <td class="favorite-mode-cell"><span class="favorite-mode-badge">${modeDisplay}</span></td>
+                    <td class="favorite-name">${name}</td>
+                    <td class="favorite-description">${description}</td>
+                    <td class="favorite-action"><span class="load-button">Load</span></td>
                 </tr>
             `;
         });
 
         els.favoritesBody.innerHTML = rows.join('');
         updateDashboardFavoritesWriteState();
-        updateFavoritesSortButtons();
+        updateFavoritesSortControls();
         updateSaveFavoriteButtonState();
     }
 
@@ -3564,16 +3643,69 @@
                 return;
             }
 
-            if (state.favoriteSortKey === sortKey) {
+            const preset = sortKey === 'mode' ? 'mode-target' : sortKey;
+
+            if (state.favoriteSortPreset === preset) {
                 state.favoriteSortDirection = state.favoriteSortDirection === 'asc' ? 'desc' : 'asc';
             } else {
-                state.favoriteSortKey = sortKey;
+                state.favoriteSortPreset = preset;
                 state.favoriteSortDirection = 'asc';
-                state.favoriteSortType = sortType === 'mixed' ? 'mixed' : 'text';
             }
 
+            state.favoriteSortKey = sortKey;
+            state.favoriteSortType = sortType === 'mixed' ? 'mixed' : 'text';
             renderFavorites(state.favoritesRaw, { force: true });
         });
+    }
+
+    function wireFavoritesControls() {
+        const updateFavoritesSearchClear = () => {
+            if (!els.favoritesSearchClear || !els.favoritesSearch) {
+                return;
+            }
+
+            els.favoritesSearchClear.hidden = els.favoritesSearch.value === '';
+        };
+
+        if (els.favoritesSearch) {
+            els.favoritesSearch.addEventListener('input', () => {
+                state.favoriteSearchQuery = els.favoritesSearch.value || '';
+                updateFavoritesSearchClear();
+                renderFavorites(state.favoritesRaw, { force: true });
+            });
+        }
+
+        if (els.favoritesSearchClear && els.favoritesSearch) {
+            els.favoritesSearchClear.addEventListener('click', () => {
+                els.favoritesSearch.value = '';
+                state.favoriteSearchQuery = '';
+                updateFavoritesSearchClear();
+                renderFavorites(state.favoritesRaw, { force: true });
+                els.favoritesSearch.focus();
+            });
+        }
+
+        if (els.favoritesSortSelect) {
+            els.favoritesSortSelect.addEventListener('change', () => {
+                const preset = String(els.favoritesSortSelect.value || 'mode-target').trim();
+                state.favoriteSortPreset = preset;
+                state.favoriteSortDirection = 'asc';
+                state.favoriteSortKey = favoriteSortPrimaryKey(preset);
+                state.favoriteSortType = state.favoriteSortKey === 'target' ? 'mixed' : 'text';
+                renderFavorites(state.favoritesRaw, { force: true });
+            });
+        }
+
+        if (els.favoritesSortDirection) {
+            els.favoritesSortDirection.addEventListener('click', () => {
+                state.favoriteSortDirection = state.favoriteSortDirection === 'asc' ? 'desc' : 'asc';
+                renderFavorites(state.favoritesRaw, { force: true });
+            });
+        }
+
+        updateFavoritesSearchClear();
+        updateFavoritesSortControls();
+        updateFavoritesResultCount(0, state.favoritesRaw.length);
     }
 
     function wireFavoritesLoad() {
@@ -3604,6 +3736,19 @@
             updateHelperText();
             updateButtonsFromStatus(currentStatusText());
             updateSaveFavoriteButtonState();
+
+            if (window.matchMedia('(max-width: 760px)').matches) {
+                const connectButton = document.getElementById('connect-button');
+                if (connectButton) {
+                    const reduceMotion = window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+                    window.requestAnimationFrame(() => {
+                        connectButton.scrollIntoView({
+                            behavior: reduceMotion ? 'auto' : 'smooth',
+                            block: 'center',
+                        });
+                    });
+                }
+            }
 
         });
     }
@@ -4064,6 +4209,7 @@
 
         wireAllstarDisconnectButtons();
         wireFavoritesSort();
+        wireFavoritesControls();
         wireFavoritesLoad();
         wireSaveFavoriteModal();
         loadAudioAlertsPreference();

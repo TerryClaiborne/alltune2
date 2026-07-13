@@ -975,6 +975,11 @@ $initialJson = json_encode($initial, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNI
             #<?= $instanceId ?>.at2r-wrap {
                 margin-top: 8px;
             }
+            #<?= $instanceId ?> .at2r-row {
+                justify-content: flex-start;
+                scroll-padding-inline: 4px;
+                overscroll-behavior-x: contain;
+            }
         }
     </style>
 
