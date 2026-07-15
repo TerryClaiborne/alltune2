@@ -38,8 +38,9 @@ With it, you can:
 - connect to D-Star, P25, and NXDN when those modes are enabled and already working on your system
 - connect to AllStarLink nodes
 - connect to EchoLink nodes
-- use Local Monitor or Transceive
-- save and load Favorites
+- change supported AllStarLink, EchoLink, and private DVSwitch connections between Local Monitor and Transceive directly from the **Live Status box — Connected Nodes**
+- place an incoming AllStarLink or EchoLink connection in Local Monitor so you can still hear the remote station without sending your transmitted audio back to it
+- save, search, sort, and load Favorites
 - save a new Favorite directly from the dashboard
 - use manual entry
 - watch live status and activity
@@ -89,10 +90,11 @@ Recent versions added several important improvements:
 - dashboard **Save Favorite** button
 - Save Favorite popup for manual entries
 - existing Favorite detection by target + mode
-- improved Saved Favorites stability
-- Live Status connected-node cards
+- redesigned Saved Favorites for desktop and cellphone use, with search, sorting, clearer rows, and faster loading
+- Live Status box — Connected Nodes cards with quick Favorite and connection controls
 - Disconnect DVSwitch button in Live Status
-- better Local Monitor / Transceive handling for supported managed modes
+- clickable Transceive / Local Monitor controls in the Live Status box — Connected Nodes for supported AllStarLink, EchoLink, and private DVSwitch connections
+- incoming AllStarLink and EchoLink connections can be placed in Local Monitor on your node so you can still hear the remote station without sending your transmitted audio back to it
 - spoken connect/disconnect alerts for managed modes
 - Apache security hardening from the installer
 - optional web login for public or shared dashboards
@@ -100,8 +102,11 @@ Recent versions added several important improvements:
 - disabled Control Center, Favorites actions, and Live Status disconnect buttons while logged out
 - friendlier Live Status labels using Saved Favorites and local AllStarLink description data when available
 - compact connected-node Favorite star for saving or editing AllStarLink and EchoLink nodes directly from Live Status
-- clearer AllStarLink and EchoLink direct-node help text for changing between Local Monitor and Transceive
-- EchoLink safety guard for one active dashboard-initiated EchoLink direct link at a time
+- confirmed AllStarLink and EchoLink mode changes automatically update the Control Center with the correct network, node, and Link Mode
+- expanded EchoLink safeguards for dashboard-initiated links, incoming callers, mode changes, disconnect timeouts, and safe module reset handling
+- unsafe outbound EchoLink mode changes are blocked while another EchoLink connection is active so the other connection is not interrupted
+- managed-network switching with Disconnect Before Connect no longer removes unrelated AllStarLink or EchoLink connections
+- Disconnect Before Connect now uses EchoLink’s protected disconnect timing and cleanup instead of the faster AllStarLink disconnect path
 - improved Favorites page with sortable columns, row-click editing, visible Edit buttons, and per-row Remove buttons
 - Favorites page now preserves the active sort when editing, saving, or removing entries
 - improved update lightning bolt that flashes when a newer GitHub version is available
@@ -838,7 +843,11 @@ The Link Mode dropdown controls how the private audio node is linked:
 
 AllTune2 re-applies the selected Link Mode when changing between supported managed modes, so you should not normally have to press Disconnect DVSwitch just to change Local Monitor / Transceive.
 
-For connected AllStarLink and EchoLink direct nodes, you can also change the same node between **Transceive** and **Local Monitor** by selecting the desired Link Mode and pressing **Connect** again on the same node.
+In the **Live Status box — Connected Nodes**, click the displayed **Transceive** or **Local Monitor** label on an eligible AllStarLink, EchoLink, or private DVSwitch connection to change that connection directly. After an AllStarLink or EchoLink mode change is confirmed, the Control Center follows the selected network, node, and Link Mode.
+
+Incoming AllStarLink and EchoLink connections can also be placed in Local Monitor on your node. You continue to hear the remote station, but your transmitted audio is not sent back across that link until you switch it to Transceive.
+
+Raw IAX channels, Web Transceiver connections, and named app_rpt/IAX clients do not use this mode control.
 
 If web login is enabled and you are logged out, the Control Center is disabled until you sign in.
 
@@ -861,6 +870,8 @@ To change BM talkgroups:
 
 - enter a new talkgroup **or choose another BM Favorite**
 - press Connect again
+
+- BrandMeister private calls are supported by entering the DMR ID with one trailing #
 
 ---
 
@@ -953,7 +964,7 @@ Typical workflow:
 
 Additional direct AllStarLink nodes can be connected.
 
-To change the same connected AllStarLink node between **Transceive** and **Local Monitor**, select the desired Link Mode and press **Connect** again on the same node.
+To change a connected AllStarLink node between **Transceive** and **Local Monitor**, click the mode shown for that node in the **Live Status box — Connected Nodes**. This also works for incoming AllStarLink connections and changes only your side of the link.
 
 ---
 
@@ -977,15 +988,17 @@ Example:
 3001234
 ```
 
-AllTune2 allows **one active dashboard-initiated EchoLink direct link at a time**. This is intentional. Testing showed that stacking multiple outbound EchoLink links can cause ASL3/app_rpt/Asterisk to become unstable. Normal AllStarLink direct nodes can still be stacked.
+AllTune2 allows **one active dashboard-initiated EchoLink direct link at a time**. This is intentional. Testing showed that stacking multiple outbound EchoLink links can cause ASL3/app_rpt/Asterisk to become unstable. Normal incoming EchoLink connections are not limited by this dashboard-initiated outbound rule, and normal AllStarLink direct nodes can still be stacked.
 
-To change the same connected EchoLink node between **Transceive** and **Local Monitor**, select the desired Link Mode and press **Connect** again on the same node.
+To change an eligible connected EchoLink node between **Transceive** and **Local Monitor**, click the mode shown for that node in the **Live Status box — Connected Nodes**. Incoming EchoLink connections can be changed on your side without changing the remote station. An outbound mode change may be blocked while another EchoLink connection is active so AllTune2 does not interrupt the other connection or reset EchoLink unsafely.
 
 ---
 
 ## ⭐ FAVORITES
 
 Favorites save time.
+
+The dashboard Saved Favorites list is optimized for desktop and cellphone use. It includes search, multiple sort choices, and faster loading that no longer waits for the slower Live Status check.
 
 Favorites can be used for:
 
@@ -1068,6 +1081,10 @@ Live Status helps show:
 - BMTD and TGIFD backend status when BrandMeister or TGIF is active
 
 The **Disconnect DVSwitch** button removes the private audio node link without doing a full Asterisk restart.
+
+In the **Live Status box — Connected Nodes**, eligible AllStarLink, EchoLink, and private DVSwitch rows show a clickable **Transceive** or **Local Monitor** label. Click it to change the local link mode. An incoming AllStarLink or EchoLink connection can be placed in Local Monitor so you can still hear the remote station without sending your transmitted audio back across that link.
+
+Raw IAX channels, Web Transceiver connections, and named app_rpt/IAX clients do not receive this mode control.
 
 Connected AllStarLink and EchoLink nodes include a small Favorite star. Use `☆` to add the connected node to Favorites or `★` to edit the matching saved Favorite.
 
@@ -1280,9 +1297,10 @@ Leave these alone unless you know why:
 
 Remember:
 
-- AllTune2 allows one active dashboard-initiated EchoLink direct link at a time
+- AllTune2 allows one active dashboard-initiated outbound EchoLink direct link at a time; normal incoming EchoLink connections are not limited by this rule
 - direct AllStarLink nodes can still be stacked normally
-- to change the same AllStarLink or EchoLink node between Transceive and Local Monitor, select the Link Mode and press Connect again
+- use the clickable Transceive / Local Monitor label in the Live Status box — Connected Nodes to change an eligible AllStarLink, EchoLink, or private DVSwitch connection
+- an outbound EchoLink mode change may be blocked while another EchoLink connection is active so the other connection is protected
 - use the connected-node `☆` / `★` star to add or edit AllStarLink and EchoLink Favorites
 - do not guess values
 - do not paste passwords publicly
