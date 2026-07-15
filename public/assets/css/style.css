@@ -1817,6 +1817,26 @@ html[data-theme="light"] .favorites-table tbody tr[data-mode="ECHO"] .favorite-m
     font-weight: 900;
 }
 
+button.connected-node-mode-toggle {
+    appearance: none;
+    font-family: inherit;
+    line-height: 1.15;
+    cursor: pointer;
+    touch-action: manipulation;
+}
+
+button.connected-node-mode-toggle:hover,
+button.connected-node-mode-toggle:focus-visible {
+    background: rgba(46, 204, 113, 0.30);
+    border-color: rgba(95, 235, 151, 0.95);
+    outline: none;
+}
+
+button.connected-node-mode-toggle:disabled {
+    cursor: not-allowed;
+    opacity: 0.62;
+}
+
 .connected-node-source,
 .connected-node-meta-item {
     color: rgba(235, 220, 245, 0.76);
@@ -3828,6 +3848,13 @@ html[data-theme="light"] #status-allstar-links .connected-node-mode {
     background: #e7f6eb !important;
     border-color: #89c797 !important;
     color: #0f6b2a !important;
+}
+
+html[data-theme="light"] button.connected-node-mode-toggle:hover,
+html[data-theme="light"] button.connected-node-mode-toggle:focus-visible {
+    background: #d8f0df !important;
+    border-color: #4fa968 !important;
+    color: #095821 !important;
 }
 
 html[data-theme="light"] .connected-node-button {

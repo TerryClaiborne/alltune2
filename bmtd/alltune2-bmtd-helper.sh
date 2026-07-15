@@ -304,7 +304,6 @@ prepare_audio_path() {
 
   tune_analog_bridge_target "$target"
   refresh_private_node
-  wait_for_private_node_link
 
   return 0
 }
@@ -383,7 +382,6 @@ start_backend() {
   local pid
   pid="$(wait_for_pid)" || fail_json "start" "BMTD failed to start. Check $LOG_FILE." "$target"
 
-  wait_for_private_node_link
   write_state true "$target" "$pid"
   ok_json "start" "BMTD started." true "$target" "$pid"
 }

@@ -25,16 +25,28 @@
         favoritesSignature: '',
         allstarLinksSignature: '',
         pendingDisconnectNodes: new Map(),
+        pendingModeSwitches: new Map(),
         audioAlertsEnabled: true,
         audioStateInitialized: false,
         previousConnectedNodes: [],
         muteAudioAnnouncements: false,
         audioSettleUntil: 0,
         directStatusCorrectionHoldUntil: 0,
+        actionStatusHoldText: '',
+        actionStatusHoldUntil: 0,
         recentAudioEvents: new Map(),
         immediateAudioEvents: new Map(),
         lastCorrectedDirectDisconnectSignature: '',
         lastAllstarPayload: null,
+        activeManagedDvSwitchMode: '',
+        activeManagedDvSwitchTarget: '',
+        managedConnectionSignature: '',
+        managedConnectionAudioInitialized: false,
+        managedConnectionMissingSince: 0,
+        pendingPrivateDisconnectTimer: null,
+        privateLinkReconnectPending: false,
+        activeModePointerNode: '',
+        activeModePointerTimer: null,
         manualAutoloadPreference: null,
         privateNodeLossCleanupInFlight: false,
         privateNodeLossCleanupDone: false,
@@ -693,6 +705,122 @@
         }
     }
 
+    function clearPendingPrivateDisconnectAlert() {
+        if (state.pendingPrivateDisconnectTimer) {
+            window.clearTimeout(state.pendingPrivateDisconnectTimer);
+            state.pendingPrivateDisconnectTimer = null;
+        }
+    }
+
+    function managedConnectionSnapshot(payload, system, networks) {
+        const mode = normalizeMode(
+            payload?.managed_dvswitch_mode ?? system?.managed_dvswitch_mode ?? ''
+        );
+        let target = String(
+            payload?.managed_dvswitch_target ?? system?.managed_dvswitch_target ?? ''
+        ).trim();
+
+        if (mode === 'BM' || mode === 'TGIF') {
+            target = String(
+                payload?.dmr_active_target ?? system?.dmr_active_target ?? target
+            ).trim();
+        }
+
+        const networkByMode = {
+            BM: networks?.brandmeister,
+            TGIF: networks?.tgif,
+            YSF: networks?.ysf,
+            DSTAR: networks?.dstar,
+            P25: networks?.p25,
+            NXDN: networks?.nxdn,
+        };
+        const network = networkByMode[mode] || null;
+        const privateLinked = system?.private_node_linked !== false;
+        const active = modeForcesDvSwitch(mode)
+            && target !== ''
+            && privateLinked
+            && (payloadModeLooksActive(network) || !!system?.dvswitch_link_active);
+
+        if (!active) {
+            return { signature: '', mode: '', target: '' };
+        }
+
+        return {
+            signature: `${mode}:${target}`,
+            mode,
+            target,
+        };
+    }
+
+    function syncManagedConnectionAudio(payload, system, networks) {
+        const snapshot = managedConnectionSnapshot(payload, system, networks);
+        const now = Date.now();
+
+        if (!state.managedConnectionAudioInitialized) {
+            state.managedConnectionSignature = snapshot.signature;
+            state.managedConnectionAudioInitialized = true;
+            state.managedConnectionMissingSince = snapshot.signature === '' ? now : 0;
+            return;
+        }
+
+        if (snapshot.signature === '') {
+            if (!state.managedConnectionMissingSince) {
+                state.managedConnectionMissingSince = now;
+            }
+
+            if (now - state.managedConnectionMissingSince >= 3500) {
+                state.managedConnectionSignature = '';
+            }
+            return;
+        }
+
+        state.managedConnectionMissingSince = 0;
+        clearPendingPrivateDisconnectAlert();
+
+        if (snapshot.signature !== state.managedConnectionSignature) {
+            state.managedConnectionSignature = snapshot.signature;
+            const dvswitchNode = configuredDvSwitchNodeFromDom();
+            const signature = `connect:${dvswitchNode}`;
+            if (dvswitchNode !== '' && !shouldSuppressImmediateFollowup(signature)) {
+                announceNodeConnected(dvswitchNode);
+            }
+        }
+    }
+
+    function schedulePrivateDisconnectAlert(node) {
+        clearPendingPrivateDisconnectAlert();
+        const normalizedNode = String(node || '').trim();
+        if (normalizedNode === '') {
+            return;
+        }
+
+        state.privateLinkReconnectPending = true;
+        state.pendingPrivateDisconnectTimer = window.setTimeout(() => {
+            state.pendingPrivateDisconnectTimer = null;
+            const liveNodes = connectedNodeListFromPayload(state.lastAllstarPayload);
+            if (liveNodes.includes(normalizedNode)) {
+                return;
+            }
+
+            /*
+             * A real managed disconnect clears the stable managed signature
+             * after the normal status grace period. During a target change or
+             * private-node mode switch, the signature remains live (or is
+             * replaced by the new target), so do not announce the temporary
+             * private-link teardown.
+             */
+            if (state.managedConnectionSignature !== '') {
+                return;
+            }
+
+            state.privateLinkReconnectPending = false;
+            const signature = `disconnect:${normalizedNode}`;
+            if (!shouldSuppressImmediateFollowup(signature)) {
+                announceNodeDisconnected(normalizedNode);
+            }
+        }, 4500);
+    }
+
     function syncAudioAlertsFromAllstar(allstarPayload) {
         const currentNodes = connectedNodeListFromPayload(allstarPayload);
 
@@ -726,22 +854,50 @@
             return;
         }
 
+        const dvswitchNode = configuredDvSwitchNodeFromDom();
+
         addedNodes.forEach((node) => {
-            const signature = `connect:${String(node || '').trim()}`;
+            const normalizedNode = String(node || '').trim();
+            const resumedManagedPrivateLink = normalizedNode === dvswitchNode
+                && state.privateLinkReconnectPending
+                && state.managedConnectionSignature !== '';
+
+            if (normalizedNode === dvswitchNode) {
+                clearPendingPrivateDisconnectAlert();
+                state.privateLinkReconnectPending = false;
+            }
+
+            /*
+             * A private-node mode change briefly removes and restores the same
+             * link. That is not a new network connection and should remain
+             * silent. A real network/target change is announced separately by
+             * syncManagedConnectionAudio().
+             */
+            if (resumedManagedPrivateLink) {
+                return;
+            }
+
+            const signature = `connect:${normalizedNode}`;
             if (shouldSuppressImmediateFollowup(signature)) {
                 return;
             }
 
-            announceNodeConnected(node);
+            announceNodeConnected(normalizedNode);
         });
 
         removedNodes.forEach((node) => {
-            const signature = `disconnect:${String(node || '').trim()}`;
+            const normalizedNode = String(node || '').trim();
+            if (normalizedNode === dvswitchNode) {
+                schedulePrivateDisconnectAlert(normalizedNode);
+                return;
+            }
+
+            const signature = `disconnect:${normalizedNode}`;
             if (shouldSuppressImmediateFollowup(signature)) {
                 return;
             }
 
-            announceNodeDisconnected(node);
+            announceNodeDisconnected(normalizedNode);
         });
     }
 
@@ -1924,7 +2080,6 @@
 
     function shouldEnableConnectButton(statusText) {
         const mode = currentSelectedMode();
-        const disconnectFirst = disconnectBeforeConnectEnabled();
         const status = normalizeStatusText(statusText).toUpperCase();
 
         if (!modeIsConfigured(mode)) {
@@ -1960,17 +2115,15 @@
         }
         
         if (mode === 'YSF' && status.includes('CONNECTED: YSF TARGET')) {
-            return disconnectFirst ? false : true;
+            return true;
         }
 
         if (mode === 'DSTAR' && status.includes('CONNECTED: D-STAR TARGET')) {
-            return disconnectFirst ? false : true;
+            return true;
         }
 
-        if (disconnectFirst) {
-            return false;
-        }
-
+        // Disconnect Before Connect is an instruction for the backend, not a
+        // reason to block selecting a different configured network.
         return true;
     }
 
@@ -2116,6 +2269,19 @@
         updateButtonsFromStatus(currentStatusText());
     }
 
+    function clearActionStatusHold() {
+        state.actionStatusHoldText = '';
+        state.actionStatusHoldUntil = 0;
+    }
+
+    function holdActionStatus(text, milliseconds = 5000) {
+        const safeText = normalizeStatusText(text);
+        state.actionStatusHoldText = safeText;
+        state.actionStatusHoldUntil = Date.now() + Math.max(0, milliseconds);
+        setSystemStatus(safeText);
+        updateActivityValue('Current Status', safeText);
+    }
+
     function setSystemStatus(text) {
         if (!els.systemStatus) {
             return;
@@ -2137,55 +2303,71 @@
     }
 
     function configuredModeHelperText(mode, disconnectFirst) {
-        if (mode === 'BM') {
-            return disconnectFirst
-                ? 'BrandMeister is a one-step connect. Enter or load a talkgroup and press CONNECT once. After BM is connected, you can change to another BM talkgroup by entering or loading the new talkgroup and pressing CONNECT again without disconnecting first. DISCONNECT removes the current BM receive session. DISCONNECT DVSWITCH removes only the configured DVSwitch link and stops BM receive mode if it is active. DISCONNECT ALL does a full reset. With Disconnect before Connect on, the next managed DVSwitch connect clears the earlier managed DVSwitch session first.'
-                : 'BrandMeister is a one-step connect. Enter or load a talkgroup and press CONNECT once. After BM is connected, you can change to another BM talkgroup by entering or loading the new talkgroup and pressing CONNECT again without disconnecting first. DISCONNECT removes the current BM receive session. DISCONNECT DVSWITCH removes only the configured DVSwitch link and stops BM receive mode if it is active. DISCONNECT ALL does a full reset. With Disconnect before Connect off, BM can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
-        }
+        const managedModes = {
+            BM: {
+                name: 'BrandMeister',
+                target: 'a talkgroup',
+                extra: '',
+                disconnect: 'Disconnect stops the current BrandMeister receive session.',
+            },
+            TGIF: {
+                name: 'TGIF',
+                target: 'a talkgroup',
+                extra: '',
+                disconnect: 'Disconnect stops the current TGIF connection.',
+            },
+            YSF: {
+                name: 'YSF',
+                target: 'a room or reflector',
+                extra: '',
+                disconnect: 'Disconnect removes the current YSF connection.',
+            },
+            DSTAR: {
+                name: 'D-Star',
+                target: 'a reflector such as REF030EL',
+                extra: ' AllTune2 switches DVSwitch to D-Star and loads the configured private node automatically.',
+                disconnect: 'Disconnect removes the current D-Star connection.',
+            },
+            P25: {
+                name: 'P25',
+                target: 'a talkgroup',
+                extra: ' AllTune2 switches DVSwitch to P25 and loads the configured private node automatically.',
+                disconnect: 'Disconnect clears the P25 connection and returns DVSwitch to DMR mode.',
+            },
+            NXDN: {
+                name: 'NXDN',
+                target: 'a talkgroup',
+                extra: ' AllTune2 switches DVSwitch to NXDN and loads the configured private node automatically.',
+                disconnect: 'Disconnect clears the NXDN connection and returns DVSwitch to DMR mode.',
+            },
+        };
 
-        if (mode === 'TGIF') {
-            return disconnectFirst
-                ? 'TGIF is a one-step connect. Enter or load a talkgroup and press CONNECT once. Wait for the status to confirm the connection. After TGIF is connected, you can change to another TGIF talkgroup by entering or loading the new talkgroup and pressing CONNECT again without disconnecting first. DISCONNECT removes the current TGIF connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect on, the next managed DVSwitch connect clears the earlier managed DVSwitch session first.'
-                : 'TGIF is a one-step connect. Enter or load a talkgroup and press CONNECT once. Wait for the status to confirm the connection. After TGIF is connected, you can change to another TGIF talkgroup by entering or loading the new talkgroup and pressing CONNECT again without disconnecting first. DISCONNECT removes the current TGIF connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect off, TGIF can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
-        }
+        if (managedModes[mode]) {
+            const info = managedModes[mode];
+            const disconnectBeforeText = disconnectFirst
+                ? `With Disconnect Before Connect on, ${info.name} still uses the normal managed-network handoff and leaves direct AllStarLink and EchoLink connections alone. The checkbox takes effect when the next connection is AllStarLink or EchoLink.`
+                : `With Disconnect Before Connect off, ${info.name} can stay connected while you add direct AllStarLink nodes or one dashboard-started EchoLink link.`;
 
-        if (mode === 'YSF') {
-            return disconnectFirst
-                ? 'YSF is a one-step connect. Enter or load the YSF target and press CONNECT once. Wait for the status to confirm the connection. DISCONNECT removes the current YSF connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect on, the next managed connect clears earlier managed links first.'
-                : 'YSF is a one-step connect. Enter or load the YSF target and press CONNECT once. Wait for the status to confirm the connection. DISCONNECT removes the current YSF connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect off, YSF can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
-        }
-
-        if (mode === 'DSTAR') {
-            return disconnectFirst
-                ? 'D-Star is a one-step managed DVSwitch connect. Enter or load a D-Star target such as REF030EL and press CONNECT once. AllTune2 switches DVSwitch to DSTAR mode, tunes the target, and forces the private DVSwitch node link automatically. DISCONNECT removes the current D-Star connection. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.'
-                : 'D-Star is a one-step managed DVSwitch connect. Enter or load a D-Star target such as REF030EL and press CONNECT once. AllTune2 switches DVSwitch to DSTAR mode, tunes the target, and forces the private DVSwitch node link automatically. With Disconnect before Connect off, D-Star can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
-        }
-
-        if (mode === 'P25') {
-            return disconnectFirst
-                ? 'P25 is a one-step managed DVSwitch connect. Enter or load a P25 target and press CONNECT once. AllTune2 switches DVSwitch to P25 mode, tunes the target, and forces the private DVSwitch node link automatically. DISCONNECT clears the P25 tune path and returns DVSwitch to DMR mode. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.'
-                : 'P25 is a one-step managed DVSwitch connect. Enter or load a P25 target and press CONNECT once. AllTune2 switches DVSwitch to P25 mode, tunes the target, and forces the private DVSwitch node link automatically. With Disconnect before Connect off, P25 can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
-        }
-
-        if (mode === 'NXDN') {
-            return disconnectFirst
-                ? 'NXDN is a one-step managed DVSwitch connect. Enter or load an NXDN target and press CONNECT once. AllTune2 switches DVSwitch to NXDN mode, tunes the target, and forces the private DVSwitch node link automatically. DISCONNECT clears the NXDN tune path and returns DVSwitch to DMR mode. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.'
-                : 'NXDN is a one-step managed DVSwitch connect. Enter or load an NXDN target and press CONNECT once. AllTune2 switches DVSwitch to NXDN mode, tunes the target, and forces the private DVSwitch node link automatically. With Disconnect before Connect off, NXDN can stay up while you add direct AllStarLink connections or one EchoLink direct link.';
+            return `${info.name} is a one-step connect. Enter ${info.target}, or load one from Saved Favorites. Choose Transceive or Local Monitor, and press Connect once. Wait for Live Status to confirm the connection. To change the target, enter or load the new one and press Connect again.${info.extra} In the Live Status box, where you see the nodes connected, click Transceive or Local Monitor on the private node to change how it is linked. ${info.disconnect} Disconnect DVSwitch stops the managed network and removes its private-node link while leaving direct AllStarLink and EchoLink connections alone. ${disconnectBeforeText}`;
         }
 
         if (mode === 'ASL') {
-            return disconnectFirst
-                ? 'AllStarLink is a one-step connect. Enter or load a node and press CONNECT once. Wait for the status to confirm the connection. Additional direct AllStarLink nodes can be connected. To change the same AllStarLink node between Transceive and Local Monitor, select the desired link mode and press CONNECT again. DISCONNECT removes the most recent direct AllStarLink node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.'
-                : 'AllStarLink is a one-step connect. Enter or load a node and press CONNECT once. Wait for the status to confirm the connection. Additional direct AllStarLink nodes can be connected. To change the same AllStarLink node between Transceive and Local Monitor, select the desired link mode and press CONNECT again. DISCONNECT removes the most recent direct AllStarLink node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.';
+            const disconnectBeforeText = disconnectFirst
+                ? 'With Disconnect Before Connect on, the private node and earlier dashboard-started direct links are removed first. True IAX, Web Transceiver, and named app_rpt/IAX clients stay connected and use their own row Disconnect.'
+                : 'With Disconnect Before Connect off, the private node and existing direct links stay connected, and more AllStarLink nodes can be added.';
+
+            return `AllStarLink: enter a node number or load it from Saved Favorites, choose Transceive or Local Monitor, and press Connect. In the Live Status box, where you see the nodes connected, click Transceive or Local Monitor to change that exact node, or use its row Disconnect. The main Disconnect removes the most recent dashboard-started direct node. Disconnect DVSwitch clears the managed network/private-node path but leaves direct nodes alone; ${disconnectBeforeText}`;
         }
 
         if (mode === 'ECHO') {
-            return disconnectFirst
-                ? 'EchoLink uses the AllStarLink connect path. Enter the mapped EchoLink target as 3 plus the 6-digit EchoLink node number, then press CONNECT once. Example: 3001234. Wait for the status to confirm the connection. AllTune2 allows one active dashboard-initiated EchoLink direct link at a time for ASL3 driver safety. To change the same EchoLink node between Transceive and Local Monitor, select the desired link mode and press CONNECT again. DISCONNECT removes the most recent direct node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset. With Disconnect before Connect on, the next CONNECT replaces earlier managed links first.'
-                : 'EchoLink uses the AllStarLink connect path. Enter the mapped EchoLink target as 3 plus the 6-digit EchoLink node number, then press CONNECT once. Example: 3001234. Wait for the status to confirm the connection. AllTune2 allows one active dashboard-initiated EchoLink direct link at a time for ASL3 driver safety. To change the same EchoLink node between Transceive and Local Monitor, select the desired link mode and press CONNECT again. DISCONNECT removes the most recent direct node. The small Disconnect button beside a listed node removes that specific node only. DISCONNECT DVSWITCH removes only the configured DVSwitch link. DISCONNECT ALL does a full reset.';
+            const disconnectBeforeText = disconnectFirst
+                ? 'With Disconnect Before Connect on, the private node and earlier dashboard-started direct links are removed first. An existing EchoLink link uses EchoLink’s protected disconnect timing and cleanup.'
+                : 'With Disconnect Before Connect off, the private node and AllStarLink connections stay connected. Only one dashboard-started outbound EchoLink link is allowed; incoming links are separate.';
+
+            return `EchoLink: enter the mapped node as 3 plus the six-digit EchoLink number, or load it from Saved Favorites, choose Transceive or Local Monitor, and press Connect. Example: 3001234. In the Live Status box, where you see the nodes connected, click Transceive or Local Monitor to change that exact node, or use its row Disconnect. An outbound mode change may be blocked while another EchoLink link is active. Disconnect DVSwitch clears the managed network/private-node path but leaves direct nodes alone; ${disconnectBeforeText}`;
         }
 
-        return 'Select a mode, enter or load a target, and press CONNECT. The button dims while the request runs. Wait for the status and button state to update before the next step.';
+        return 'Select a network, enter a target or load it from Saved Favorites, choose Transceive or Local Monitor, and press Connect. Wait for Live Status to confirm the result before the next action.';
     }
 
     function updateHelperText() {
@@ -2392,6 +2574,95 @@
         });
     }
 
+    function connectedLinkMode(link) {
+        const value = String(link?.link_mode ?? link?.mode_label ?? link?.mode ?? '')
+            .trim().toLowerCase().replace(/[\s_-]+/g, ' ');
+        return value.includes('monitor') ? 'local_monitor' : (value.includes('transceive') ? 'transceive' : '');
+    }
+
+    function syncControlCenterToConfirmedDirectLink(node, kind, linkMode) {
+        const uiMode = kind === 'echo' ? 'ECHO' : (kind === 'asl' ? 'ASL' : '');
+        if (uiMode === '') {
+            return;
+        }
+
+        setSelectedModeValue(uiMode);
+        if (els.targetInput) {
+            els.targetInput.value = node;
+        }
+        if (els.autoloadModeSelect) {
+            els.autoloadModeSelect.value = normalizeAutoloadMode(linkMode);
+        }
+        syncAutoloadUiForMode(uiMode);
+        holdUserSelection();
+        updateHelperText();
+        updateButtonsFromStatus(currentStatusText());
+    }
+
+    function connectedNodeModeControl(link, node, dvswitchNode, label) {
+        const currentMode = connectedLinkMode(link);
+        const type = String(link?.connection_type ?? link?.type ?? '').trim().toLowerCase();
+        let kind = '';
+
+        if (link?.is_live && /^\d+$/.test(node) && currentMode !== '' && !['iax_channel', 'client', 'iax'].includes(type)) {
+            if (node === dvswitchNode) {
+                kind = modeForcesDvSwitch(state.activeManagedDvSwitchMode)
+                    && state.activeManagedDvSwitchTarget !== '' ? 'dvswitch' : '';
+            } else {
+                kind = /^3\d{6}$/.test(node) ? 'echo' : 'asl';
+            }
+        }
+
+        let pending = state.pendingModeSwitches.get(node) || null;
+        if (pending) {
+            const now = Date.now();
+
+            if (now > pending.expiresAt) {
+                state.pendingModeSwitches.delete(node);
+                pending = null;
+                holdActionStatus('ERROR: MODE SWITCH WAS NOT CONFIRMED');
+            } else if (currentMode === pending.mode) {
+                /*
+                 * Private-node and EchoLink mode changes intentionally tear the
+                 * row down and rebuild it. Require the requested live mode to
+                 * remain visible across more than one status cycle before the
+                 * pill is released. This prevents a brief intermediate status
+                 * from making the first click look as though it was ignored.
+                 */
+                if (!pending.confirmedAt) {
+                    pending.confirmedAt = now;
+                } else if (now - pending.confirmedAt >= 750) {
+                    const confirmedKind = String(pending.kind || '').trim();
+                    const confirmedMode = String(pending.mode || '').trim();
+                    state.pendingModeSwitches.delete(node);
+                    pending = null;
+                    syncControlCenterToConfirmedDirectLink(node, confirmedKind, confirmedMode);
+                }
+            } else {
+                pending.confirmedAt = 0;
+            }
+        }
+
+        if (kind === '') {
+            return `<span class="connected-node-mode">${escapeHtml(label)}</span>`;
+        }
+
+        const nextMode = currentMode === 'local_monitor' ? 'transceive' : 'local_monitor';
+        const nextLabel = autoloadModeLabel(nextMode);
+        const title = authLoginRequired()
+            ? 'Login required to control AllTune2'
+            : (pending ? `Switching to ${nextLabel}` : `Switch this link to ${nextLabel}`);
+
+        return `<button type="button"
+            class="connected-node-mode connected-node-mode-toggle ${pending ? 'connected-node-mode-pending' : ''}"
+            data-switch-node="${escapeHtml(node)}"
+            data-switch-kind="${kind}"
+            data-current-link-mode="${currentMode}"
+            data-requested-link-mode="${nextMode}"
+            title="${escapeHtml(title)}" aria-label="${escapeHtml(title)}"
+            ${pending || state.busy || !authAllowsActions() ? 'disabled' : ''}>${pending ? 'Switching...' : escapeHtml(label)}</button>`;
+    }
+
     function renderAllstarLinks(allstarPayload, options = {}) {
         if (!els.statusAllstarLinks) {
             return;
@@ -2423,6 +2694,12 @@
         const activeDisconnectKeySet = new Set(links.map((link) => disconnectKeyForLink(link)).filter(Boolean));
         prunePendingDisconnectNodes(activeDisconnectKeySet);
 
+        state.pendingModeSwitches.forEach((pending, node) => {
+            if (Date.now() > pending.expiresAt) {
+                state.pendingModeSwitches.delete(node);
+            }
+        });
+
         const displayLinks = links.filter((link) => !pendingDisconnectActive(disconnectKeyForLink(link)));
 
         const linksSignature = JSON.stringify(displayLinks.map((link) => {
@@ -2439,22 +2716,17 @@
                 mode: modeLabel,
                 live: !!link?.is_live,
                 pending: pendingDisconnectActive(pendingKey),
+                pendingMode: state.pendingModeSwitches.get(rawNode)?.mode || '',
+                privateMode: rawNode === dvswitchNode
+                    ? `${state.activeManagedDvSwitchMode}:${state.activeManagedDvSwitchTarget}`
+                    : '',
             };
         }));
 
         function normalizeLinkModeLabel(link) {
             const raw = String(link?.mode_label ?? link?.link_mode ?? link?.mode ?? 'Connected').trim();
-            const normalized = raw.toLowerCase().replace(/[_-]+/g, ' ');
-
-            if (normalized === 'transceive' || normalized === 'transceive mode') {
-                return 'Transceive';
-            }
-
-            if (normalized === 'local monitor' || normalized === 'monitor' || normalized === 'local monitor mode') {
-                return 'Local Monitor';
-            }
-
-            return raw !== '' ? raw : 'Connected';
+            const mode = connectedLinkMode(link);
+            return mode !== '' ? autoloadModeLabel(mode) : (raw || 'Connected');
         }
 
         function networkInfoForLink(link, rawNode, isDvSwitchNode) {
@@ -2513,8 +2785,7 @@
                 };
             }
 
-            const numericNode = Number(rawNode);
-            const looksEchoLink = Number.isFinite(numericNode) && numericNode >= 3000000;
+            const looksEchoLink = /^3\d{6}$/.test(rawNode);
             const favoriteMode = looksEchoLink ? 'ECHO' : 'ASL';
             const favorite = favoriteForModeTarget(favoriteMode, rawNode);
             const favoriteParts = favoriteDisplayParts(favorite);
@@ -2596,8 +2867,8 @@
 
                     const stateEl = card.querySelector('.connected-node-state');
 
-                    if (stateEl) {
-                        const mode = escapeHtml(linkModeLabel);
+                    if (stateEl && state.activeModePointerNode !== rawNode) {
+                        const modeControl = connectedNodeModeControl(link, rawNode, dvswitchNode, linkModeLabel);
                         const elapsed = escapeHtml(String(link.elapsed ?? '').trim());
                         const liveLabel = link.is_live ? 'Live AMI' : 'Tracked';
                         const keyedText = rowKeyed
@@ -2610,7 +2881,7 @@
                             : '';
 
                         stateEl.innerHTML = `
-                            <span class="connected-node-mode">${mode}</span>
+                            ${modeControl}
                             <span class="connected-node-source">${escapeHtml(liveLabel)}</span>
                             ${elapsedText}
                             ${keyedText}
@@ -2637,7 +2908,7 @@
             const rawNode = String(link.node ?? link.target ?? '').trim();
             const node = escapeHtml(rawNode);
             const linkModeLabel = normalizeLinkModeLabel(link);
-            const mode = escapeHtml(linkModeLabel);
+            const modeControl = connectedNodeModeControl(link, rawNode, dvswitchNode, linkModeLabel);
             const elapsed = escapeHtml(String(link.elapsed ?? '').trim());
             const isLive = !!link.is_live;
             const isDvSwitchNode = dvswitchNode !== '' && rawNode === dvswitchNode;
@@ -2756,7 +3027,7 @@
                     </div>
 
                     <div class="connected-node-state">
-                        <span class="connected-node-mode">${mode}</span>
+                        ${modeControl}
                         <span class="connected-node-source">${escapeHtml(liveLabel)}</span>
                         ${elapsedText}
                         ${keyedText}
@@ -2775,7 +3046,7 @@
                 <span>${displayLinks.length} active</span>
             </div>
             <div class="connected-nodes-helper">
-                Each row has its own disconnect action. The DVSwitch private link uses Disconnect DVSwitch.
+                Click a live mode pill to switch only that link. Each row keeps its own disconnect action.
             </div>
             <div class="connected-nodes-list">
                 ${rows.join('')}
@@ -2927,8 +3198,20 @@
         const p25 = payload.networks?.p25 || payload.p25 || null;
         const nxdn = payload.networks?.nxdn || payload.nxdn || null;
         const allstar = payload.allstar || payload.networks?.allstar || null;
+        state.activeManagedDvSwitchMode = normalizeMode(
+            payload.managed_dvswitch_mode ?? system.managed_dvswitch_mode ?? ''
+        );
+        state.activeManagedDvSwitchTarget = String(
+            payload.managed_dvswitch_target ?? system.managed_dvswitch_target ?? ''
+        ).trim();
         const directStatusCorrection = correctDirectStatusFromLive(statusText, allstar);
         statusText = directStatusCorrection.statusText;
+        const liveStatusText = statusText;
+        if (state.actionStatusHoldText !== '' && Date.now() < state.actionStatusHoldUntil) {
+            statusText = state.actionStatusHoldText;
+        } else {
+            clearActionStatusHold();
+        }
         const previousSystemStatusText = currentStatusText();
 
         setSystemStatus(statusText);
@@ -2953,6 +3236,14 @@
         setStatusCardFromNetwork(els.statusNxdn, nxdn, 'NXDN', 'Idle', liveFavorites);
         applyKeyedStateToCard(els.statusNxdn, payloadModeLooksActive(nxdn) && dvswitchLinkLooksKeyed(allstar));
 
+        syncManagedConnectionAudio(payload, system, {
+            brandmeister: bm,
+            tgif,
+            ysf,
+            dstar,
+            p25,
+            nxdn,
+        });
         applyImmediateAllstarSnapshot(allstar);
         announceCorrectedDirectDisconnect(directStatusCorrection, previousSystemStatusText);
 
@@ -2997,8 +3288,11 @@
         }
 
         refreshActivityPanel(payload);
+        if (statusText !== liveStatusText) {
+            updateActivityValue('Current Status', statusText);
+        }
         updateHelperText();
-        updateButtonsFromStatus(statusText);
+        updateButtonsFromStatus(liveStatusText);
     }
 
     function applyActionStatus(payload, options = {}) {
@@ -3015,6 +3309,7 @@
             system.status_text ||
             'IDLE - NO CONNECTIONS';
 
+        clearActionStatusHold();
         setSystemStatus(statusText);
 
         if (!preserveMode && els.modeSelect) {
@@ -3185,6 +3480,18 @@
         }
     }
 
+    async function loadFavorites() {
+        const payload = await requestJson(state.endpoints.favorites, {
+            method: 'GET',
+        });
+
+        if (Array.isArray(payload.favorites)) {
+            renderFavorites(payload.favorites);
+        }
+
+        return payload;
+    }
+
     async function loadStatus() {
         if (state.statusRequest) {
             return state.statusRequest;
@@ -3261,31 +3568,34 @@
             return;
         }
 
-        if (action === 'connect' && !modeIsConfigured(els.modeSelect.value)) {
+        const requestedUiMode = normalizeMode(extraPayload.ui_mode ?? currentSelectedMode());
+        const requestedTarget = String(extraPayload.target ?? extraPayload.tgNum ?? currentTargetValue()).trim();
+
+        if (action === 'connect' && !modeIsConfigured(requestedUiMode)) {
             updateHelperText();
             updateButtonsFromStatus(currentStatusText());
-            return;
+            return null;
         }
 
-        if (action === 'connect' && currentTargetValue() === '') {
+        if (action === 'connect' && requestedTarget === '') {
             updateHelperText();
             updateButtonsFromStatus(currentStatusText());
-            return;
+            return null;
         }
 
-        state.lastRequestedUiMode = currentSelectedMode();
+        clearActionStatusHold();
+        state.lastRequestedUiMode = requestedUiMode;
         rememberPreferredAslUiMode(state.lastRequestedUiMode);
 
-        const currentMode = currentSelectedMode();
-        const forcedAutoload = modeForcesDvSwitch(currentMode);
+        const forcedAutoload = modeForcesDvSwitch(requestedUiMode);
 
         const payload = {
             action,
             action_type: action,
-            target: els.targetInput.value.trim(),
-            tgNum: els.targetInput.value.trim(),
-            mode: modeRequestValue(els.modeSelect.value),
-            ui_mode: currentMode,
+            target: requestedTarget,
+            tgNum: requestedTarget,
+            mode: modeRequestValue(requestedUiMode),
+            ui_mode: requestedUiMode,
             autoload_dvswitch: forcedAutoload ? 1 : (els.autoloadCheckbox.checked ? 1 : 0),
             autoload_dvswitch_mode: normalizeAutoloadMode(els.autoloadModeSelect.value),
             disconnect_before_connect: els.disconnectBeforeConnectCheckbox.checked ? 1 : 0,
@@ -3298,6 +3608,16 @@
         setBusy(true);
 
         try {
+            // Direct Disconnect Before Connect must remove the private DVSwitch link too.
+            if (action === 'connect' && useDirectEndpoint && !!payload.disconnect_before_connect && readConfigAvailability().hasRealDvSwitchNode) {
+                markAudioSettleWindow(state.lastRequestedUiMode === 'ECHO' ? 6500 : 3000);
+                await requestJson(state.endpoints.connect, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ action: 'disconnect_dvswitch', action_type: 'disconnect_dvswitch' }),
+                });
+            }
+
             const responsePayload = await requestJson(endpoint, {
                 method: 'POST',
                 headers: {
@@ -3360,18 +3680,31 @@
                 if (
                     directAllstarAction &&
                     action === 'connect' &&
-                    state.lastRequestedUiMode === 'ECHO' &&
                     !isErrorStatus(actionStatusText)
                 ) {
                     /*
-                     * EchoLink can take a few status polls to appear in live
-                     * app_rpt output after direct_link.php returns. Hold only
-                     * direct-status correction so a fresh connect is not
-                     * immediately changed to DISCONNECTED. Do not use the
-                     * normal audio-settle window here; small-button direct
-                     * disconnect audio depends on live AllStar node changes.
+                     * A successful direct Connect response is authoritative for
+                     * the browser that initiated it. Announce the new node now
+                     * instead of depending on a later Live Status poll, which
+                     * can observe the Disconnect-Before-Connect teardown first.
+                     * The immediate-event signature suppresses the later status
+                     * duplicate. While replacing a link, quietly absorb the
+                     * intermediate removal so the meaningful alert is Connected.
                      */
-                    markDirectStatusCorrectionHold(4500);
+                    if (!!payload.disconnect_before_connect) {
+                        markAudioSettleWindow(state.lastRequestedUiMode === 'ECHO' ? 5500 : 2200);
+                    }
+                    announceImmediateActionAudio(actionStatusText);
+
+                    if (state.lastRequestedUiMode === 'ECHO') {
+                        /*
+                         * EchoLink can take a few status polls to appear in live
+                         * app_rpt output after direct_link.php returns. Hold only
+                         * direct-status correction so a fresh connect is not
+                         * immediately changed to DISCONNECTED.
+                         */
+                        markDirectStatusCorrectionHold(4500);
+                    }
                 }
 
                 if (!directAllstarAction) {
@@ -3399,13 +3732,15 @@
             if (action !== 'send_dtmf') {
                 refreshStatusSoonAfterAction();
             }
+
+            return responsePayload;
         } catch (error) {
             console.error(error);
             const message = error?.payload?.auth_required
                 ? loginRequiredMessage()
-                : (error?.payload?.csrf_failed ? 'SECURITY CHECK FAILED - REFRESH AND TRY AGAIN' : 'ERROR: REQUEST FAILED');
-            setSystemStatus(message);
-            updateActivityValue('Current Status', message);
+                : (error?.payload?.csrf_failed ? 'SECURITY CHECK FAILED - REFRESH AND TRY AGAIN' : (error?.payload?.status_text || 'ERROR: REQUEST FAILED'));
+            holdActionStatus(message);
+            return null;
         } finally {
             if (!busyReleasedEarly) {
                 setBusy(false);
@@ -3467,12 +3802,145 @@
         });
     }
 
+    function directNodeModeRequest(node, kind, requestedMode) {
+        return {
+            endpoint: state.endpoints.direct,
+            payload: {
+                action: 'switch_mode', action_type: 'switch_mode', selected_node: node,
+                ui_mode: kind === 'echo' ? 'ECHO' : 'ASL', link_mode: requestedMode,
+            },
+        };
+    }
+
+    async function switchConnectedNodeMode(button) {
+        if (button.disabled || state.busy || !authAllowsActions()) {
+            if (!authAllowsActions()) {
+                setSystemStatus(loginRequiredMessage());
+            }
+            return;
+        }
+
+        const node = String(button.dataset.switchNode || '').trim();
+        const kind = String(button.dataset.switchKind || '').trim();
+        const currentMode = String(button.dataset.currentLinkMode || '').trim();
+        const requestedMode = String(button.dataset.requestedLinkMode || '').trim();
+        if (!/^\d+$/.test(node) || !['asl', 'echo', 'dvswitch'].includes(kind)
+            || !['transceive', 'local_monitor'].includes(currentMode)
+            || !['transceive', 'local_monitor'].includes(requestedMode)
+            || currentMode === requestedMode) {
+            return;
+        }
+
+        const activeManagedMode = normalizeMode(state.activeManagedDvSwitchMode);
+        const activeManagedTarget = String(state.activeManagedDvSwitchTarget || '').trim();
+        if (kind === 'dvswitch' && (!modeForcesDvSwitch(activeManagedMode) || activeManagedTarget === '')) {
+            holdActionStatus('ERROR: ACTIVE DVSWITCH TARGET NOT AVAILABLE');
+            return;
+        }
+
+        clearActionStatusHold();
+        state.pendingModeSwitches.set(node, {
+            kind,
+            mode: requestedMode,
+            expiresAt: Date.now() + 30000,
+            confirmedAt: 0,
+        });
+        renderAllstarLinks(state.lastAllstarPayload, { force: true });
+
+        if (kind === 'dvswitch') {
+            const payload = await sendAction('connect', {
+                target: activeManagedTarget,
+                tgNum: activeManagedTarget,
+                mode: activeManagedMode,
+                ui_mode: activeManagedMode,
+                autoload_dvswitch_mode: requestedMode,
+            });
+
+            if (!payload) {
+                state.pendingModeSwitches.delete(node);
+                renderAllstarLinks(state.lastAllstarPayload, { force: true });
+            }
+            return;
+        }
+
+        const request = directNodeModeRequest(node, kind, requestedMode);
+        setBusy(true);
+
+        try {
+            const payload = await requestJson(request.endpoint, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(request.payload),
+            });
+            const statusText = payload.status_text || payload.status || payload.last_status || 'MODE SWITCH REQUESTED';
+            clearActionStatusHold();
+            setSystemStatus(statusText);
+            updateActivityValue('Current Status', statusText);
+            if (kind === 'echo') {
+                markDirectStatusCorrectionHold(4500);
+            }
+            refreshStatusSoonAfterAction();
+            queueStatusRefresh(6500);
+        } catch (error) {
+            console.error(error);
+            state.pendingModeSwitches.delete(node);
+            renderAllstarLinks(state.lastAllstarPayload, { force: true });
+            const message = error?.payload?.auth_required
+                ? loginRequiredMessage()
+                : (error?.payload?.status_text || error?.payload?.status || 'ERROR: MODE SWITCH FAILED');
+            holdActionStatus(message);
+        } finally {
+            setBusy(false);
+        }
+    }
+
+    function clearActiveModePointer(node = '') {
+        if (node !== '' && state.activeModePointerNode !== node) {
+            return;
+        }
+        if (state.activeModePointerTimer) {
+            window.clearTimeout(state.activeModePointerTimer);
+            state.activeModePointerTimer = null;
+        }
+        state.activeModePointerNode = '';
+    }
+
+    function holdActiveModePointer(button) {
+        const node = String(button?.dataset?.switchNode || '').trim();
+        if (node === '') {
+            return;
+        }
+        clearActiveModePointer();
+        state.activeModePointerNode = node;
+        state.activeModePointerTimer = window.setTimeout(() => {
+            clearActiveModePointer(node);
+        }, 1800);
+    }
+
     function wireAllstarDisconnectButtons() {
         if (!els.statusAllstarLinks) {
             return;
         }
 
+        els.statusAllstarLinks.addEventListener('pointerdown', (event) => {
+            const modeButton = event.target.closest('.connected-node-mode-toggle');
+            if (modeButton) {
+                holdActiveModePointer(modeButton);
+            }
+        });
+
+        els.statusAllstarLinks.addEventListener('pointercancel', () => {
+            clearActiveModePointer();
+        });
+
         els.statusAllstarLinks.addEventListener('click', (event) => {
+            const modeButton = event.target.closest('.connected-node-mode-toggle');
+            if (modeButton) {
+                const node = String(modeButton.dataset.switchNode || '').trim();
+                window.setTimeout(() => clearActiveModePointer(node), 0);
+                switchConnectedNodeMode(modeButton);
+                return;
+            }
+
             const dvswitchButton = event.target.closest('[data-disconnect-dvswitch]');
             if (dvswitchButton) {
                 if (!authAllowsActions()) {
@@ -4221,6 +4689,10 @@
         updateDtmfButtonState();
         updateSaveFavoriteButtonState();
         checkForRepoUpdate();
+
+        loadFavorites().catch((error) => {
+            console.error('Unable to load Saved Favorites independently:', error);
+        });
 
         loadStatus().catch((error) => {
             console.error(error);

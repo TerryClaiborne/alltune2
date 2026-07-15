@@ -16,8 +16,21 @@ header('Content-Type: application/json; charset=UTF-8');
 $config = new Config(dirname(__DIR__) . '/config.ini');
 ApiAuthGuard::requireLoginIfEnabled($config);
 
+$GLOBALS['mode_switch_lock_handle'] = null;
+
+function release_mode_switch_lock(): void
+{
+    $handle = $GLOBALS['mode_switch_lock_handle'] ?? null;
+    if (is_resource($handle)) {
+        @flock($handle, LOCK_UN);
+        @fclose($handle);
+    }
+    $GLOBALS['mode_switch_lock_handle'] = null;
+}
+
 function respond(array $payload, int $statusCode = 200): never
 {
+    release_mode_switch_lock();
     http_response_code($statusCode);
     echo json_encode($payload, JSON_PRETTY_PRINT | JSON_UNESCAPED_SLASHES);
     exit;
@@ -38,6 +51,23 @@ function request_data(): array
     return $_POST;
 }
 
+function acquire_mode_switch_lock(): mixed
+{
+    $handle = @fopen(sys_get_temp_dir() . '/alltune2-mode-switch.lock', 'c');
+    if (!is_resource($handle) || !@flock($handle, LOCK_EX | LOCK_NB)) {
+        if (is_resource($handle)) {
+            @fclose($handle);
+        }
+        return null;
+    }
+
+    $GLOBALS['mode_switch_lock_handle'] = $handle;
+    register_shutdown_function(static function (): void {
+        release_mode_switch_lock();
+    });
+    return $handle;
+}
+
 function shell_run(string $command): string
 {
     $output = shell_exec($command . ' 2>&1');
@@ -51,7 +81,7 @@ function asterisk_rpt_cmd(string $node, string $command): string
 
 function asterisk_ilink_disconnect(string $node, string $remoteNode): string
 {
-    return asterisk_rpt_cmd($node, "ilink 1 {$remoteNode}");
+    return shell_run('/usr/bin/timeout 8 sudo /usr/sbin/asterisk -rx ' . escapeshellarg("rpt cmd {$node} ilink 1 {$remoteNode}"));
 }
 
 function asterisk_ilink_disconnect_live_client(string $node, string $client): string
@@ -88,7 +118,7 @@ function live_allstar_link_names(string $node): array
     }
 
     $nodes = asterisk_cli("rpt nodes {$node}");
-    if (preg_match_all('/\b[TRLC]([A-Za-z0-9_.:-]{1,64})\b/', $nodes, $matches) === 1) {
+    if (preg_match_all('/\b[TRLC]([A-Za-z0-9_.:-]{1,64})\b/', $nodes, $matches) > 0) {
         foreach ($matches[1] as $candidate) {
             $candidate = trim((string) $candidate);
             if ($candidate !== '' && valid_live_allstar_client_name($candidate)) {
@@ -98,6 +128,30 @@ function live_allstar_link_names(string $node): array
     }
 
     return array_keys($names);
+}
+
+function live_allstar_link_directions(string $node): array
+{
+    $directions = [];
+    $lstats = asterisk_cli("rpt lstats {$node}");
+
+    foreach (preg_split('/\R/', $lstats) ?: [] as $line) {
+        $parts = preg_split('/\s+/', trim((string) $line)) ?: [];
+        $candidate = trim((string) ($parts[0] ?? ''));
+        if ($candidate === '' || !valid_live_allstar_client_name($candidate)) {
+            continue;
+        }
+
+        foreach (array_slice($parts, 1) as $part) {
+            $direction = strtoupper(trim((string) $part));
+            if (in_array($direction, ['IN', 'OUT'], true)) {
+                $directions[$candidate] = $direction;
+                break;
+            }
+        }
+    }
+
+    return $directions;
 }
 
 function live_allstar_link_exists(string $node, string $remote): bool
@@ -311,43 +365,36 @@ function direct_node_is_echolink(string $node, string $uiMode = ''): bool
     }
 
     $node = preg_replace('/[^0-9]/', '', trim($node)) ?? '';
-    return $node !== '' && ctype_digit($node) && (int) $node >= 3000000;
+    return preg_match('/^3\d{6}$/', $node) === 1;
 }
 
-function same_echolink_node_already_tracked(string $targetNode): bool
+function live_echolink_link_directions(string $myNode): array
 {
-    $targetNode = preg_replace('/[^0-9]/', '', $targetNode) ?? '';
-    if ($targetNode === '') {
-        return false;
-    }
-
-    foreach (allstar_tracked_nodes_in_order(null) as $node) {
-        $node = preg_replace('/[^0-9]/', '', (string) $node) ?? '';
-        if ($node === $targetNode && direct_node_is_echolink($node, tracked_allstar_ui_mode($node))) {
-            return true;
+    $links = [];
+    foreach (live_allstar_link_directions($myNode) as $node => $direction) {
+        if (preg_match('/^3\d{6}$/', (string) $node) === 1) {
+            $links[(string) $node] = $direction;
         }
     }
-
-    return false;
+    return $links;
 }
 
-
-function different_echolink_node_already_tracked(string $targetNode): bool
+function live_echolink_nodes(string $myNode): array
 {
-    $targetNode = preg_replace('/[^0-9]/', '', $targetNode) ?? '';
+    return array_values(array_filter(
+        array_map('strval', live_allstar_link_names($myNode)),
+        static fn (string $node): bool => preg_match('/^3\d{6}$/', $node) === 1
+    ));
+}
 
-    foreach (allstar_tracked_nodes_in_order(null) as $node) {
-        $node = preg_replace('/[^0-9]/', '', (string) $node) ?? '';
-        if ($node === '') {
-            continue;
-        }
-
-        if ($node !== $targetNode && direct_node_is_echolink($node, tracked_allstar_ui_mode($node))) {
-            return true;
-        }
+function reset_echolink_module_if_confirmed_idle(string $myNode): void
+{
+    /* If either live check is uncertain, leave cleanup to the next connect. */
+    if (live_echolink_nodes($myNode) !== [] || echolink_module_use_count() !== 0) {
+        return;
     }
 
-    return false;
+    asterisk_reset_echolink_module();
 }
 
 function ensure_allstar_tracking_structures(): void
@@ -577,6 +624,7 @@ $selectedNode = preg_replace('/[^0-9]/', '', (string) ($request['selected_node']
 $selectedLiveClient = trim((string) ($request['selected_client'] ?? $request['selected_iax_client'] ?? $request['selected_node'] ?? ''));
 $selectedIaxChannel = trim((string) ($request['selected_channel'] ?? $request['selected_iax_channel'] ?? ''));
 $selectedIaxRowNode = trim((string) ($request['selected_row_node'] ?? ''));
+$requestedLinkMode = strtolower(trim((string) ($request['link_mode'] ?? '')));
 $mode = normalize_mode((string) ($request['mode'] ?? ($_SESSION['selected_mode'] ?? 'ASL')));
 $uiMode = normalize_direct_ui_mode((string) ($request['ui_mode'] ?? $mode));
 
@@ -604,9 +652,73 @@ if (!$hasRealMyNode) {
     respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 500);
 }
 
-if (!in_array($action, ['connect', 'disconnect', 'disconnect_selected', 'disconnect_live_client', 'disconnect_iax_channel'], true)) {
+if (!in_array($action, ['connect', 'disconnect', 'disconnect_selected', 'disconnect_live_client', 'disconnect_iax_channel', 'switch_mode'], true)) {
     $_SESSION['last_status'] = 'ERROR: INVALID ACTION';
     respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 400);
+}
+
+if ($action === 'switch_mode') {
+    if ($selectedNode === '' || !in_array($requestedLinkMode, ['transceive', 'local_monitor'], true)) {
+        respond(direct_payload('ERROR: INVALID MODE SWITCH', $hasRealDvSwitchNode ? $dvSwitchNode : ''), 422);
+    }
+    if ($hasRealDvSwitchNode && $selectedNode === $dvSwitchNode) {
+        respond(direct_payload('ERROR: USE DVSWITCH MODE SWITCH', $dvSwitchNode), 409);
+    }
+
+    $modeSwitchLock = acquire_mode_switch_lock();
+    if (!is_resource($modeSwitchLock)) {
+        respond(direct_payload('ERROR: ANOTHER MODE SWITCH IS IN PROGRESS', $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+    }
+
+    $liveDirectNodes = array_map('strval', live_allstar_link_names($myNode));
+    if (!in_array($selectedNode, $liveDirectNodes, true)) {
+        respond(direct_payload('ERROR: DIRECT NODE IS NOT CONNECTED', $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+    }
+
+    $selectedUiMode = ($uiMode === 'ECHO' || preg_match('/^3\d{6}$/', $selectedNode) === 1)
+        ? 'ECHO'
+        : 'ASL';
+    $selectedDirection = '';
+
+    if ($selectedUiMode === 'ECHO') {
+        $echoDirections = live_echolink_link_directions($myNode);
+        $selectedDirection = strtoupper(trim((string) ($echoDirections[$selectedNode] ?? '')));
+        if (!in_array($selectedDirection, ['IN', 'OUT'], true)) {
+            respond(direct_payload('ERROR: ECHOLINK DIRECTION NOT VERIFIED - REFRESH AND TRY AGAIN', $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+        }
+
+        if ($selectedDirection === 'OUT') {
+            $otherEchoLinks = array_values(array_filter(
+                array_keys($echoDirections),
+                static fn (mixed $node): bool => (string) $node !== $selectedNode
+            ));
+            if ($otherEchoLinks !== []) {
+                respond(direct_payload('ERROR: ECHOLINK SWITCH BLOCKED - ANOTHER LINK IS ACTIVE', $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+            }
+
+            asterisk_reset_echolink_module();
+            echolink_ensure_module_loaded();
+            asterisk_ilink_connect($myNode, $selectedNode, $requestedLinkMode);
+        } else {
+            /* Inbound callers are unlimited; change only this local link. */
+            pause_seconds(1.0);
+            asterisk_ilink_connect($myNode, $selectedNode, $requestedLinkMode);
+            pause_seconds(2.0);
+        }
+    } else {
+        asterisk_ilink_connect($myNode, $selectedNode, $requestedLinkMode);
+    }
+
+    track_allstar_link($selectedNode, $requestedLinkMode, $selectedUiMode);
+    $modeLabel = $requestedLinkMode === 'local_monitor' ? 'Local Monitor' : 'Transceive';
+    $_SESSION['last_status'] = 'SWITCHED: ' . direct_node_status_label($selectedUiMode) . ' ' . $selectedNode . ' TO ' . strtoupper($modeLabel);
+    respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : '', [
+        'selected_node' => $selectedNode,
+        'link_mode' => $requestedLinkMode,
+        'mode_label' => $modeLabel,
+        'ui_mode' => $selectedUiMode,
+        'link_direction' => $selectedDirection,
+    ]));
 }
 
 if ($action === 'connect') {
@@ -630,30 +742,62 @@ if ($action === 'connect') {
         respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 422);
     }
 
+    $echoDirections = [];
+    if ($uiMode === 'ECHO') {
+        $modeSwitchLock = acquire_mode_switch_lock();
+        if (!is_resource($modeSwitchLock)) {
+            respond(direct_payload('ERROR: ANOTHER MODE SWITCH IS IN PROGRESS', $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+        }
+
+        $echoDirections = live_echolink_link_directions($myNode);
+        $liveEchoNodes = live_echolink_nodes($myNode);
+        if ($liveEchoNodes !== [] && count($echoDirections) < count($liveEchoNodes)) {
+            $_SESSION['last_status'] = 'ERROR: ECHOLINK DIRECTION NOT VERIFIED - OUTBOUND CONNECT BLOCKED';
+            respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+        }
+        if (in_array('IN', $echoDirections, true)) {
+            $_SESSION['last_status'] = 'ERROR: INBOUND ECHOLINK ACTIVE - OUTBOUND CONNECT WOULD INTERRUPT IT';
+            respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+        }
+
+        foreach ($echoDirections as $node => $direction) {
+            if ($direction !== 'OUT' || (string) $node === $digitsOnlyTarget) {
+                continue;
+            }
+            if (!$disconnectBeforeConnect) {
+                $_SESSION['last_status'] = 'ERROR: ECHOLINK OUTBOUND LINK ALREADY ACTIVE';
+                respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+            }
+            /* The common Disconnect Before Connect loop performs the safe drop. */
+        }
+    }
+
     if ($disconnectBeforeConnect) {
         foreach (array_reverse(allstar_tracked_nodes_in_order($hasRealDvSwitchNode ? $dvSwitchNode : null)) as $node) {
             $node = trim((string) $node);
             if ($node === '') {
                 continue;
             }
+
+            $isEchoLink = direct_node_is_echolink($node, tracked_allstar_ui_mode($node));
+            $echoDirection = '';
+            if ($isEchoLink) {
+                if (!is_resource($GLOBALS['mode_switch_lock_handle'] ?? null) && !is_resource(acquire_mode_switch_lock())) {
+                    respond(direct_payload('ERROR: ANOTHER ECHOLINK OPERATION IS IN PROGRESS', $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+                }
+                $echoDirection = strtoupper(trim((string) (live_echolink_link_directions($myNode)[$node] ?? '')));
+            }
+
             asterisk_ilink_disconnect($myNode, $node);
-            pause_seconds(0.5);
+            pause_seconds($isEchoLink ? 1.0 : 0.5);
+            if ($isEchoLink && $echoDirection === 'OUT' && $uiMode !== 'ECHO') {
+                reset_echolink_module_if_confirmed_idle($myNode);
+            }
             untrack_allstar_link($node);
         }
     }
 
     if ($uiMode === 'ECHO') {
-        /*
-         * Block a second/different dashboard-tracked EchoLink node, but do not
-         * treat chan_echolink.so Use Count alone as an active connection. ASL3
-         * can leave the module Use Count above zero even when app_rpt reports
-         * no connected EchoLink nodes.
-         */
-        if (different_echolink_node_already_tracked($digitsOnlyTarget)) {
-            $_SESSION['last_status'] = 'ERROR: ECHOLINK LINK ALREADY ACTIVE';
-            respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
-        }
-
         asterisk_reset_echolink_module();
         echolink_ensure_module_loaded();
     }
@@ -764,13 +908,27 @@ if ($action === 'disconnect_selected') {
         respond(direct_payload($_SESSION['last_status'], $dvSwitchNode), 409);
     }
     $selectedUiMode = tracked_allstar_ui_mode($selectedNode);
-    if ($selectedUiMode === 'ASL' && ctype_digit($selectedNode) && (int) $selectedNode >= 3000000) {
+    if ($selectedUiMode === 'ASL' && preg_match('/^3\d{6}$/', $selectedNode) === 1) {
         $selectedUiMode = 'ECHO';
+    }
+    $remainingEchoNodes = [];
+    $selectedEchoDirection = '';
+    if ($selectedUiMode === 'ECHO') {
+        $echoDisconnectLock = acquire_mode_switch_lock();
+        if (!is_resource($echoDisconnectLock)) {
+            respond(direct_payload('ERROR: ANOTHER ECHOLINK OPERATION IS IN PROGRESS', $dvSwitchNode), 409);
+        }
+        $echoDirections = live_echolink_link_directions($myNode);
+        $selectedEchoDirection = strtoupper(trim((string) ($echoDirections[$selectedNode] ?? '')));
+        $remainingEchoNodes = array_values(array_filter(
+            array_keys($echoDirections),
+            static fn (mixed $node): bool => (string) $node !== $selectedNode
+        ));
     }
     asterisk_ilink_disconnect($myNode, $selectedNode);
     pause_seconds(1.0);
-    if ($selectedUiMode === 'ECHO') {
-        asterisk_reset_echolink_module();
+    if ($selectedUiMode === 'ECHO' && $selectedEchoDirection === 'OUT' && $remainingEchoNodes === []) {
+        reset_echolink_module_if_confirmed_idle($myNode);
     }
     untrack_allstar_link($selectedNode);
     sync_last_direct_target_from_tracking($hasRealDvSwitchNode ? $dvSwitchNode : null);
@@ -789,12 +947,26 @@ if ($trackedNode === '') {
     respond(direct_payload($_SESSION['last_status'], $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
 }
 
-$trackedUiMode = last_tracked_allstar_ui_mode($hasRealDvSwitchNode ? $dvSwitchNode : null);
 $trackedUiMode = tracked_allstar_ui_mode($trackedNode);
+$remainingEchoNodes = [];
+$trackedEchoDirection = '';
+if ($trackedUiMode === 'ECHO' || preg_match('/^3\d{6}$/', $trackedNode) === 1) {
+    $trackedUiMode = 'ECHO';
+    $echoDisconnectLock = acquire_mode_switch_lock();
+    if (!is_resource($echoDisconnectLock)) {
+        respond(direct_payload('ERROR: ANOTHER ECHOLINK OPERATION IS IN PROGRESS', $hasRealDvSwitchNode ? $dvSwitchNode : ''), 409);
+    }
+    $echoDirections = live_echolink_link_directions($myNode);
+    $trackedEchoDirection = strtoupper(trim((string) ($echoDirections[$trackedNode] ?? '')));
+    $remainingEchoNodes = array_values(array_filter(
+        array_keys($echoDirections),
+        static fn (mixed $node): bool => (string) $node !== $trackedNode
+    ));
+}
 asterisk_ilink_disconnect($myNode, $trackedNode);
 pause_seconds(1.0);
-if ($trackedUiMode === 'ECHO') {
-    asterisk_reset_echolink_module();
+if ($trackedUiMode === 'ECHO' && $trackedEchoDirection === 'OUT' && $remainingEchoNodes === []) {
+    reset_echolink_module_if_confirmed_idle($myNode);
 }
 untrack_allstar_link($trackedNode);
 sync_last_direct_target_from_tracking($hasRealDvSwitchNode ? $dvSwitchNode : null);
