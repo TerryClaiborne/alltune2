@@ -45,6 +45,7 @@ With it, you can:
 - use manual entry
 - watch live status and activity
 - use spoken audio alerts for connects and disconnects
+- open the standalone [**AllStar View**](https://github.com/TerryClaiborne/allstar_view) dashboard from the top navigation when AllStar View is installed on the same system
 
 AllTune2 does not replace ASL3 or Analog_Bridge.
 
@@ -87,6 +88,7 @@ Recent versions added several important improvements:
 
 - redesigned Control Center layout
 - cleaner top navigation buttons
+- optional [**AllStar View**](https://github.com/TerryClaiborne/allstar_view) navigation button on Dashboard and Favorites that appears only when the standalone AllStar View application is installed
 - dashboard **Save Favorite** button
 - Save Favorite popup for manual entries
 - existing Favorite detection by target + mode
