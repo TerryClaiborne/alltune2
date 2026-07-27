@@ -139,6 +139,10 @@ $navItems = [
     ['label' => 'DVSwitch', 'href' => $dvswitchHref, 'active' => false, 'target' => '_blank'],
 ];
 
+if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
+    $navItems[] = ['label' => 'AllStar View', 'href' => '/allstar_view/public/', 'active' => false, 'target' => '_blank'];
+}
+
 $modeOptions = [
     'BM'   => 'BrandMeister (DMR)',
     'TGIF' => 'TGIF Network',
