@@ -2,7 +2,9 @@
 
 ## One Dashboard. All Your Networks.
 
-✅ Optimized for Debian 12 & 13 on 64-bit ARM (including Raspberry Pi 4/5) and AMD64 (x86_64) platforms.
+✅ Optimized for Debian 12 and Debian 13 on 64-bit ARM systems, including compatible Raspberry Pi models, and AMD64 (x86_64) platforms.
+
+**Backend requirement:** The BMTD and TGIFD binaries included with the current release require Debian 13. On Debian 12, the remaining supported AllTune2 features can still be used, but the bundled BrandMeister and TGIF backends will not start.
 
 AllTune2 is a modern control panel for **AllStarLink 3 and DVSwitch-style radio systems**.
 
