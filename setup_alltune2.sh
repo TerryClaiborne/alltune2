@@ -14,7 +14,6 @@ DATA_DIR="$APP_DIR/data"
 DOCS_DIR="$APP_DIR/docs"
 LOGS_DIR="$APP_DIR/logs"
 RUN_DIR="$APP_DIR/run"
-LEGACY_STFU_DIR="$APP_DIR/stfu"
 BMTD_DIR="$APP_DIR/bmtd"
 BMTD_CONFIG_DIR="$BMTD_DIR/config"
 BMTD_DOCS_DIR="$BMTD_DIR/docs"
@@ -27,9 +26,6 @@ CONFIG_FILE="$APP_DIR/config.ini"
 CONFIG_EXAMPLE_FILE="$APP_DIR/config.ini.example"
 FAVORITES_FILE="$DATA_DIR/favorites.txt"
 VERSION_FILE="$APP_DIR/VERSION"
-
-LEGACY_BM_RECEIVE_HELPER="$APP_DIR/alltune2-bm-receive.sh"
-LEGACY_LOCAL_STFU_BIN="$LEGACY_STFU_DIR/STFU"
 
 BMTD_HELPER="$BMTD_DIR/alltune2-bmtd-helper.sh"
 BMTD_CONFIG_FILE="$BMTD_CONFIG_DIR/bmtd.ini"
@@ -98,15 +94,12 @@ MMDVM_BRIDGE_INI="/opt/MMDVM_Bridge/MMDVM_Bridge.ini"
 ANALOG_BRIDGE_INI="/opt/Analog_Bridge/Analog_Bridge.ini"
 
 ASTERISK_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk"
-LEGACY_BM_RECEIVE_SUDOERS_FILE="/etc/sudoers.d/alltune2-bm-receive"
 BMTD_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-bmtd"
 TGIF_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-tgifd"
 MMDVM_BRIDGE_SUDOERS_FILE="/etc/sudoers.d/alltune2-mmdvm-bridge"
 ASTERISK_SERVICE_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk-service"
 YSFGATEWAY_SUDOERS_FILE="/etc/sudoers.d/alltune2-ysfgateway"
 
-LEGACY_BM_RECEIVE_LOG_FILE="$LOGS_DIR/STFU.log"
-LEGACY_BM_RECEIVE_LOGROTATE_FILE="/etc/logrotate.d/alltune2-bm-receive"
 BMTD_LOGROTATE_FILE="/etc/logrotate.d/alltune2-bmtd"
 TGIF_LOGROTATE_FILE="/etc/logrotate.d/alltune2-tgifd"
 APACHE_SECURITY_CONF_NAME="alltune2-security"
@@ -216,6 +209,18 @@ require_root() {
 require_app_dir() {
     if [[ ! -d "$APP_DIR" ]]; then
         fail "Application directory not found: $APP_DIR"
+    fi
+}
+
+require_debian_13() {
+    [[ -r /etc/os-release ]] || fail "Cannot identify this operating system. AllTune2 requires Debian 13."
+
+    local os_id version_id
+    os_id="$(. /etc/os-release; printf '%s' "${ID:-}")"
+    version_id="$(. /etc/os-release; printf '%s' "${VERSION_ID:-}")"
+
+    if [[ "$os_id" != "debian" || "$version_id" != "13" ]]; then
+        fail "AllTune2 requires Debian 13. The bundled BMTD/TGIFD binaries will not run on Debian 12 (Bookworm). Upgrade to Debian 13, then run setup_alltune2.sh again."
     fi
 }
 
@@ -1088,23 +1093,6 @@ stop_existing_bmtd_if_running() {
     log "No active BMTD process remains."
 }
 
-remove_legacy_stfu_runtime() {
-    log "Removing legacy STFU runtime path and sudo/logrotate rules..."
-
-    if [[ -x "$LEGACY_BM_RECEIVE_HELPER" ]]; then
-        "$LEGACY_BM_RECEIVE_HELPER" stop >/dev/null 2>&1 || true
-    fi
-
-    pkill -f "$LEGACY_LOCAL_STFU_BIN" >/dev/null 2>&1 || true
-    rm -f "$LEGACY_BM_RECEIVE_SUDOERS_FILE" >/dev/null 2>&1 || true
-    rm -f "$LEGACY_BM_RECEIVE_LOGROTATE_FILE" /etc/logrotate.d/alltune2-stfu >/dev/null 2>&1 || true
-    rm -rf "$LEGACY_STFU_DIR" >/dev/null 2>&1 || true
-    rm -f "$LEGACY_BM_RECEIVE_HELPER" >/dev/null 2>&1 || true
-
-    quiet_detail "Legacy STFU runtime/helper path removed if present. Old STFU log files are preserved."
-}
-
-
 prepare_tgifd_binary() {
     log "Checking shipped TGIFD binary..."
 
@@ -1248,10 +1236,10 @@ check_dvswitch_dependencies() {
 }
 
 check_bmtd_helper_local_paths() {
-    log "Checking BMTD helper local paths..."
+    log "Checking BMTD helper local path..."
 
-    if grep -qE '/usr/local/bin/STFU|/opt/STFU|/var/www/html/alltune2/stfu|build/bmtd' "$BMTD_HELPER"; then
-        fail "BMTD helper still references a legacy STFU path or build/bmtd instead of bmtd/bin/bmtd."
+    if grep -qE 'build/bmtd' "$BMTD_HELPER"; then
+        fail "BMTD helper still references build/bmtd instead of bmtd/bin/bmtd."
     fi
 
     if ! grep -q 'bmtd/bin/bmtd' "$BMTD_HELPER" && ! grep -q '\$BMTD_DIR/bin/bmtd' "$BMTD_HELPER"; then
@@ -1691,8 +1679,6 @@ create_or_update_logrotate_files() {
 
     # Current logs are $LOGS_DIR/bmtd.log and $LOGS_DIR/tgifd.log.
 
-    rm -f /etc/logrotate.d/alltune2-stfu "$LEGACY_BM_RECEIVE_LOGROTATE_FILE" >/dev/null 2>&1 || true
-
     ensure_log_file_if_missing "$BMTD_LOG_FILE"
     ensure_log_file_if_missing "$TGIF_LOG_FILE"
     normalize_tgifd_log_path
@@ -2100,27 +2086,6 @@ check_bmtd_helper_cli() {
     fi
 }
 
-check_git_hygiene_warnings() {
-    log "Checking for common local-only files that must not be committed..."
-
-    local local_paths=(
-        "$CONFIG_FILE"
-        "$FAVORITES_FILE"
-        "$BMTD_CONFIG_FILE"
-        "$TGIF_CONFIG_FILE"
-        "$LOGS_DIR"
-        "$RUN_DIR"
-    )
-
-    local path
-    for path in "${local_paths[@]}"; do
-        if [[ -e "$path" ]]; then
-            log "Local-only path present, confirm .gitignore protects it before release: $path"
-        fi
-    done
-}
-
-
 show_summary() {
     local version="unknown"
     local web_login="Disabled"
@@ -2208,6 +2173,8 @@ main() {
         exit 0
     fi
 
+    require_debian_13
+
     step "Installing/checking minimum runtime prerequisites..."
     install_minimum_packages_if_possible
     check_runtime_tools
@@ -2245,9 +2212,6 @@ main() {
     stop_existing_bmtd_if_running
     stop_existing_tgifd_if_running
 
-    step "Removing legacy STFU runtime path..."
-    remove_legacy_stfu_runtime
-
     step "Applying permissions and sudoers..."
     set_permissions
     create_or_update_sudoers_files
@@ -2271,7 +2235,6 @@ main() {
     check_status_endpoint_cli
     check_bmtd_helper_cli
     check_tgif_helper_cli
-    check_git_hygiene_warnings
 
     SETUP_COMPLETED=1
     show_summary

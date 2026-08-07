@@ -55,21 +55,21 @@ if (!$auth->isEnabled()) {
             display: grid;
             place-items: center;
             background:
-                radial-gradient(circle at top, rgba(122, 44, 191, 0.26), transparent 42%),
-                linear-gradient(180deg, #16091f, #06040a);
-            color: #f4eaff;
+                radial-gradient(circle at top, rgba(74, 157, 255, 0.22), transparent 42%),
+                linear-gradient(180deg, #050b18, #020611);
+            color: #f6f8ff;
             font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
         }
         .card {
             width: min(430px, calc(100vw - 32px));
             padding: 30px;
-            border: 1px solid rgba(216, 108, 242, 0.34);
+            border: 1px solid rgba(92, 169, 255, 0.34);
             border-radius: 24px;
             background:
-                linear-gradient(180deg, rgba(36, 20, 54, 0.97), rgba(10, 7, 18, 0.98));
+                linear-gradient(180deg, rgba(11, 21, 40, 0.97), rgba(5, 11, 24, 0.98));
             box-shadow:
                 0 22px 70px rgba(0, 0, 0, 0.46),
-                0 0 34px rgba(122, 44, 191, 0.18);
+                0 0 34px rgba(74, 157, 255, 0.18);
         }
         h1 {
             margin: 0;
@@ -78,14 +78,14 @@ if (!$auth->isEnabled()) {
         }
         .login-subtitle {
             margin: 4px 0 18px;
-            color: #d9c2e6;
+            color: #d5ddea;
             font-size: 0.95rem;
             font-weight: 750;
             text-transform: uppercase;
             letter-spacing: 0.08em;
         }
         p {
-            color: #d9c2e6;
+            color: #d5ddea;
             line-height: 1.45;
         }
         label {
@@ -98,7 +98,7 @@ if (!$auth->isEnabled()) {
             box-sizing: border-box;
             padding: 12px 13px;
             border-radius: 12px;
-            border: 1px solid rgba(216, 108, 242, 0.28);
+            border: 1px solid rgba(59, 85, 125, 0.58);
             background: rgba(0, 0, 0, 0.22);
             color: #fff;
             font-size: 1rem;
@@ -110,18 +110,18 @@ if (!$auth->isEnabled()) {
             margin-top: 16px;
             min-height: 42px;
             padding: 0 18px;
-            border: 1px solid rgba(216, 108, 242, 0.42);
+            border: 1px solid rgba(92, 169, 255, 0.58);
             border-radius: 14px;
-            background: linear-gradient(180deg, rgba(130, 62, 191, 0.95), rgba(84, 36, 128, 0.96));
+            background: linear-gradient(180deg, rgba(34, 77, 131, 0.95), rgba(20, 35, 59, 0.96));
             color: #fff;
             font-weight: 850;
             text-decoration: none;
             cursor: pointer;
-            box-shadow: 0 0 18px rgba(122, 44, 191, 0.16);
+            box-shadow: 0 0 18px rgba(74, 157, 255, 0.16);
         }
         button:hover, a.button:hover {
-            border-color: rgba(255, 125, 242, 0.74);
-            box-shadow: 0 0 0 3px rgba(216, 108, 242, 0.12);
+            border-color: rgba(92, 169, 255, 0.90);
+            box-shadow: 0 0 0 3px rgba(74, 157, 255, 0.12);
         }
         .error {
             color: #ffb3b3;
@@ -142,14 +142,14 @@ if (!$auth->isEnabled()) {
         /* login-cleanup-polish */
         body {
             background:
-                radial-gradient(circle at top, rgba(122, 44, 191, 0.26), transparent 42%),
-                linear-gradient(180deg, #16091f, #06040a);
+                radial-gradient(circle at top, rgba(74, 157, 255, 0.22), transparent 42%),
+                linear-gradient(180deg, #050b18, #020611);
         }
         .card {
-            border-color: rgba(216, 108, 242, 0.34);
+            border-color: rgba(92, 169, 255, 0.34);
             box-shadow:
                 0 22px 70px rgba(0, 0, 0, 0.46),
-                0 0 34px rgba(122, 44, 191, 0.18);
+                0 0 34px rgba(74, 157, 255, 0.18);
         }
         h1 {
             margin-bottom: 2px;
@@ -157,7 +157,7 @@ if (!$auth->isEnabled()) {
         }
         .login-subtitle {
             margin: 0 0 18px;
-            color: #d9c2e6;
+            color: #d5ddea;
             font-size: 0.88rem;
             font-weight: 800;
             letter-spacing: 0.08em;
@@ -165,19 +165,19 @@ if (!$auth->isEnabled()) {
         }
         button,
         a.button {
-            border: 1px solid rgba(216, 108, 242, 0.42);
-            background: linear-gradient(180deg, rgba(130, 62, 191, 0.95), rgba(84, 36, 128, 0.96));
-            box-shadow: 0 0 18px rgba(122, 44, 191, 0.16);
+            border: 1px solid rgba(92, 169, 255, 0.58);
+            background: linear-gradient(180deg, rgba(34, 77, 131, 0.95), rgba(20, 35, 59, 0.96));
+            box-shadow: 0 0 18px rgba(74, 157, 255, 0.16);
         }
         button:hover,
         a.button:hover {
-            border-color: rgba(255, 125, 242, 0.74);
-            box-shadow: 0 0 0 3px rgba(216, 108, 242, 0.12);
+            border-color: rgba(92, 169, 255, 0.90);
+            box-shadow: 0 0 0 3px rgba(74, 157, 255, 0.12);
         }
         
         .single-admin-note {
             margin: -8px 0 18px;
-            color: #bda2ce;
+            color: #acb9cc;
             font-size: 0.82rem;
             font-weight: 700;
         }
