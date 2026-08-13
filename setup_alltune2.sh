@@ -390,9 +390,15 @@ install_minimum_packages_if_possible() {
         libzstd1
     )
 
-    export DEBIAN_FRONTEND=noninteractive
-    run_quiet_command "apt package index update" apt-get update
-    run_quiet_command "apt package installation" apt-get install -y "${packages[@]}"
+    local package
+    for package in "${packages[@]}"; do
+        if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -qx 'install ok installed'; then
+            export DEBIAN_FRONTEND=noninteractive
+            run_quiet_command "apt package index update" apt-get update
+            run_quiet_command "apt package installation" apt-get install -y "${packages[@]}"
+            return
+        fi
+    done
 }
 
 
