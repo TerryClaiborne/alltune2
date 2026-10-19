@@ -1782,6 +1782,28 @@ create_or_update_apache_accesslog_filter() {
         return
     fi
 
+    if ! command -v a2enconf >/dev/null 2>&1; then
+        quiet_detail "a2enconf not found. Skipping Apache access log filter install."
+        return
+    fi
+
+    local polling_conf_name="alltune2-polling"
+    local polling_conf_file="/etc/apache2/conf-available/${polling_conf_name}.conf"
+
+    mkdir -p /etc/apache2/conf-available
+
+    cat > "$polling_conf_file" <<'EOF'
+# AllTune2 polling marker for Apache access-log suppression.
+# Requests are still served normally; this only marks high-frequency polling requests.
+SetEnvIf Request_URI "^/alltune2/(api/status\.php|public/alltune2_ribbon_bar\.php)$" dontlog_app_polling=1
+EOF
+
+    chmod 0644 "$polling_conf_file"
+    chown root:root "$polling_conf_file"
+
+    a2enconf "$polling_conf_name" >/dev/null || fail "Failed to enable Apache polling conf: $polling_conf_name"
+    apache2ctl configtest >/dev/null 2>&1 || fail "Apache configtest failed after installing $polling_conf_file"
+
     local restore_file
     restore_file="$(mktemp "${TMPDIR:-/tmp}/alltune2-apache-accesslog-restore.XXXXXX.json")" || {
         quiet_detail "Could not create temporary restore file for Apache access log filter."
@@ -1799,38 +1821,35 @@ import sys
 restore_file = pathlib.Path(sys.argv[1])
 restore_items = {}
 
-# The filter suppresses only AllTune2's high-frequency browser polling URLs
-# from Apache access.log. It does not block the requests.
-expr_line = 'CustomLog ${APACHE_LOG_DIR}/access.log combined "expr=!(%{REQUEST_URI} =~ m#^/alltune2/(api/status\\.php|public/alltune2_ribbon_bar\\.php)#)"'
+# Each application marks only its own polling requests in conf-enabled.
+# This shared CustomLog hook suppresses normal polling, and can also preserve
+# HTTP error logging for applications that use dontlog_app_polling_200.
+generic_expr_line = 'CustomLog ${APACHE_LOG_DIR}/access.log combined "expr=!(reqenv(\'dontlog_app_polling\') == \'1\' || (reqenv(\'dontlog_app_polling_200\') == \'1\' && %{REQUEST_STATUS} == 200))"'
+
+# Exact legacy AllTune2-only expression used by earlier installers.
+old_expr_line = 'CustomLog ${APACHE_LOG_DIR}/access.log combined "expr=!(%{REQUEST_URI} =~ m#^/alltune2/(api/status\\.php|public/alltune2_ribbon_bar\\.php)#)"'
 
 plain_customlog_re = re.compile(r'^(\s*)CustomLog\s+\$\{APACHE_LOG_DIR\}/access\.log\s+combined\s*$')
 old_env_customlog_re = re.compile(r'^(\s*)CustomLog\s+\$\{APACHE_LOG_DIR\}/access\.log\s+combined\s+env=!dontlog_alltune2_polling\s*$')
 
-def line_has_alltune_filter(line: str) -> bool:
-    normalized = line.replace('\\', '')
-    return (
-        'CustomLog' in line
-        and 'access.log' in line
-        and 'expr=' in line
-        and '/alltune2/' in normalized
-        and 'api/status.php' in normalized
-        and 'public/alltune2_ribbon_bar.php' in normalized
-    )
-
 def replacement_for_line(line: str):
-    if 'CustomLog' not in line or 'access.log' not in line:
+    raw = line.rstrip('\r\n')
+    stripped = raw.strip()
+    indent = raw[:len(raw) - len(raw.lstrip())]
+
+    if stripped == generic_expr_line:
         return None
 
-    if line_has_alltune_filter(line):
-        return None
+    if stripped == old_expr_line:
+        return indent + generic_expr_line
 
-    old_env_match = old_env_customlog_re.match(line.rstrip('\r\n'))
+    old_env_match = old_env_customlog_re.match(raw)
     if old_env_match:
-        return old_env_match.group(1) + expr_line
+        return old_env_match.group(1) + generic_expr_line
 
-    plain_match = plain_customlog_re.match(line.rstrip('\r\n'))
+    plain_match = plain_customlog_re.match(raw)
     if plain_match:
-        return plain_match.group(1) + expr_line
+        return plain_match.group(1) + generic_expr_line
 
     return None
 
@@ -1875,7 +1894,7 @@ for path in paths:
 
     for line in lines:
         if 'CustomLog' in line and 'access.log' in line:
-            if line_has_alltune_filter(line):
+            if line.rstrip('\r\n').strip() == generic_expr_line:
                 new_lines.append(line)
                 continue
 
@@ -1886,8 +1905,8 @@ for path in paths:
                 file_changed = True
                 continue
 
-            if 'expr=' in line:
-                skipped.append(f'{path}: CustomLog access.log already has a custom expr= clause; left unchanged')
+            if 'expr=' in line or ' env=' in line:
+                skipped.append(f'{path}: existing custom/combined CustomLog preserved')
             else:
                 skipped.append(f'{path}: CustomLog access.log format not recognized; left unchanged')
 
@@ -1924,7 +1943,14 @@ PYAPACHE
 
     if [[ "$patch_output" != *"CHANGED"* ]]; then
         rm -f "$restore_file"
-        log "Apache access log filter already installed or no standard access.log CustomLog lines were found."
+
+        if command -v systemctl >/dev/null 2>&1 && systemctl is-active --quiet apache2; then
+            systemctl reload apache2 || fail "Failed to reload apache2 after installing AllTune2 polling config."
+        else
+            quiet_detail "Apache service is not active or systemctl is unavailable. AllTune2 polling config installed, but Apache was not reloaded automatically."
+        fi
+
+        log "Installed AllTune2 polling marker; existing Apache CustomLog configuration was preserved."
         return
     fi
 
