@@ -398,9 +398,22 @@ tune_mode() {
   require_file "$CFG_FILE"
   valid_target "$target" || fail_json "tune" "Invalid BM talkgroup/private target." "$target"
 
-  # Match TGIFD reliability behavior: do not quick-retune BM across a stale
-  # Analog_Bridge/private-node path. Rebuild the BM path through start_backend.
-  start_backend "$target"
+  # A running BM connection can retune in place, without disturbing
+  # Analog_Bridge or private node 1957. Cross-network transitions enter via
+  # start (no running BMTD) and retain prepare_audio_path + link refresh.
+  local pid
+  pid="$(find_pid)"
+  if [[ -z "$pid" ]]; then
+    start_backend "$target"
+  fi
+
+  # Preserve the existing Analog_Bridge/TLV handoff: the native bridge may
+  # have sent its own tune; explicitly tune BMTD to the desired target too.
+  if ! send_tlv_tune "$target"; then
+    fail_json "tune" "BMTD TLV retune failed." "$target" "$pid"
+  fi
+  write_state true "$target" "$pid"
+  ok_json "tune" "BMTD talkgroup updated live." true "$target" "$pid"
 }
 
 tune_analog_bridge_target() {

@@ -86,6 +86,10 @@ YSF, D-Star, P25, and NXDN are different. Those modes still depend on your norma
 
 Recent versions added several important improvements:
 
+- improved BrandMeister live talkgroup switching without unnecessary backend restarts
+- improved TGIF talkgroup switching and parrot audio recovery
+- more reliable switching between BrandMeister, TGIF, YSF, D-Star, P25, and NXDN while preserving the private DVSwitch audio link
+
 - redesigned Control Center layout
 - cleaner top navigation buttons
 - optional [**AllStar View**](https://github.com/TerryClaiborne/allstar_view) navigation button on Dashboard and Favorites that appears only when the standalone AllStar View application is installed

@@ -932,6 +932,49 @@ function clear_runtime_targets(): void
     clear_dvswitch_link_state();
 }
 
+/**
+ * Cross only between the BMTD/TGIFD audio family and MMDVM digital modes.
+ * This is the same targeted teardown used by the working Disconnect DVSwitch
+ * button. Do NOT use the broad Disconnect/Disconnect All path here.
+ *
+ * A completed cross-family teardown resets session mode tracking. The
+ * subsequent normal Connect branch performs its own bridge/backend startup.
+ * Nothing here sleeps for an extra fixed five seconds or touches direct links.
+ */
+function prepare_cross_family_dvswitch_handoff(string $incomingMode, string $myNode, string $dvSwitchNode): bool
+{
+    $incoming = normalize_mode($incomingMode);
+    $incomingDmr = in_array($incoming, ['BM', 'TGIF'], true);
+    $incomingMmdvm = in_array($incoming, ['YSF', 'DSTAR', 'P25', 'NXDN'], true);
+    if (!$incomingDmr && !$incomingMmdvm) {
+        return false;
+    }
+
+    $previous = active_managed_dvswitch_mode();
+    // A live backend is more authoritative than a stale PHP session mode.
+    if (bm_receive_is_active()) {
+        $previous = 'BM';
+    } elseif (tgifd_is_active()) {
+        $previous = 'TGIF';
+    }
+
+    $previousDmr = in_array($previous, ['BM', 'TGIF'], true);
+    $previousMmdvm = in_array($previous, ['YSF', 'DSTAR', 'P25', 'NXDN'], true);
+    if (!(($incomingDmr && $previousMmdvm) || ($incomingMmdvm && $previousDmr))) {
+        return false;
+    }
+
+    // Suppress stale status/browser lost-link cleanup while the deliberately
+    // disconnected private link is being transitioned. This is NOT a delay.
+    $_SESSION['private_node_grace_until'] = microtime(true) + 10.0;
+
+    // Reuse the actual Disconnect DVSwitch teardown for both directions.
+    // It releases the previous backend/gateway, disconnects ONLY the private
+    // node, and clears the managed-session state. This preserves other links.
+    disconnect_only_dvswitch_link($myNode, $dvSwitchNode);
+    return true;
+}
+
 function disconnect_dvswitch_runtime(string $myNode, string $dvSwitchNode): void
 {
     if (bm_receive_is_active()) {
@@ -1367,6 +1410,14 @@ if ($action === 'disconnect_dvswitch') {
 }
 
 if ($action === 'private_node_lost_cleanup') {
+    // A delayed browser cleanup from a previous mode must not tear down a
+    // newly completed transition. This is a guard, NOT a connection delay.
+    if (microtime(true) < (float) ($_SESSION['private_node_grace_until'] ?? 0)) {
+        respond(session_payload((string) ($_SESSION['last_status'] ?? 'IDLE - NO CONNECTIONS'), [
+            'private_node_loss_cleaned' => false,
+            'private_node_cleanup_deferred' => true,
+        ]));
+    }
     if ($hasRealMyNode && $hasRealDvSwitchNode) {
         disconnect_only_dvswitch_link($myNode, $dvSwitchNode);
     } else {
@@ -1505,6 +1556,7 @@ if ($action === 'connect') {
             respond(session_payload($_SESSION['last_status']), 500);
         }
 
+        prepare_cross_family_dvswitch_handoff('YSF', $myNode, $dvSwitchNode);
         $keepDvSwitchLinkLoaded = false;
 
         if (tgifd_is_active()) {
@@ -1571,6 +1623,7 @@ if ($action === 'connect') {
         clear_dmr_active_state();
         $_SESSION['dvswitch_autoloaded'] = true;
 
+        $_SESSION['private_node_grace_until'] = microtime(true) + 5.0;
         $_SESSION['last_status'] = 'CONNECTED: YSF TARGET ' . $rawTarget;
         respond(session_payload($_SESSION['last_status']));
     }
@@ -1590,6 +1643,7 @@ if ($action === 'connect') {
             respond(session_payload($_SESSION['last_status']), 422);
         }
 
+        prepare_cross_family_dvswitch_handoff($mode, $myNode, $dvSwitchNode);
         $currentDmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
         $currentLastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
         $sameManagedDigitalMode = $currentLastMode === $mode
@@ -1616,6 +1670,7 @@ if ($action === 'connect') {
             clear_dmr_active_state();
             $_SESSION['dvswitch_autoloaded'] = true;
 
+            $_SESSION['private_node_grace_until'] = microtime(true) + 5.0;
             $_SESSION['last_status'] = 'CONNECTED: ' . $modeLabel . ' TARGET ' . $connectTarget;
             respond(session_payload($_SESSION['last_status']));
         }
@@ -1702,6 +1757,7 @@ if ($action === 'connect') {
             respond(session_payload($_SESSION['last_status']), 422);
         }
 
+        prepare_cross_family_dvswitch_handoff('BM', $myNode, $dvSwitchNode);
         $currentDmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
         $currentLastMode = normalize_mode((string) ($_SESSION['last_mode'] ?? ''));
 
@@ -1751,6 +1807,7 @@ if ($action === 'connect') {
         $_SESSION['dmr_active_target'] = $connectTarget;
         $_SESSION['dvswitch_autoloaded'] = true;
         $_SESSION['dvswitch_active_mode'] = $autoloadDvSwitchMode;
+        $_SESSION['private_node_grace_until'] = microtime(true) + 5.0;
         $_SESSION['last_status'] = 'CONNECTED: TG ' . $connectTarget . ' (BM)';
 
         respond(session_payload($_SESSION['last_status'], ['bm_receive' => $bmResult]));
@@ -1774,6 +1831,7 @@ if ($action === 'connect') {
             respond(session_payload($_SESSION['last_status']), 500);
         }
 
+        prepare_cross_family_dvswitch_handoff('TGIF', $myNode, $dvSwitchNode);
         $tgifWasActive = tgifd_is_active();
 
         if (bm_receive_is_active()) {
@@ -1834,6 +1892,7 @@ if ($action === 'connect') {
         $_SESSION['dmr_ready'] = true;
         $_SESSION['dmr_active_network'] = 'TGIF';
         $_SESSION['dmr_active_target'] = $connectTarget;
+        $_SESSION['private_node_grace_until'] = microtime(true) + 5.0;
         $_SESSION['last_status'] = 'CONNECTED: TG ' . $connectTarget . ' (TGIF)';
 
         respond(session_payload($_SESSION['last_status'], ['tgifd' => $tgifResult]));

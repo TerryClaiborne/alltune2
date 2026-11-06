@@ -1451,6 +1451,7 @@ if ($privateNodeLinked && $managedDvSwitchMode === '') {
     }
 }
 $privateNodeLinkLost = $privateNodeLinkChecked
+    && microtime(true) >= (float) ($_SESSION['private_node_grace_until'] ?? 0)
     && !$privateNodeLinked
     && managed_session_needs_configured_private_node(
         $managedDvSwitchMode,

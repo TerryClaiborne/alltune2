@@ -265,7 +265,9 @@ stop_proc() {
   if [[ -n "$pid" ]]; then
     kill "$pid" >/dev/null 2>&1 || true
 
-    for _ in 1 2 3 4 5 6 7 8 9 10; do
+    # Allow TGIFD's SIGTERM handler time to send RPTCL and close cleanly.
+    # This is a bounded wait (up to 3s), not an added fixed delay.
+    for _ in {1..30}; do
       if ! kill -0 "$pid" 2>/dev/null; then
         break
       fi
@@ -359,6 +361,7 @@ start_mode() {
   write_ini_value "tgif" "options" "StartRef=${tg};RelinkTime=60" "$CFG_FILE"
   if [[ -n "$(find_pid)" ]]; then
     tune_mode "$tg"
+    return 0
   fi
   start_backend "$tg"
 }
@@ -373,10 +376,18 @@ tune_mode() {
   write_ini_value "tgif" "options" "StartRef=${tg};RelinkTime=60" "$CFG_FILE"
   sync_from_alltune
 
-  # Reliability first: live TGIF retune can leave stale TLV/Analog_Bridge
-  # receive state after local PTT or TG changes. A controlled restart matches
-  # the manual Disconnect DVSwitch -> Connect flow that restores audio.
-  start_backend "$tg"
+  # Fast TGIF->TGIF retune: leave Analog_Bridge, private node, and backend
+  # running. The modified backend updates both local TLV and TGIF RPTO StartRef.
+  local pid rxport
+  pid="$(find_pid)"
+  if [[ -z "$pid" ]]; then
+    start_backend "$tg"
+  fi
+  rxport="$(read_ini_value tlv rx_port "$CFG_FILE")"
+  [[ "$rxport" =~ ^[0-9]+$ ]] || fail_json "tune" "TGIFD TLV receive port unavailable." "$tg" "$pid"
+  send_tlv_tune "$tg" "$rxport"
+  write_state true "$tg" "$pid"
+  ok_json "tune" "TGIF talkgroup updated live." true "$tg" "$pid"
 }
 
 stop_mode() {
