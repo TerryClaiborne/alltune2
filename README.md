@@ -54,6 +54,15 @@ sudo git pull origin main
 sudo ./setup_alltune2.sh
 ```
 
+## Apache Logging After ASL3 Updates
+
+ASL3 appliance updates may replace Apache site configurations and remove shared access-log polling filters. After an ASL3 appliance update, rerun the AllTune2 installer to restore shared filtering while preserving normal request logging:
+
+```bash
+cd /var/www/html/alltune2
+sudo ./setup_alltune2.sh
+```
+
 ## Configure AllTune2
 
 Live configuration lives under `/var/www/html/alltune2`. Replace the example values with your own node numbers, IDs, callsign, server, and credentials. Ordinary spaces around `=` are accepted, but keep embedded options such as `StartRef=9990;RelinkTime=60` intact and free of extra spaces.
