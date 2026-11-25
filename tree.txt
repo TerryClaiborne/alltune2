@@ -1,7 +1,4 @@
 .
-|-- .gitignore
-|-- README.md
-|-- VERSION
 |-- api
 |   |-- connect.php
 |   |-- direct_link.php
@@ -30,45 +27,66 @@
 |       |-- Config.php
 |       `-- Logger.php
 |-- bmtd
-|   |-- alltune2-bmtd-helper.sh
 |   |-- bin
 |   |   |-- bmtd
 |   |   `-- bmtdamd
 |   |-- config
 |   |   `-- bmtd.ini.example
-|   `-- docs
-|       `-- BMTD-COPYRIGHT-NOTICE.md
-|-- config.ini.example
+|   |-- docs
+|   |   `-- BMTD-COPYRIGHT-NOTICE.md
+|   `-- alltune2-bmtd-helper.sh
 |-- data
 |   `-- favorites.example.txt
 |-- docs
 |   `-- .gitkeep
-|-- logs
-|   `-- .gitkeep
+|-- ipsc3
+|   |-- bin
+|   |   |-- ipsc3d-amd64
+|   |   `-- ipsc3d-arm64
+|   |-- config
+|   |   `-- ipsc3d.ini.example
+|   |-- docs
+|   |   `-- IPSC3D-COPYRIGHT-NOTICE.md
+|   `-- alltune2-ipsc3d-helper.sh
+|-- m17d
+|   |-- bin
+|   |   |-- m17amd64
+|   |   `-- m17d-arm64
+|   |-- config
+|   |   `-- m17d.ini.example
+|   |-- docs
+|   |   `-- M17D-COPYRIGHT-NOTICE.md
+|   |-- alltune2-m17d-helper.sh
+|   `-- alltune2-m17d-runner.sh
 |-- public
-|   |-- alltune2_ribbon_bar.php
 |   |-- assets
 |   |   |-- css
 |   |   |   `-- style.css
 |   |   `-- js
 |   |       |-- app.js
 |   |       `-- theme.js
+|   |-- alltune2_ribbon_bar.php
 |   |-- favorites.php
 |   |-- index.php
 |   |-- login.php
 |   `-- logout.php
-|-- screenshot-light.png
-|-- screenshot.png
-|-- setup_alltune2.sh
 |-- tgif
-|   |-- alltune2-tgifd-helper.sh
 |   |-- bin
 |   |   |-- tgifd
 |   |   `-- tgifdamd
 |   |-- config
 |   |   `-- tgifd.ini.example
-|   `-- docs
-|       `-- TGIFD-COPYRIGHT-NOTICE.md
+|   |-- docs
+|   |   `-- TGIFD-COPYRIGHT-NOTICE.md
+|   `-- alltune2-tgifd-helper.sh
 |-- tools
 |   `-- alltune2_set_admin_password.php
-`-- tree.txt
+|-- .gitignore
+|-- config.ini.example
+|-- LICENSE
+|-- README.md
+|-- screenshot-light.png
+|-- screenshot.png
+|-- setup_alltune2.sh
+|-- tree.txt
+`-- VERSION

@@ -86,6 +86,11 @@ $modeAvailability = [
     'DSTAR' => $hasRealMyNode && $hasRealDvSwitchNode && $dstarEnabled && $dvswitchScriptAvailable,
     'P25'   => $hasRealMyNode && $hasRealDvSwitchNode && $p25Enabled && $dvswitchScriptAvailable,
     'NXDN'  => $hasRealMyNode && $hasRealDvSwitchNode && $nxdnEnabled && $dvswitchScriptAvailable,
+    'M17'   => $hasRealMyNode && $hasRealDvSwitchNode && is_file(dirname(__DIR__) . '/m17d/alltune2-m17d-helper.sh') && is_file(dirname(__DIR__) . '/m17d/alltune2-m17d-runner.sh') && (is_file(dirname(__DIR__) . '/m17d/bin/m17d-arm64') || is_file(dirname(__DIR__) . '/m17d/bin/m17amd64')),
+    'IPSC3' => $hasRealMyNode && $hasRealDvSwitchNode
+        && is_file(dirname(__DIR__) . '/ipsc3/alltune2-ipsc3d-helper.sh')
+        && is_file(dirname(__DIR__) . '/ipsc3/config/ipsc3d.ini')
+        && (is_file(dirname(__DIR__) . '/ipsc3/bin/ipsc3d-arm64') || is_file(dirname(__DIR__) . '/ipsc3/bin/ipsc3d-amd64')),
 ];
 
 $autoloadDvSwitch = isset($_SESSION['autoload_dvswitch'])
@@ -105,6 +110,11 @@ $dvswitchActiveMode = in_array($rawDvSwitchActiveMode, ['local_monitor', 'transc
 $disconnectBeforeConnect = isset($_SESSION['disconnect_before_connect'])
     ? (bool) $_SESSION['disconnect_before_connect']
     : false;
+
+$ipsc3Server = strtolower(trim((string) ($_SESSION['ipsc3_server'] ?? 'us')));
+if (!in_array($ipsc3Server, ['us', 'vk', 'freedmr_uk', 'uk', 'nz'], true)) {
+    $ipsc3Server = 'us';
+}
 
 $selectedMode = strtoupper((string) ($_SESSION['selected_mode'] ?? 'BM'));
 if (in_array($selectedMode, ['ALLSTAR', 'ALLSTAR LINK', 'ALLSTARLINK'], true)) {
@@ -149,6 +159,8 @@ $modeOptions = [
     'ASL'  => 'AllStarLink',
     'ECHO' => 'EchoLink',
     'YSF'  => 'System Fusion (YSF)',
+    'M17'  => 'M17 Network',
+    'IPSC3' => 'IPSC3 Network',
 ];
 
 if ($modeAvailability['DSTAR']) {
@@ -325,6 +337,8 @@ $activityLines[] = [
                         data-dstar-configured="<?= $modeAvailability['DSTAR'] ? '1' : '0' ?>"
                         data-p25-configured="<?= $modeAvailability['P25'] ? '1' : '0' ?>"
                         data-nxdn-configured="<?= $modeAvailability['NXDN'] ? '1' : '0' ?>"
+                        data-m17-configured="<?= $modeAvailability['M17'] ? '1' : '0' ?>"
+                        data-ipsc3-configured="<?= $modeAvailability['IPSC3'] ? '1' : '0' ?>"
                     >
                         <div class="control-panel-redesign">
                             <div class="control-top-row">
@@ -345,6 +359,36 @@ $activityLines[] = [
                                             <?= e($label) ?>
                                         </option>
                                     <?php endforeach; ?>
+                                </select>
+
+                                <label class="sr-only" for="ipsc3_server">IPSC3 Server</label>
+                                <select
+                                    id="ipsc3_server"
+                                    name="ipsc3_server"
+                                    class="control control-network-select"
+                                    aria-label="IPSC3 Server"
+                                    title="IPSC3 server"
+                                    hidden
+                                >
+                                    <option value="us" <?= $ipsc3Server === 'us' ? 'selected' : '' ?>>US</option>
+                                    <option value="vk" <?= $ipsc3Server === 'vk' ? 'selected' : '' ?>>VKDMR</option>
+                                    <option value="freedmr_uk" <?= $ipsc3Server === 'freedmr_uk' ? 'selected' : '' ?>>FreeDMR</option>
+                                    <option value="uk" <?= $ipsc3Server === 'uk' ? 'selected' : '' ?>>UK</option>
+                                    <option value="nz" <?= $ipsc3Server === 'nz' ? 'selected' : '' ?>>NZ</option>
+                                </select>
+
+                                <label class="sr-only" for="ipsc3_slot">IPSC3 Timeslot</label>
+                                <select
+                                    id="ipsc3_slot"
+                                    name="ipsc3_slot"
+                                    class="control control-network-select"
+                                    aria-label="IPSC3 Timeslot"
+                                    title="IPSC3 network timeslot"
+                                    hidden
+                                >
+                                    <?php $ipsc3Slot = ($_SESSION['ipsc3_slot'] ?? '1') === '2' ? '2' : '1'; ?>
+                                    <option value="1" <?= $ipsc3Slot === '1' ? 'selected' : '' ?>>TS1</option>
+                                    <option value="2" <?= $ipsc3Slot === '2' ? 'selected' : '' ?>>TS2</option>
                                 </select>
 
                                 <label class="sr-only" for="autoload_dvswitch_mode">Link Mode</label>
@@ -370,7 +414,7 @@ $activityLines[] = [
                                     aria-haspopup="dialog"
                                 >
                                     <span class="control-save-icon" aria-hidden="true">☆</span>
-                                    <span class="control-save-text">Save<br>Favorite</span>
+                                    <span class="control-save-text">Save Favorite</span>
                                 </button>
                             </div>
 
@@ -488,7 +532,7 @@ $activityLines[] = [
                     <div class="helper-panel helper-panel-standalone" id="helper-panel">
                         <div class="helper-title">Network Flow</div>
                         <p class="helper-text" id="helper-text">
-                            BrandMeister, TGIF, YSF, D-Star, P25, NXDN, AllStarLink, and EchoLink are one-step connects. Enter the target or load it from Saved Favorites, choose Transceive or Local Monitor, and press Connect once. The guidance changes with the network you select and with Disconnect Before Connect. In the Live Status box, where you see the nodes connected, the AllStarLink, EchoLink, and private DVSwitch rows let you click Transceive or Local Monitor to change that exact connection. Use the small row Disconnect for a specific direct or IAX connection. Disconnect DVSwitch clears the managed network/private-node path while leaving direct AllStarLink and EchoLink connections alone. EchoLink remains limited to one dashboard-started outbound link at a time for ASL3 driver safety. When DVSwitch Auto-Load is enabled, the configured private node is loaded using the selected Transceive or Local Monitor setting.
+                            BrandMeister, TGIF, IPSC3, YSF, D-Star, P25, NXDN, M17, AllStarLink, and EchoLink are one-step connects. Enter the target or load it from Saved Favorites, choose Transceive or Local Monitor, and press Connect once. The guidance changes with the network you select and with Disconnect Before Connect. In the Live Status box, where you see the nodes connected, the AllStarLink, EchoLink, and private DVSwitch rows let you click Transceive or Local Monitor to change that exact connection. Use the small row Disconnect for a specific direct or IAX connection. Disconnect DVSwitch clears the managed network/private-node path while leaving direct AllStarLink and EchoLink connections alone. EchoLink remains limited to one dashboard-started outbound link at a time for ASL3 driver safety. When DVSwitch Auto-Load is enabled, the configured private node is loaded using the selected Transceive or Local Monitor setting.
                         </p>
                     </div>
                 </div>
@@ -526,6 +570,14 @@ $activityLines[] = [
                         <div class="status-box">
                             <div class="status-box-label">NXDN</div>
                             <div class="status-box-value" id="status-nxdn">Idle</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="status-box-label">M17</div>
+                            <div class="status-box-value" id="status-m17">Idle</div>
+                        </div>
+                        <div class="status-box">
+                            <div class="status-box-label">IPSC3</div>
+                            <div class="status-box-value" id="status-ipsc3">Idle</div>
                         </div>
                         <div class="status-box status-box-wide">
                             <div class="status-box-label">AllStarLink / EchoLink</div>
@@ -675,6 +727,14 @@ $activityLines[] = [
                 <div>
                     <span class="favorite-modal-summary-label">Network / Mode</span>
                     <strong id="save-favorite-mode-value">—</strong>
+                </div>
+                <div id="save-favorite-ipsc3-server-row" hidden>
+                    <span class="favorite-modal-summary-label">IPSC3 Server</span>
+                    <strong id="save-favorite-ipsc3-server-value">—</strong>
+                </div>
+                <div id="save-favorite-ipsc3-slot-row" hidden>
+                    <span class="favorite-modal-summary-label">Timeslot</span>
+                    <strong id="save-favorite-ipsc3-slot-value">—</strong>
                 </div>
             </div>
 

@@ -110,7 +110,7 @@ function normalize_mode(string $mode): string
     }
 
     return match ($value) {
-        'BM', 'TGIF', 'ASL', 'ECHO', 'YSF', 'DSTAR', 'P25', 'NXDN' => $value,
+        'BM', 'TGIF', 'ASL', 'ECHO', 'YSF', 'DSTAR', 'P25', 'NXDN', 'M17', 'IPSC3' => $value,
         default => 'BM',
     };
 }
@@ -275,6 +275,12 @@ function load_favorites(string $path): array
         $name = trim((string) ($parts[1] ?? ''));
         $description = trim((string) ($parts[2] ?? ''));
         $mode = normalize_mode((string) ($parts[3] ?? 'BM'));
+        $ipsc3Slot = $mode === 'IPSC3' && in_array((string) ($parts[4] ?? ''), ['1', '2'], true)
+            ? (string) $parts[4]
+            : ($mode === 'IPSC3' ? '1' : '');
+        $ipsc3Server = $mode === 'IPSC3' && in_array((string) ($parts[5] ?? ''), ['us', 'vk', 'freedmr_uk', 'uk', 'nz'], true)
+            ? (string) $parts[5]
+            : ($mode === 'IPSC3' ? 'us' : '');
 
         if ($target === '') {
             continue;
@@ -286,6 +292,8 @@ function load_favorites(string $path): array
             'name' => $name,
             'description' => $description,
             'mode' => $mode,
+            'ipsc3_slot' => $ipsc3Slot,
+            'ipsc3_server' => $ipsc3Server,
         ];
     }
 
@@ -301,12 +309,18 @@ function save_favorites(string $path, array $favorites): bool
         $name = trim((string) ($favorite['name'] ?? ''));
         $description = trim((string) ($favorite['description'] ?? ''));
         $mode = normalize_mode((string) ($favorite['mode'] ?? 'BM'));
+        $ipsc3Slot = $mode === 'IPSC3' && in_array((string) ($favorite['ipsc3_slot'] ?? ''), ['1', '2'], true)
+            ? (string) $favorite['ipsc3_slot']
+            : ($mode === 'IPSC3' ? '1' : '');
 
         if ($target === '') {
             continue;
         }
 
-        $lines[] = implode('|', [$target, $name, $description, $mode]);
+        $ipsc3Server = $mode === 'IPSC3'
+            ? (string) ($favorite['ipsc3_server'] ?? 'us')
+            : '';
+        $lines[] = implode('|', [$target, $name, $description, $mode, $ipsc3Slot, $ipsc3Server]);
     }
 
     $content = $lines === [] ? '' : implode(PHP_EOL, $lines) . PHP_EOL;
@@ -335,8 +349,20 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$authCanWrite) {
         $name = trim((string) ($_POST['name'] ?? ''));
         $description = trim((string) ($_POST['description'] ?? ''));
         $mode = normalize_mode((string) ($_POST['mode'] ?? 'BM'));
+        $ipsc3Slot = $mode === 'IPSC3'
+            ? trim((string) ($_POST['ipsc3_slot'] ?? '1'))
+            : '';
 
-        if ($target === '') {
+        $ipsc3Server = $mode === 'IPSC3'
+            ? strtolower(trim((string) ($_POST['ipsc3_server'] ?? 'us')))
+            : '';
+
+        if ($mode === 'IPSC3' && !in_array($ipsc3Server, ['us', 'vk', 'freedmr_uk', 'uk', 'nz'], true)) {
+            $message = 'Invalid IPSC3 server.';
+        } elseif ($mode === 'IPSC3' && !in_array($ipsc3Slot, ['1', '2'], true)) {
+            $message = 'IPSC3 timeslot must be 1 or 2.';
+            $messageType = 'error';
+        } elseif ($target === '') {
             $message = 'Target is required.';
             $messageType = 'error';
         } elseif ($mode === 'DSTAR' && !$dstarAvailable) {
@@ -358,6 +384,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$authCanWrite) {
                         $favorite['name'] = $name;
                         $favorite['description'] = $description;
                         $favorite['mode'] = $mode;
+                        $favorite['ipsc3_slot'] = $ipsc3Slot;
+                        $favorite['ipsc3_server'] = $ipsc3Server;
                         $updated = true;
                         break;
                     }
@@ -372,6 +400,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && !$authCanWrite) {
                     'name' => $name,
                     'description' => $description,
                     'mode' => $mode,
+                    'ipsc3_slot' => $ipsc3Slot,
+                    'ipsc3_server' => $ipsc3Server,
                 ];
             }
 
@@ -469,6 +499,12 @@ $formTarget = $editFavorite['target'] ?? '';
 $formName = $editFavorite['name'] ?? '';
 $formDescription = $editFavorite['description'] ?? '';
 $formMode = $editFavorite['mode'] ?? 'BM';
+$formIpsc3Slot = $formMode === 'IPSC3' && in_array((string) ($editFavorite['ipsc3_slot'] ?? ''), ['1', '2'], true)
+    ? (string) $editFavorite['ipsc3_slot']
+    : '1';
+$formIpsc3Server = $formMode === 'IPSC3' && in_array((string) ($editFavorite['ipsc3_server'] ?? ''), ['us', 'vk', 'freedmr_uk', 'uk', 'nz'], true)
+    ? (string) $editFavorite['ipsc3_server']
+    : 'us';
 $formDisabled = $authCanWrite ? '' : ' disabled';
 $viewOnlyNote = $authCanWrite ? '' : 'Favorites are view-only until you log in.';
 
@@ -478,6 +514,8 @@ $modeOptions = [
     'ASL' => 'AllStarLink',
     'ECHO' => 'EchoLink',
     'YSF' => 'YSF',
+    'M17' => 'M17',
+    'IPSC3' => 'IPSC3',
 ];
 
 if ($dstarAvailable || $formMode === 'DSTAR') {
@@ -528,9 +566,19 @@ if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
 
         .favorites-form-grid {
             display: grid;
-            grid-template-columns: minmax(0, 1.25fr) minmax(0, 1fr) minmax(0, 1.25fr) 168px 168px;
+            grid-template-columns: minmax(145px, 0.85fr) minmax(135px, 0.75fr) minmax(165px, 0.95fr) 120px 180px 92px;
             gap: 10px;
             align-items: stretch;
+        }
+
+        /* Non-IPSC3: use the freed server/TS space for the full network name. */
+        .favorites-form-grid:has(#favorite-ipsc3-server[hidden]) {
+            grid-template-columns:
+                minmax(145px, 0.95fr)
+                minmax(135px, 0.85fr)
+                minmax(165px, 1.05fr)
+                180px
+                160px;
         }
 
         .message-banner {
@@ -599,34 +647,34 @@ if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
 
         .favorites-manage-table th:nth-child(1),
         .favorites-manage-table td:nth-child(1) {
-            width: 6%;
-            text-align: center;
+            width: 14%;
+            text-align: left;
         }
 
         .favorites-manage-table th:nth-child(2),
         .favorites-manage-table td:nth-child(2) {
-            width: 24%;
+            width: 17%;
         }
 
         .favorites-manage-table th:nth-child(3),
         .favorites-manage-table td:nth-child(3) {
-            width: 20%;
+            width: 24%;
         }
 
         .favorites-manage-table th:nth-child(4),
         .favorites-manage-table td:nth-child(4) {
-            width: 30%;
+            width: 29%;
         }
 
         .favorites-manage-table th:nth-child(5),
         .favorites-manage-table td:nth-child(5) {
-            width: 10%;
+            width: 8%;
             text-align: center;
         }
 
         .favorites-manage-table th:nth-child(6),
         .favorites-manage-table td:nth-child(6) {
-            width: 10%;
+            width: 8%;
             text-align: center;
         }
 
@@ -719,10 +767,20 @@ if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
             -webkit-appearance: menulist;
             -moz-appearance: menulist;
             cursor: pointer;
-            padding-right: 34px;
+            padding-right: 26px;
             color: #f3dcff;
             border-color: rgba(88, 166, 255, 0.62);
             background-color: rgba(10, 8, 16, 0.92);
+        }
+
+        #favorite-ipsc3-slot {
+            padding-left: 10px;
+            padding-right: 22px;
+        }
+
+        #favorite-ipsc3-server {
+            padding-left: 10px;
+            padding-right: 24px;
         }
 
         .favorites-form-grid select.control:hover,
@@ -894,6 +952,32 @@ if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
             background: rgba(255, 55, 180, 0.46);
             border-color: rgba(255, 95, 205, 1);
             color: #ffe1f4;
+        }
+
+
+        /* M17 and IPSC3 network identities */
+        .favorites-manage-table tbody tr[data-mode="M17"] .favorite-mode-badge {
+            background: rgba(112, 58, 210, 0.40);
+            border-color: #bd9aff;
+            color: #eadcff;
+        }
+
+        .favorites-manage-table tbody tr[data-mode="IPSC3"] .favorite-mode-badge {
+            background: rgba(180, 105, 0, 0.38);
+            border-color: #ffbb59;
+            color: #ffe3b2;
+        }
+
+        html[data-theme="light"] .favorites-manage-table tbody tr[data-mode="M17"] .favorite-mode-badge {
+            background: #e8dcff;
+            border-color: #7031b5;
+            color: #54218c;
+        }
+
+        html[data-theme="light"] .favorites-manage-table tbody tr[data-mode="IPSC3"] .favorite-mode-badge {
+            background: #fff0d3;
+            border-color: #b3650a;
+            color: #844100;
         }
 
         .edit-link {
@@ -1228,6 +1312,305 @@ if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
             line-height: 1.18 !important;
         }
     </style>
+
+    <style>
+    /* FAVORITES-1080-CANCEL-IPSC3-20261125 */
+
+    .favorite-cancel-button {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 86px;
+        height: 38px;
+        padding: 0 12px;
+        border: 1px solid #8a4055;
+        border-radius: 10px;
+        background: rgba(128, 30, 53, 0.28);
+        color: #ffd8e2;
+        font-size: 0.76rem;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+        text-decoration: none;
+        white-space: nowrap;
+    }
+
+    .favorite-cancel-button:hover,
+    .favorite-cancel-button:focus-visible {
+        background: #8f2944;
+        border-color: #c44b69;
+        color: #ffffff;
+    }
+
+    html[data-theme="light"] .favorite-cancel-button {
+        background: #fff2f4;
+        border-color: #cc8797;
+        color: #8b2940;
+    }
+
+    html[data-theme="light"] .favorite-cancel-button:hover,
+    html[data-theme="light"] .favorite-cancel-button:focus-visible {
+        background: #b83a56;
+        border-color: #8f2944;
+        color: #ffffff;
+    }
+
+    /* Normal non-IPSC3 edit row: make room for Cancel. */
+    .favorites-form-grid:has(#favorite-ipsc3-server[hidden]):has(.favorite-cancel-button) {
+        grid-template-columns:
+            minmax(135px, 0.95fr)
+            minmax(125px, 0.82fr)
+            minmax(150px, 1.05fr)
+            155px
+            132px
+            90px;
+        gap: 8px;
+    }
+
+    /* IPSC3 add row. */
+    .favorites-form-grid:has(#favorite-ipsc3-server:not([hidden])) {
+        grid-template-columns:
+            minmax(118px, 0.82fr)
+            minmax(110px, 0.72fr)
+            minmax(140px, 1fr)
+            128px
+            142px
+            76px
+            122px;
+        gap: 8px;
+    }
+
+    /* IPSC3 edit row with Cancel. */
+    .favorites-form-grid:has(#favorite-ipsc3-server:not([hidden])):has(.favorite-cancel-button) {
+        grid-template-columns:
+            minmax(108px, 0.78fr)
+            minmax(104px, 0.70fr)
+            minmax(132px, 0.95fr)
+            120px
+            132px
+            72px
+            116px
+            86px;
+        gap: 7px;
+    }
+
+    /* Preserve full useful IPSC3 identity in the Mode pill. */
+    .favorites-manage-table tbody tr[data-mode="IPSC3"] .favorite-mode-badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: auto !important;
+        min-width: 132px !important;
+        max-width: none !important;
+        padding-left: 9px !important;
+        padding-right: 9px !important;
+        white-space: nowrap !important;
+        overflow: visible !important;
+        text-overflow: clip !important;
+        font-size: 0.68rem;
+    }
+
+    /* Use more of a 1080p display while retaining the list's own scrollbar. */
+    @media (min-width: 981px) and (max-height: 1100px) {
+        .favorites-page-stack {
+            gap: 10px;
+        }
+
+        .favorites-page-stack .card-body {
+            padding-top: 10px;
+            padding-bottom: 10px;
+        }
+
+        .favorites-manage-table-wrap {
+            max-height: min(560px, calc(100vh - 345px)) !important;
+            min-height: 360px;
+            overflow-y: auto !important;
+        }
+
+        .favorites-manage-table th,
+        .favorites-manage-table td {
+            padding-top: 6px;
+            padding-bottom: 6px;
+        }
+    }
+
+    @media (max-width: 980px) {
+        .favorites-form-grid,
+        .favorites-form-grid:has(#favorite-ipsc3-server[hidden]),
+        .favorites-form-grid:has(#favorite-ipsc3-server[hidden]):has(.favorite-cancel-button),
+        .favorites-form-grid:has(#favorite-ipsc3-server:not([hidden])),
+        .favorites-form-grid:has(#favorite-ipsc3-server:not([hidden])):has(.favorite-cancel-button) {
+            grid-template-columns: 1fr;
+        }
+
+        .favorite-cancel-button {
+            width: 100%;
+        }
+
+        .favorites-manage-table tbody tr[data-mode="IPSC3"] .favorite-mode-badge {
+            min-width: 0 !important;
+        }
+    }
+    </style>
+
+
+    <style>
+    /* FAVORITES-PAGE-SEARCH-COLUMNS-20261125 */
+
+    .favorites-manage-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 14px;
+    }
+
+    .favorites-page-search-wrap {
+        display: flex;
+        align-items: center;
+        justify-content: flex-end;
+        gap: 7px;
+        min-width: 0;
+    }
+
+    .favorites-page-search {
+        width: 220px;
+        height: 30px;
+        padding: 0 10px;
+        border: 1px solid #426792;
+        border-radius: 8px;
+        background: rgba(5, 11, 24, 0.72);
+        color: #e9f3ff;
+        font-size: 0.74rem;
+        outline: none;
+    }
+
+    .favorites-page-search::placeholder {
+        color: #9eb1c6;
+        opacity: 1;
+    }
+
+    .favorites-page-search:focus {
+        border-color: #4a9dff;
+        box-shadow: 0 0 0 2px rgba(74, 157, 255, 0.16);
+    }
+
+    .favorites-page-search-clear {
+        height: 28px;
+        padding: 0 9px;
+        border: 1px solid #55769b;
+        border-radius: 7px;
+        background: #173455;
+        color: #dceeff;
+        font-size: 0.66rem;
+        font-weight: 800;
+        cursor: pointer;
+    }
+
+    .favorites-page-search-clear:hover,
+    .favorites-page-search-clear:focus-visible {
+        background: #245486;
+        border-color: #6ca8e8;
+        color: #ffffff;
+    }
+
+    .favorites-page-search-clear[hidden] {
+        display: none !important;
+    }
+
+    html[data-theme="light"] .favorites-page-search {
+        background: #ffffff;
+        border-color: #a9bfd8;
+        color: #18324d;
+    }
+
+    html[data-theme="light"] .favorites-page-search::placeholder {
+        color: #6b7f95;
+    }
+
+    html[data-theme="light"] .favorites-page-search-clear {
+        background: #edf4fb;
+        border-color: #9db7d3;
+        color: #244f7d;
+    }
+
+    html[data-theme="light"] .favorites-page-search-clear:hover,
+    html[data-theme="light"] .favorites-page-search-clear:focus-visible {
+        background: #2f669b;
+        border-color: #285987;
+        color: #ffffff;
+    }
+
+    .favorite-manage-row[hidden] {
+        display: none !important;
+    }
+
+    @media (max-width: 760px) {
+        .favorites-manage-header {
+            align-items: flex-start;
+            flex-direction: column;
+        }
+
+        .favorites-page-search-wrap {
+            width: 100%;
+            justify-content: flex-start;
+            flex-wrap: wrap;
+        }
+
+        .favorites-page-search {
+            width: min(100%, 320px);
+        }
+    }
+    
+    /* FAVORITES-IPSC3-MODE-PILL-WIDTH-20261125 */
+
+    /*
+     * Long IPSC3 mode labels were still clipping.
+     * Give the Mode column slightly more room and allow the pill itself
+     * to grow wide enough for VKDMR/FREEDMR/NZ/UK/US TS labels.
+     */
+    .favorites-manage-table th:nth-child(2),
+    .favorites-manage-table td:nth-child(2) {
+        width: 19%;
+    }
+
+    .favorites-manage-table th:nth-child(4),
+    .favorites-manage-table td:nth-child(4) {
+        width: 27%;
+    }
+
+    .favorites-manage-table .favorite-mode-badge,
+    .favorites-manage-table td:nth-child(2) .favorite-mode-badge,
+    .favorites-manage-table td:nth-child(2) .mode-badge,
+    .favorites-manage-table td:nth-child(2) .network-badge,
+    .favorites-manage-table td:nth-child(2) .badge {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        box-sizing: border-box;
+        width: auto;
+        min-width: 128px;
+        max-width: none;
+        padding: 0 10px;
+        white-space: nowrap;
+        line-height: 1.15;
+        font-size: 0.74rem;
+        letter-spacing: 0.01em;
+    }
+
+    @media (max-width: 1400px) {
+        .favorites-manage-table .favorite-mode-badge,
+        .favorites-manage-table td:nth-child(2) .favorite-mode-badge,
+        .favorites-manage-table td:nth-child(2) .mode-badge,
+        .favorites-manage-table td:nth-child(2) .network-badge,
+        .favorites-manage-table td:nth-child(2) .badge {
+            min-width: 120px;
+            font-size: 0.72rem;
+            padding: 0 8px;
+        }
+    }
+
+</style>
+
 </head>
 <body>
 <div class="page">
@@ -1336,7 +1719,7 @@ if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
                             value="<?= e($formDescription) ?>"<?= $formDisabled ?>
                         >
 
-                        <select class="control" name="mode"<?= $formDisabled ?>>
+                        <select class="control" name="mode" id="favorite-mode"<?= $formDisabled ?>>
                             <?php foreach ($modeOptions as $value => $label): ?>
                                 <option value="<?= e($value) ?>" <?= $formMode === $value ? 'selected' : '' ?>>
                                     <?= e($label) ?>
@@ -1344,9 +1727,46 @@ if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
                             <?php endforeach; ?>
                         </select>
 
-                        <button type="submit" class="btn btn-primary"<?= $formDisabled ?>>
+                        <select
+                            class="control"
+                            name="ipsc3_server"
+                            id="favorite-ipsc3-server"
+                            aria-label="IPSC3 Server"
+                            title="IPSC3 server"
+                            <?= $formMode === 'IPSC3' ? '' : 'hidden' ?>
+                            <?= $formDisabled ?>
+                        >
+                            <option value="us" <?= $formIpsc3Server === 'us' ? 'selected' : '' ?>>US IPSC3</option>
+                            <option value="vk" <?= $formIpsc3Server === 'vk' ? 'selected' : '' ?>>VKDMR Australia</option>
+                            <option value="freedmr_uk" <?= $formIpsc3Server === 'freedmr_uk' ? 'selected' : '' ?>>FreeDMR UK</option>
+                            <option value="uk" <?= $formIpsc3Server === 'uk' ? 'selected' : '' ?>>UK IPSC3</option>
+                            <option value="nz" <?= $formIpsc3Server === 'nz' ? 'selected' : '' ?>>New Zealand IPSC3</option>
+                        </select>
+
+                        <select
+                            class="control"
+                            name="ipsc3_slot"
+                            id="favorite-ipsc3-slot"
+                            aria-label="IPSC3 Timeslot"
+                            title="IPSC3 network timeslot"
+                            <?= $formMode === 'IPSC3' ? '' : 'hidden' ?>
+                            <?= $formDisabled ?>
+                        >
+                            <option value="1" <?= $formIpsc3Slot === '1' ? 'selected' : '' ?>>TS1</option>
+                            <option value="2" <?= $formIpsc3Slot === '2' ? 'selected' : '' ?>>TS2</option>
+                        </select>
+
+                        <button type="submit" class="btn btn-primary favorite-save-button"<?= $formDisabled ?>>
                             <?= $editFavorite ? 'Save Changes' : 'Save Favorite' ?>
                         </button>
+
+                        <?php if ($editFavorite): ?>
+                            <a
+                                class="btn favorite-cancel-button"
+                                href="/alltune2/public/favorites.php?sort=<?= e(rawurlencode($favoriteSortKey)) ?>&dir=<?= e(rawurlencode($favoriteSortDirection)) ?>"
+                                title="Cancel editing and clear the form"
+                            >Cancel</a>
+                        <?php endif; ?>
                     </div>
 
                 </form>
@@ -1354,9 +1774,28 @@ if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
         </article>
 
         <article class="card">
-            <div class="card-header">
+            <div class="card-header favorites-manage-header">
                 <span>Saved Favorites</span>
-                <span class="meta-line">One shared list</span>
+
+                <div class="favorites-page-search-wrap">
+                    <input
+                        type="search"
+                        id="favorites-page-search"
+                        class="favorites-page-search"
+                        placeholder="Search favorites…"
+                        autocomplete="off"
+                        aria-label="Search favorites"
+                    >
+                    <button
+                        type="button"
+                        id="favorites-page-search-clear"
+                        class="favorites-page-search-clear"
+                        title="Clear favorites search"
+                        aria-label="Clear favorites search"
+                        hidden
+                    >Clear</button>
+                    <span class="meta-line">One shared list</span>
+                </div>
             </div>
             <div class="card-body">
                 <div class="favorites-manage-table-wrap">
@@ -1406,7 +1845,21 @@ if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
                                 >
                                     <td class="favorite-target" title="<?= e($favorite['target']) ?>"><?= e($favorite['target']) ?></td>
                                     <td class="favorite-mode-cell">
-                                        <span class="favorite-mode-badge"><?= e(mode_display_label((string) $favorite['mode'])) ?></span>
+                                        <?php
+                                            $pillMode = (string) $favorite['mode'];
+                                            $pillServer = (string) ($favorite['ipsc3_server'] ?? 'us');
+                                            $shortServers = ['us' => 'US', 'vk' => 'VKDMR', 'freedmr_uk' => 'FreeDMR', 'uk' => 'UK', 'nz' => 'NZ'];
+                                            $fullServers = ['us' => 'United States', 'vk' => 'VKDMR Australia', 'freedmr_uk' => 'FreeDMR UK', 'uk' => 'United Kingdom', 'nz' => 'New Zealand'];
+                                            $pillSlot = (string) ($favorite['ipsc3_slot'] ?? '1');
+                                            $pillTitle = 'IPSC3 ' . ($fullServers[$pillServer] ?? $fullServers['us']) . ' TS' . $pillSlot;
+                                        ?>
+                                        <span class="favorite-mode-badge"<?= $pillMode === 'IPSC3' ? ' title="' . e($pillTitle) . '"' : '' ?>><?=
+                                            e(
+                                                (string) $favorite['mode'] === 'IPSC3'
+                                                    ? mode_display_label($pillMode) . ' ' . ($shortServers[$pillServer] ?? $shortServers['us']) . ' TS' . $pillSlot
+                                                    : mode_display_label((string) $favorite['mode'])
+                                            )
+                                        ?></span>
                                     </td>
                                     <td class="favorite-name" title="<?= e($favorite['name']) ?>"><?= e($favorite['name']) ?></td>
                                     <td class="favorite-description" title="<?= e($favorite['description'] !== '' ? $favorite['description'] : '-') ?>"><?= e($favorite['description'] !== '' ? $favorite['description'] : '-') ?></td>
@@ -1440,6 +1893,25 @@ if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
 
     <script src="/alltune2/public/assets/js/theme.js"></script>
     <script>
+        (function () {
+            const mode = document.getElementById('favorite-mode');
+            const server = document.getElementById('favorite-ipsc3-server');
+            const slot = document.getElementById('favorite-ipsc3-slot');
+
+            if (!mode || !slot) {
+                return;
+            }
+
+            const syncSlot = function () {
+                const hidden = String(mode.value || '').toUpperCase() !== 'IPSC3';
+                slot.hidden = hidden;
+                if (server) server.hidden = hidden;
+            };
+
+            mode.addEventListener('change', syncSlot);
+            syncSlot();
+        }());
+
         document.addEventListener('click', function (event) {
             const blocked = event.target.closest('button, input, select, textarea, a, form, label');
 
@@ -1459,6 +1931,57 @@ if (is_file(dirname(__DIR__, 2) . '/allstar_view/public/index.php')) {
                 window.location.href = url;
             }
         });
+
+        /*
+         * Dedicated Favorites page search.
+         * Client-side only: does not modify favorites.txt or change sorting.
+         */
+        (function () {
+            const search = document.getElementById('favorites-page-search');
+            const clear = document.getElementById('favorites-page-search-clear');
+
+            if (!search) {
+                return;
+            }
+
+            const rows = Array.from(
+                document.querySelectorAll('.favorite-manage-row')
+            );
+
+            const filterRows = function () {
+                const query = String(search.value || '')
+                    .trim()
+                    .toLocaleLowerCase();
+
+                rows.forEach(function (row) {
+                    const searchable = [
+                        row.textContent || '',
+                        row.querySelector('.favorite-mode-badge')?.getAttribute('title') || '',
+                        row.querySelector('.favorite-target')?.getAttribute('title') || '',
+                        row.querySelector('.favorite-name')?.getAttribute('title') || '',
+                        row.querySelector('.favorite-description')?.getAttribute('title') || ''
+                    ].join(' ').toLocaleLowerCase();
+
+                    row.hidden = query !== '' && !searchable.includes(query);
+                });
+
+                if (clear) {
+                    clear.hidden = query === '';
+                }
+            };
+
+            search.addEventListener('input', filterRows);
+
+            if (clear) {
+                clear.addEventListener('click', function () {
+                    search.value = '';
+                    filterRows();
+                    search.focus();
+                });
+            }
+
+            filterRows();
+        }());
     </script>
 
 </body>

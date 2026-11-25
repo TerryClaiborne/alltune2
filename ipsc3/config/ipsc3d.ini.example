@@ -1,0 +1,78 @@
+[general]
+log_file = /var/www/html/alltune2/logs/ipsc3d.log
+
+[logging]
+# Packet-level DMRD diagnostics are disabled during normal operation.
+packet_debug = false
+
+[identity]
+callsign = YOURCALL
+dmr_id = YOUR_DMR_ID
+hotspot_radio_id = YOUR_HOTSPOT_ID
+
+[ipsc3]
+host = us.ipsc3.net
+port = 55555
+security_key = PASSWORD
+startup_tg = 777
+default_slot = 1
+options = 
+server = us
+
+[behavior]
+receive_timeout_ms = 1000
+keepalive_seconds = 5
+protocol_assert_seconds = 30
+soft_refresh_trigger_missed = 2
+max_missed = 5
+reconnect_delay_seconds = 5
+
+[network]
+local_bind_port = 0
+
+[tlv]
+rx_port = 31103
+tx_host = 127.0.0.1
+tx_port = 31100
+timeout_ms = 500
+inbound_slot = 2
+
+[private_node]
+enabled = true
+asterisk_bin = /usr/sbin/asterisk
+mynode = YOUR_ALLSTAR_NODE
+private_node = YOUR_PRIVATE_NODE
+autoload_mode = transceive
+
+[mmdvm]
+slots = 4
+
+[server_us]
+label = US IPSC3
+host = us.ipsc3.net
+port = 55555
+security_key = PASSWORD
+
+[server_vk]
+label = VKDMR Australia
+host = ipsc3.vkdmr.com
+port = 55555
+security_key = PASSWORD
+
+[server_freedmr_uk]
+label = FreeDMR UK
+host = ipsc3.freedmr.uk
+port = 55555
+security_key = PASSWORD
+
+[server_uk]
+label = UK IPSC3
+host = uk.ipsc3.net
+port = 55555
+security_key = PASSWORD
+
+[server_nz]
+label = New Zealand IPSC3
+host = zl.ipsc3.net
+port = 55555
+security_key = PASSWORD

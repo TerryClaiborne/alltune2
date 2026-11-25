@@ -48,7 +48,7 @@ function normalize_mode(string $mode): string
     }
 
     return match ($value) {
-        'BM', 'TGIF', 'ASL', 'ECHO', 'YSF', 'DSTAR', 'P25', 'NXDN' => $value,
+        'BM', 'TGIF', 'ASL', 'ECHO', 'YSF', 'DSTAR', 'P25', 'NXDN', 'M17', 'IPSC3' => $value,
         default => 'BM',
     };
 }
@@ -86,6 +86,12 @@ function load_favorites_file(string $path): array
         $name = trim((string) ($parts[1] ?? ''));
         $description = trim((string) ($parts[2] ?? ''));
         $mode = normalize_mode((string) ($parts[3] ?? 'BM'));
+        $ipsc3Slot = $mode === 'IPSC3' && in_array((string) ($parts[4] ?? ''), ['1', '2'], true)
+            ? (string) $parts[4]
+            : ($mode === 'IPSC3' ? '1' : '');
+        $ipsc3Server = $mode === 'IPSC3' && in_array((string) ($parts[5] ?? ''), ['us', 'vk', 'freedmr_uk', 'uk', 'nz'], true)
+            ? (string) $parts[5]
+            : ($mode === 'IPSC3' ? 'us' : '');
 
         if ($target === '') {
             continue;
@@ -97,6 +103,8 @@ function load_favorites_file(string $path): array
             'name' => $name,
             'description' => $description,
             'mode' => $mode,
+            'ipsc3_slot' => $ipsc3Slot,
+            'ipsc3_server' => $ipsc3Server,
         ];
     }
 
@@ -112,12 +120,18 @@ function save_favorites_file(string $path, array $favorites): bool
         $name = clean_favorite_field((string) ($favorite['name'] ?? ''), 96);
         $description = clean_favorite_field((string) ($favorite['description'] ?? ''), 180);
         $mode = normalize_mode((string) ($favorite['mode'] ?? 'BM'));
+        $ipsc3Slot = $mode === 'IPSC3' && in_array((string) ($favorite['ipsc3_slot'] ?? ''), ['1', '2'], true)
+            ? (string) $favorite['ipsc3_slot']
+            : ($mode === 'IPSC3' ? '1' : '');
 
         if ($target === '') {
             continue;
         }
 
-        $lines[] = implode('|', [$target, $name, $description, $mode]);
+        $ipsc3Server = $mode === 'IPSC3'
+            ? (string) ($favorite['ipsc3_server'] ?? 'us')
+            : '';
+        $lines[] = implode('|', [$target, $name, $description, $mode, $ipsc3Slot, $ipsc3Server]);
     }
 
     $content = $lines === [] ? '' : implode(PHP_EOL, $lines) . PHP_EOL;
@@ -173,6 +187,24 @@ $target = clean_favorite_field((string) ($_POST['target'] ?? ''), 96);
 $mode = normalize_mode((string) ($_POST['mode'] ?? 'BM'));
 $name = clean_favorite_field((string) ($_POST['name'] ?? ''), 96);
 $description = clean_favorite_field((string) ($_POST['description'] ?? ''), 180);
+$ipsc3Slot = $mode === 'IPSC3'
+    ? trim((string) ($_POST['ipsc3_slot'] ?? '1'))
+    : '';
+
+$ipsc3Server = $mode === 'IPSC3'
+    ? strtolower(trim((string) ($_POST['ipsc3_server'] ?? 'us')))
+    : '';
+
+if ($mode === 'IPSC3' && !in_array($ipsc3Server, ['us', 'vk', 'freedmr_uk', 'uk', 'nz'], true)) {
+    respond(['ok' => false, 'message' => 'Invalid IPSC3 server.'], 422);
+}
+
+if ($mode === 'IPSC3' && !in_array($ipsc3Slot, ['1', '2'], true)) {
+    respond_json([
+        'ok' => false,
+        'message' => 'IPSC3 timeslot must be 1 or 2.',
+    ], 400);
+}
 
 if ($target === '') {
     respond_json([
@@ -192,17 +224,28 @@ $savedFavorite = [
     'name' => $name,
     'description' => $description,
     'mode' => $mode,
+    'ipsc3_slot' => $ipsc3Slot,
+    'ipsc3_server' => $ipsc3Server,
 ];
 
 foreach ($favorites as $index => &$favorite) {
     if (
         trim((string) ($favorite['target'] ?? '')) === $target
         && normalize_mode((string) ($favorite['mode'] ?? 'BM')) === $mode
+        && (
+            $mode !== 'IPSC3'
+            || (
+                (string) ($favorite['ipsc3_slot'] ?? '1') === $ipsc3Slot
+                && (string) ($favorite['ipsc3_server'] ?? 'us') === $ipsc3Server
+            )
+        )
     ) {
         $favorite['target'] = $target;
         $favorite['name'] = $name;
         $favorite['description'] = $description;
         $favorite['mode'] = $mode;
+        $favorite['ipsc3_slot'] = $ipsc3Slot;
+        $favorite['ipsc3_server'] = $ipsc3Server;
         $favorite['id'] = (string) $index;
         $savedFavorite = $favorite;
         $updated = true;

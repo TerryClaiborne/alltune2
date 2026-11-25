@@ -49,7 +49,7 @@ function shell_run(string $command): string
 
 function bm_receive_helper_path(): string
 {
-    return dirname(__DIR__) . '/bmtd/alltune2-bmtd-helper.sh';
+    return '/var/www/html/alltune2/bmtd/alltune2-bmtd-helper.sh';
 }
 
 function bm_receive_run(string $action, ?string $target = null): array
@@ -115,7 +115,7 @@ function bm_receive_stop(): array
 
 function tgifd_helper_path(): string
 {
-    return dirname(__DIR__) . '/tgif/alltune2-tgifd-helper.sh';
+    return '/var/www/html/alltune2/tgif/alltune2-tgifd-helper.sh';
 }
 
 function tgifd_run(string $action, ?string $target = null): array
@@ -178,6 +178,124 @@ function tgifd_stop(): array
     return tgifd_run('stop');
 }
 
+function m17d_run(string $action, ?string $target = null): array
+{
+    $script = dirname(__DIR__) . '/m17d/alltune2-m17d-helper.sh';
+    $cmd = 'sudo -n ' . escapeshellarg($script) . ' ' . escapeshellarg($action);
+    if ($target !== null) $cmd .= ' ' . escapeshellarg($target);
+    $raw = shell_run($cmd);
+    $result = json_decode($raw, true);
+    return is_array($result) ? $result : [
+        'ok' => false, 'active' => false, 'running' => true, 'ready' => false, 'audio_recovered' => false, 'target' => '',
+        'message' => 'M17D helper failed or did not return JSON.',
+    ];
+}
+
+function ipsc3d_run(string $action, ?string $target = null, ?string $slot = null, ?string $server = null): array
+{
+    $script = dirname(__DIR__) . '/ipsc3/alltune2-ipsc3d-helper.sh';
+    $cmd = 'sudo -n ' . escapeshellarg($script) . ' ' . escapeshellarg($action);
+
+    if ($target !== null && $target !== '') {
+        $cmd .= ' ' . escapeshellarg($target);
+    }
+
+    if ($slot !== null && $slot !== '') {
+        $cmd .= ' ' . escapeshellarg($slot);
+    }
+
+    if ($server !== null && $server !== '') {
+        $cmd .= ' ' . escapeshellarg($server);
+    }
+
+    $raw = shell_run($cmd);
+    $result = json_decode($raw, true);
+
+    return is_array($result) ? $result : [
+        'ok' => false,
+        'active' => false,
+        'target' => '',
+        'ipsc3d_running' => true,
+        'message' => 'IPSC3D helper failed or did not return JSON.',
+        'raw_output' => $raw,
+    ];
+}
+
+function m17d_status_running(array $status): bool
+{
+    return !empty($status['running']) || !empty($status['active']);
+}
+
+function ipsc3d_status_running(array $status): bool
+{
+    return !empty($status['ipsc3d_running']) || !empty($status['active']);
+}
+
+function acquire_native_lifecycle_lock(): void
+{
+    $lockPath = dirname(__DIR__) . '/run/alltune2-native-lifecycle.lock';
+    $handle = @fopen($lockPath, 'c');
+    if ($handle === false) {
+        respond(session_payload('ERROR: NATIVE BACKEND LIFECYCLE LOCK UNAVAILABLE', ['ok' => false]), 503);
+    }
+
+    $deadline = microtime(true) + 30.0;
+    do {
+        if (@flock($handle, LOCK_EX | LOCK_NB)) {
+            $GLOBALS['native_lifecycle_lock_handle'] = $handle;
+            return;
+        }
+        usleep(100000);
+    } while (microtime(true) < $deadline);
+
+    @fclose($handle);
+    respond(session_payload('ERROR: ANOTHER DIGITAL BACKEND TRANSITION IS STILL IN PROGRESS', ['ok' => false]), 409);
+}
+
+function require_m17_status(): array
+{
+    $status = m17d_run('status');
+    if (empty($status['ok'])) {
+        respond(session_payload('ERROR: M17D STATUS UNAVAILABLE; TRANSITION BLOCKED', ['ok' => false, 'm17d' => $status]), 503);
+    }
+    return $status;
+}
+
+function require_ipsc3_status(): array
+{
+    $status = ipsc3d_run('status');
+    if (empty($status['ok'])) {
+        respond(session_payload('ERROR: IPSC3D STATUS UNAVAILABLE; TRANSITION BLOCKED', ['ok' => false, 'ipsc3d' => $status]), 503);
+    }
+    return $status;
+}
+
+function stop_m17_and_verify_recovery(): array
+{
+    $stopped = m17d_run('stop');
+    if (empty($stopped['ok']) || m17d_status_running($stopped) || empty($stopped['audio_recovered'])) {
+        respond(session_payload('ERROR: M17 AUDIO PATH RECOVERY FAILED; DESTINATION NOT STARTED', ['ok' => false, 'm17d' => $stopped]), 503);
+    }
+    $verify = require_m17_status();
+    if (m17d_status_running($verify) || empty($verify['audio_recovered'])) {
+        respond(session_payload('ERROR: M17D STILL PRESENT OR AUDIO RECOVERY UNVERIFIED; DESTINATION NOT STARTED', ['ok' => false, 'm17d' => $verify]), 503);
+    }
+    return $stopped;
+}
+
+function stop_ipsc3_and_verify(): array
+{
+    $stopped = ipsc3d_run('stop');
+    if (empty($stopped['ok']) || ipsc3d_status_running($stopped)) {
+        respond(session_payload('ERROR: IPSC3D STOP FAILED; DESTINATION NOT STARTED', ['ok' => false, 'ipsc3d' => $stopped]), 503);
+    }
+    $verify = require_ipsc3_status();
+    if (ipsc3d_status_running($verify)) {
+        respond(session_payload('ERROR: IPSC3D PROCESS STILL PRESENT; DESTINATION NOT STARTED', ['ok' => false, 'ipsc3d' => $verify]), 503);
+    }
+    return $stopped;
+}
+
 function asterisk_rpt_fun(string $node, string $digits): string
 {
     $command = 'sudo /usr/sbin/asterisk -rx ' . escapeshellarg("rpt fun {$node} {$digits}");
@@ -204,6 +322,59 @@ function asterisk_ilink_connect(string $node, string $remoteNode, string $linkMo
 function load_dvswitch_link(string $myNode, string $dvSwitchNode, string $autoloadMode): string
 {
     return asterisk_ilink_connect($myNode, $dvSwitchNode, $autoloadMode);
+}
+
+function actual_m17_private_link_mode(string $myNode, string $dvSwitchNode): string
+{
+    if ($myNode === '' || $dvSwitchNode === '') {
+        return '';
+    }
+
+    $nodes = shell_run(
+        'sudo /usr/sbin/asterisk -rx ' .
+        escapeshellarg("rpt nodes {$myNode}")
+    );
+
+    if (preg_match(
+        '/(^|[\\s,])T' . preg_quote($dvSwitchNode, '/') . '([\\s,]|$)/m',
+        $nodes
+    )) {
+        return 'transceive';
+    }
+
+    $stats = shell_run(
+        'sudo /usr/sbin/asterisk -rx ' .
+        escapeshellarg("rpt stats {$myNode}")
+    );
+
+    if (
+        preg_match(
+            '/Nodes currently connected to us.*?(^|[^0-9])' .
+            preg_quote($dvSwitchNode, '/') .
+            '([^0-9]|$)/mi',
+            $stats
+        )
+    ) {
+        return 'local_monitor';
+    }
+
+    return '';
+}
+
+function enforce_m17_link_mode(string $myNode, string $dvSwitchNode, string $requestedMode): void
+{
+    $requestedMode = normalize_autoload_dvswitch_mode($requestedMode);
+    $actualMode = actual_m17_private_link_mode($myNode, $dvSwitchNode);
+
+    if ($actualMode === $requestedMode) {
+        return;
+    }
+
+    asterisk_ilink_disconnect($myNode, $dvSwitchNode);
+    pause_seconds(0.5);
+
+    load_dvswitch_link($myNode, $dvSwitchNode, $requestedMode);
+    pause_seconds(0.5);
 }
 
 function enforce_dvswitch_link_mode(string $myNode, string $dvSwitchNode, string $autoloadMode): void
@@ -1197,6 +1368,12 @@ $request = request_data();
 
 $action = strtolower(trim((string) ($request['action'] ?? $request['action_type'] ?? '')));
 $rawTarget = trim((string) ($request['target'] ?? $request['tgNum'] ?? ''));
+$ipsc3Slot = trim((string) ($request['ipsc3_slot'] ?? '1'));
+$ipsc3Server = strtolower(trim((string) ($request['ipsc3_server'] ?? ($_SESSION['ipsc3_server'] ?? 'us'))));
+
+if (!in_array($ipsc3Server, ['us', 'vk', 'freedmr_uk', 'uk', 'nz'], true)) {
+    $ipsc3Server = 'us';
+}
 $rawDtmfCode = trim((string) ($request['dtmf_code'] ?? $request['dtmf'] ?? $request['digits'] ?? $request['code'] ?? ''));
 $selectedNode = preg_replace('/[^0-9]/', '', (string) ($request['selected_node'] ?? '')) ?? '';
 $mode = normalize_mode((string) ($request['mode'] ?? ($_SESSION['selected_mode'] ?? 'BM')));
@@ -1231,7 +1408,7 @@ if ($mode === 'ASL') {
     $_SESSION['selected_mode'] = $mode;
 }
 
-if (in_array($mode, ['BM', 'TGIF', 'YSF', 'DSTAR', 'P25', 'NXDN'], true)) {
+if (in_array($mode, ['BM', 'TGIF', 'YSF', 'DSTAR', 'P25', 'NXDN', 'IPSC3'], true)) {
     $_SESSION['autoload_dvswitch'] = true;
 }
 
@@ -1280,6 +1457,329 @@ if (
     respond(session_payload('ERROR: INVALID ACTION'), 400);
 }
 
+if (in_array($action, ['connect', 'disconnect', 'disconnect_all', 'disconnect_dvswitch', 'private_node_lost_cleanup'], true)) {
+    acquire_native_lifecycle_lock();
+}
+
+/*
+ * M17D / IPSC3D native backend safety:
+ * Keep each network on its dedicated backend and preserve the existing
+ * Analog_Bridge configuration.
+ */
+if ($action === 'connect' && $mode === 'M17') {
+    if (!(is_file(dirname(__DIR__) . '/m17d/alltune2-m17d-helper.sh') && is_file(dirname(__DIR__) . '/m17d/alltune2-m17d-runner.sh') && (is_file(dirname(__DIR__) . '/m17d/bin/m17d-arm64') || is_file(dirname(__DIR__) . '/m17d/bin/m17amd64')))) {
+        respond(session_payload('ERROR: M17D NOT INSTALLED', ['ok' => false]), 503);
+    }
+    $m17Target = strtoupper(trim((string) preg_replace('/\s+/', ' ', $rawTarget)));
+    if (!preg_match('/^(M17-M17#|M17-[A-Z0-9-]+ [A-Z])$/', $m17Target)) {
+        respond(session_payload(
+            'ERROR: M17 TARGET MUST BE REFLECTOR MODULE, FOR EXAMPLE M17-432 C, OR M17-M17# FOR PARROT',
+            ['ok' => false]
+        ), 422);
+    }
+    // A network switch to M17 uses the established targeted digital
+    // teardown. This stops BM/TGIF or clears MMDVM gateway routes and only
+    // disconnects only the configured private DVSwitch node, not unrelated ASL/EchoLink callers.
+    $previousDigital = active_managed_dvswitch_mode();
+    $bmWasActive = bm_receive_is_active();
+    $tgifWasActive = tgifd_is_active();
+    $ipsc3Status = require_ipsc3_status();
+    $m17Status = require_m17_status();
+    $ipsc3WasRunning = ipsc3d_status_running($ipsc3Status);
+    $ipsc3Handoff = $ipsc3WasRunning;
+    $m17WasRunning = m17d_status_running($m17Status);
+    $m17WasActive = !empty($m17Status['active']);
+
+    if ($m17WasRunning && !$m17WasActive) {
+        stop_m17_and_verify_recovery();
+        $m17WasRunning = false;
+    }
+
+    // Even if M17 itself is healthy, an IPSC3 process must never coexist
+    // with it. Repair an already-overlapped state before tune/start.
+    if ($ipsc3WasRunning) {
+        stop_ipsc3_and_verify();
+        $ipsc3WasRunning = false;
+
+        // IPSC3 is not part of the legacy six-network managed-mode list.
+        // Its helper has now stopped the daemon and must have removed the
+        // configured public/private link. Clear the old IPSC3 session/runtime
+        // state explicitly before M17 is allowed to start or be announced.
+        clear_runtime_targets();
+        if ($hasRealMyNode && $hasRealDvSwitchNode && actual_m17_private_link_mode($myNode, $dvSwitchNode) !== '') {
+            respond(session_payload(
+                'ERROR: IPSC3 PRIVATE LINK STILL PRESENT; M17 NOT STARTED',
+                ['ok' => false]
+            ), 503);
+        }
+    }
+
+    if (!$m17WasRunning && ($ipsc3Handoff || $bmWasActive || $tgifWasActive || $previousDigital !== '')) {
+        if (!$hasRealMyNode || !$hasRealDvSwitchNode) {
+            respond(session_payload('ERROR: DIGITAL HANDOFF NODE CONFIGURATION MISSING', ['ok' => false]), 503);
+        }
+        $_SESSION['private_node_grace_until'] = microtime(true) + 30.0;
+
+        if ($ipsc3WasRunning) {
+            stop_ipsc3_and_verify();
+        }
+
+        // IPSC3 stop already disconnects the configured private node. For every other family use
+        // the proven targeted Disconnect-DVSwitch teardown. Do not issue a
+        // second blind disconnect after a verified IPSC3 stop.
+        if (!$ipsc3Handoff) {
+            disconnect_only_dvswitch_link($myNode, $dvSwitchNode);
+        }
+
+        // Stopping a native backend and reclaiming USRP must be completed
+        // before the M17 wrapper takes UDP34001 from Analog_Bridge.
+        if (
+            bm_receive_is_active() ||
+            tgifd_is_active() ||
+            ipsc3d_status_running(require_ipsc3_status())
+        ) {
+            respond(session_payload(
+                'ERROR: DIGITAL BACKEND STILL ACTIVE; M17 NOT STARTED',
+                ['ok' => false]
+            ), 503);
+        }
+        clear_runtime_targets();
+        // This is AFTER the accepted cleanup (not a replacement for it).
+        // Never shorten existing MMDVM/DMR settlement logic.
+        // MMDVM-backed modes require the longer proven cleanup/settle;
+        // BM/TGIF handoff uses the verified M17 startup readiness instead.
+        if (in_array($previousDigital, ['YSF', 'DSTAR', 'P25', 'NXDN'], true)) {
+            pause_seconds(5.0);
+        }
+    }
+    // The M17 guarded launcher additionally checks BOTH nodes are idle,
+    // existing USRP port ownership, and reflector link readiness.
+    $result = m17d_run($m17WasActive ? 'tune' : 'start', $m17Target);
+    if (empty($result['ok']) || empty($result['active'])) {
+        $detail = trim((string) ($result['message'] ?? ''));
+        $message = 'ERROR: M17D START FAILED';
+        if ($detail !== '') {
+            $message .= ' - ' . $detail;
+        }
+        respond(session_payload($message, ['ok' => false, 'm17d' => $result]), 503);
+    }
+
+    $requestedLinkMode = normalize_autoload_dvswitch_mode(
+        (string) ($_SESSION['autoload_dvswitch_mode'] ?? 'transceive')
+    );
+
+    if ($hasRealMyNode && $hasRealDvSwitchNode) {
+        enforce_m17_link_mode($myNode, $dvSwitchNode, $requestedLinkMode);
+        $_SESSION['dvswitch_active_mode'] = $requestedLinkMode;
+    }
+
+    $_SESSION['selected_mode'] = 'M17';
+    $_SESSION['last_mode'] = 'M17';
+    $_SESSION['last_target'] = $m17Target;
+    $_SESSION['pending_target'] = $m17Target;
+    $_SESSION['private_node_grace_until'] = microtime(true) + 10.0;
+    $_SESSION['last_status'] = 'CONNECTED: M17 ' . $m17Target;
+    respond(session_payload($_SESSION['last_status'], [
+        'm17d' => $result,
+        'm17' => [
+            'state' => 'Connected: ' . $m17Target,
+            'label' => 'Connected: ' . $m17Target,
+            'status' => 'Connected: ' . $m17Target,
+            'active' => true,
+            'target' => $m17Target,
+        ],
+    ]));
+}
+
+$m17Current = require_m17_status();
+if (m17d_status_running($m17Current)) {
+    if (
+        in_array($action, ['disconnect', 'disconnect_dvswitch', 'disconnect_all'], true)
+        && normalize_mode((string) ($_SESSION['selected_mode'] ?? '')) === 'M17'
+    ) {
+        $result = stop_m17_and_verify_recovery();
+        clear_runtime_targets();
+        $_SESSION['last_mode'] = '';
+        $_SESSION['selected_mode'] = 'M17';
+        $_SESSION['last_status'] = 'DISCONNECTED: M17';
+        respond(session_payload($_SESSION['last_status'], ['m17d' => $result]));
+    }
+    if ($action === 'connect' && in_array($mode, ['BM', 'TGIF', 'YSF', 'DSTAR', 'P25', 'NXDN', 'IPSC3'], true)) {
+        // M17 owns USRP 34001 directly. Its stop helper verifies complete
+        // unlink of the configured private node and Analog_Bridge rebind before we start the normal
+        // existing destination branch (which performs its OWN mode setup).
+        $_SESSION['private_node_grace_until'] = microtime(true) + 30.0;
+        $m17Stopped = stop_m17_and_verify_recovery();
+        clear_runtime_targets();
+        // M17 stop already verifies Analog_Bridge recovery. BM/TGIF use
+        // their own initialization; do not stack another fixed 5-second
+        // delay. Existing MMDVM-backed destination safeguard stays intact.
+        if (in_array($mode, ['YSF', 'DSTAR', 'P25', 'NXDN'], true)) {
+            pause_seconds(5.0);
+        }
+        // Continue into the established destination logic.
+    } elseif ($action === 'connect' || $action === 'private_node_lost_cleanup') {
+        respond(session_payload('ERROR: M17 HANDOFF ACTION UNSUPPORTED', ['ok' => false]), 409);
+    }
+} elseif (
+    $action === 'connect' &&
+    in_array($mode, ['BM', 'TGIF', 'YSF', 'DSTAR', 'P25', 'NXDN', 'IPSC3'], true) &&
+    empty($m17Current['audio_recovered'])
+) {
+    // A prior failed M17 EXIT/stop can leave the service gone but 34001
+    // unrecovered. Repair/verify that ownership before any destination starts.
+    stop_m17_and_verify_recovery();
+}
+
+/*
+ * IPSC3D native backend control.
+ * Uses the existing Analog_Bridge TLV path and configured private node.
+ * Analog_Bridge.ini is never changed here.
+ */
+if ($action === 'connect' && $mode === 'IPSC3') {
+    if (!(is_file(dirname(__DIR__) . '/ipsc3/alltune2-ipsc3d-helper.sh') && (is_file(dirname(__DIR__) . '/ipsc3/bin/ipsc3d-arm64') || is_file(dirname(__DIR__) . '/ipsc3/bin/ipsc3d-amd64')) && is_file(dirname(__DIR__) . '/ipsc3/config/ipsc3d.ini'))) {
+        respond(session_payload('ERROR: IPSC3D NOT INSTALLED', ['ok' => false]), 503);
+    }
+
+    $ipsc3Target = preg_replace('/[^0-9]/', '', $rawTarget) ?? '';
+
+    if ($ipsc3Target === '') {
+        respond(session_payload(
+            'ERROR: IPSC3 TARGET MUST BE A NUMERIC TALKGROUP',
+            ['ok' => false]
+        ), 422);
+    }
+
+    if (!in_array($ipsc3Slot, ['1', '2'], true)) {
+        respond(session_payload(
+            'ERROR: IPSC3 TIMESLOT MUST BE 1 OR 2',
+            ['ok' => false]
+        ), 422);
+    }
+
+    $current = require_ipsc3_status();
+    $alreadyActive = !empty($current['active']);
+    $alreadyRunning = ipsc3d_status_running($current);
+    $m17BeforeIpsc3 = require_m17_status();
+
+    if (m17d_status_running($m17BeforeIpsc3)) {
+        stop_m17_and_verify_recovery();
+    } elseif (empty($m17BeforeIpsc3['audio_recovered'])) {
+        stop_m17_and_verify_recovery();
+    }
+
+    if (!$alreadyRunning) {
+        $previousDigital = active_managed_dvswitch_mode();
+        $bmWasActive = bm_receive_is_active();
+        $tgifWasActive = tgifd_is_active();
+
+        if ($bmWasActive || $tgifWasActive || ($previousDigital !== '' && $previousDigital !== 'IPSC3')) {
+            if (!$hasRealMyNode || !$hasRealDvSwitchNode) {
+                respond(session_payload(
+                    'ERROR: DIGITAL HANDOFF NODE CONFIGURATION MISSING',
+                    ['ok' => false]
+                ), 503);
+            }
+
+            $_SESSION['private_node_grace_until'] = microtime(true) + 30.0;
+
+            disconnect_only_dvswitch_link($myNode, $dvSwitchNode);
+
+            if (bm_receive_is_active() || tgifd_is_active()) {
+                respond(session_payload(
+                    'ERROR: PREVIOUS DIGITAL BACKEND STILL ACTIVE; IPSC3 NOT STARTED',
+                    ['ok' => false]
+                ), 503);
+            }
+
+            clear_runtime_targets();
+
+            if (in_array($previousDigital, ['YSF', 'DSTAR', 'P25', 'NXDN'], true)) {
+                pause_seconds(5.0);
+            }
+        }
+    }
+
+    $result = ipsc3d_run($alreadyActive ? 'tune' : 'start', $ipsc3Target, $ipsc3Slot, $ipsc3Server);
+
+    if (empty($result['ok']) || empty($result['active'])) {
+        respond(session_payload(
+            'ERROR: IPSC3D START FAILED',
+            ['ok' => false, 'ipsc3d' => $result]
+        ), 503);
+    }
+
+    $requestedLinkMode = normalize_autoload_dvswitch_mode(
+        (string) ($_SESSION['autoload_dvswitch_mode'] ?? 'transceive')
+    );
+
+    if ($hasRealMyNode && $hasRealDvSwitchNode) {
+        enforce_dvswitch_link_mode($myNode, $dvSwitchNode, $requestedLinkMode);
+        $_SESSION['dvswitch_active_mode'] = $requestedLinkMode;
+    }
+
+    $_SESSION['selected_mode'] = 'IPSC3';
+    $_SESSION['ipsc3_slot'] = $ipsc3Slot;
+    $_SESSION['ipsc3_server'] = $ipsc3Server;
+    $_SESSION['last_mode'] = 'IPSC3';
+    $_SESSION['last_target'] = $ipsc3Target;
+    $_SESSION['pending_target'] = $ipsc3Target;
+    $_SESSION['pending_tg'] = $ipsc3Target;
+
+    $_SESSION['dmr_network'] = 'IPSC3';
+    $_SESSION['dmr_ready'] = true;
+    $_SESSION['dmr_active_network'] = 'IPSC3';
+    $_SESSION['dmr_active_target'] = $ipsc3Target;
+
+    $_SESSION['managed_dvswitch_mode'] = 'IPSC3';
+    $_SESSION['managed_dvswitch_target'] = $ipsc3Target;
+    $_SESSION['dvswitch_autoloaded'] = true;
+
+    $_SESSION['private_node_grace_until'] = microtime(true) + 10.0;
+    $_SESSION['last_status'] = 'CONNECTED: TG ' . $ipsc3Target . ' (IPSC3)';
+
+    respond(session_payload(
+        $_SESSION['last_status'],
+        ['ipsc3d' => $result]
+    ));
+}
+
+$ipsc3Current = require_ipsc3_status();
+
+if (ipsc3d_status_running($ipsc3Current)) {
+    if (in_array($action, ['disconnect', 'disconnect_dvswitch'], true)) {
+        $result = stop_ipsc3_and_verify();
+
+        clear_runtime_targets();
+        $_SESSION['last_mode'] = '';
+        $_SESSION['selected_mode'] = 'IPSC3';
+        $_SESSION['last_status'] = 'DISCONNECTED: IPSC3';
+
+        respond(session_payload(
+            $_SESSION['last_status'],
+            ['ipsc3d' => $result]
+        ));
+    }
+
+    if (
+        $action === 'connect' &&
+        in_array($mode, ['BM', 'TGIF', 'YSF', 'DSTAR', 'P25', 'NXDN'], true)
+    ) {
+        $_SESSION['private_node_grace_until'] = microtime(true) + 30.0;
+
+        $result = stop_ipsc3_and_verify();
+
+        clear_runtime_targets();
+        /* Continue into the existing destination branch. */
+    }
+
+    if ($action === 'disconnect_all' || $action === 'private_node_lost_cleanup') {
+        $result = stop_ipsc3_and_verify();
+
+        clear_runtime_targets();
+        /* Continue into the existing handler below. */
+    }
+}
 
 /*
  * BMTD early disconnect safety:

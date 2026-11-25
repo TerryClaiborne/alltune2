@@ -18,7 +18,7 @@ final class AppSession
         ini_set('session.cookie_httponly', '1');
         ini_set('session.cookie_samesite', 'Lax');
 
-        session_name('ALLTUNE2SESSID');
+        session_name('ALLTUNE2DEVSESSID');
 
         session_set_cookie_params([
             'lifetime' => 0,

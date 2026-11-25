@@ -118,7 +118,7 @@ function is_managed_digital_mode(string $mode): bool
 
 function is_managed_dvswitch_session_mode(string $mode): bool
 {
-    return in_array(normalize_mode($mode), ['BM', 'TGIF', 'YSF', 'DSTAR', 'P25', 'NXDN'], true);
+    return in_array(normalize_mode($mode), ['BM', 'TGIF', 'YSF', 'DSTAR', 'P25', 'NXDN', 'IPSC3'], true);
 }
 
 function active_managed_dvswitch_mode(string $lastMode): string
@@ -239,6 +239,12 @@ function load_favorites_file(string $path): array
         $name = trim((string) ($parts[1] ?? ''));
         $description = trim((string) ($parts[2] ?? '-'));
         $mode = normalize_mode((string) ($parts[3] ?? 'BM'));
+        $ipsc3Slot = $mode === 'IPSC3' && in_array((string) ($parts[4] ?? ''), ['1', '2'], true)
+            ? (string) $parts[4]
+            : ($mode === 'IPSC3' ? '1' : '');
+        $ipsc3Server = $mode === 'IPSC3' && in_array((string) ($parts[5] ?? ''), ['us', 'vk', 'freedmr_uk', 'uk', 'nz'], true)
+            ? (string) $parts[5]
+            : ($mode === 'IPSC3' ? 'us' : '');
 
         if ($target === '') {
             continue;
@@ -251,6 +257,8 @@ function load_favorites_file(string $path): array
             'description' => $description !== '' ? $description : '-',
             'desc' => $description !== '' ? $description : '-',
             'mode' => $mode,
+            'ipsc3_slot' => $ipsc3Slot,
+            'ipsc3_server' => $ipsc3Server,
         ];
     }
 
@@ -1072,7 +1080,7 @@ function build_tracked_allstar_connected_nodes(
 
 function read_bm_receive_helper_status(): array
 {
-    $script = dirname(__DIR__) . '/bmtd/alltune2-bmtd-helper.sh';
+    $script = '/var/www/html/alltune2/bmtd/alltune2-bmtd-helper.sh';
 
     $fallback = [
         'available' => false,
@@ -1127,7 +1135,7 @@ function read_bm_receive_helper_status(): array
 
 function read_tgifd_helper_status(): array
 {
-    $script = dirname(__DIR__) . '/tgif/alltune2-tgifd-helper.sh';
+    $script = '/var/www/html/alltune2/tgif/alltune2-tgifd-helper.sh';
 
     $fallback = [
         'available' => false,
@@ -1281,6 +1289,14 @@ $dmrNetwork = normalize_mode((string) ($_SESSION['dmr_network'] ?? ''));
 $dmrReady = !empty($_SESSION['dmr_ready']);
 $dmrActiveNetwork = normalize_mode((string) ($_SESSION['dmr_active_network'] ?? ''));
 $dmrActiveTarget = trim((string) ($_SESSION['dmr_active_target'] ?? ''));
+$ipsc3ActiveServer = strtolower(trim((string) ($_SESSION['ipsc3_server'] ?? 'us')));
+if (!in_array($ipsc3ActiveServer, ['us', 'vk', 'freedmr_uk', 'uk', 'nz'], true)) {
+    $ipsc3ActiveServer = 'us';
+}
+$ipsc3ActiveSlot = trim((string) ($_SESSION['ipsc3_slot'] ?? '1'));
+if (!in_array($ipsc3ActiveSlot, ['1', '2'], true)) {
+    $ipsc3ActiveSlot = '1';
+}
 $myNode = $config->getString('MYNODE', '');
 $dvSwitchNode = $config->getString('DVSWITCH_NODE', '');
 $dvswitchAutoloaded = !empty($_SESSION['dvswitch_autoloaded']);
@@ -1312,6 +1328,24 @@ $bmReceive = session_may_have_bm_runtime($selectedMode, $lastMode, $dmrNetwork, 
 // TGIFD helper status is safe to read while idle. It does not start TGIFD,
 // does not require network credentials, and lets the dashboard know TGIFD is available.
 $tgifd = read_tgifd_helper_status();
+$m17HelperRaw = shell_run('sudo -n ' . escapeshellarg(dirname(__DIR__) . '/m17d/alltune2-m17d-helper.sh') . ' status');
+$m17Helper = json_decode($m17HelperRaw, true);
+if (!is_array($m17Helper)) $m17Helper = ['ok' => false, 'active' => false, 'running' => true, 'ready' => false, 'audio_recovered' => false, 'target' => '', 'message' => 'M17D status unavailable'];
+
+$ipsc3HelperRaw = shell_run('sudo -n ' . escapeshellarg(dirname(__DIR__) . '/ipsc3/alltune2-ipsc3d-helper.sh') . ' status');
+$ipsc3Helper = json_decode($ipsc3HelperRaw, true);
+if (!is_array($ipsc3Helper)) {
+    $ipsc3Helper = [
+        'ok' => false,
+        'active' => false,
+        'target' => '',
+        'ipsc3d_running' => true,
+        'analog_bridge' => '',
+        'private_node_linked' => false,
+        'pid' => '',
+    ];
+}
+
 
 if ($bmReceive['active']) {
     $dmrNetwork = 'BM';
@@ -1346,8 +1380,30 @@ if ($tgifd['active']) {
     }
 }
 
+if (!empty($ipsc3Helper['active'])) {
+    $ipsc3Target = trim((string) ($ipsc3Helper['target'] ?? ''));
+
+    $dmrNetwork = 'IPSC3';
+    $dmrReady = true;
+    $dmrActiveNetwork = 'IPSC3';
+    $dmrActiveTarget = $ipsc3Target;
+    $dvswitchLinkActive = true;
+    $lastMode = 'IPSC3';
+    $managedDvSwitchMode = 'IPSC3';
+    $managedDvSwitchTarget = $ipsc3Target;
+
+    if ($ipsc3Target !== '') {
+        $lastTarget = $ipsc3Target;
+        $pendingTarget = $ipsc3Target;
+        $lastStatus = 'CONNECTED: TG ' . $ipsc3Target . ' (IPSC3)';
+    } else {
+        $lastStatus = 'CONNECTED: IPSC3';
+    }
+}
+
 $bmState = 'Idle';
 $tgifState = 'Idle';
+$ipsc3State = 'Idle';
 $ysfState = 'Idle';
 $dstarState = 'Idle';
 $p25State = 'Idle';
@@ -1379,6 +1435,13 @@ if ($tgifd['active'] && $tgifd['target'] !== '') {
     $tgifState = 'Ready';
 } elseif ($dmrNetwork === 'TGIF' && !$dmrReady) {
     $tgifState = 'Preparing';
+}
+
+if (!empty($ipsc3Helper['active'])) {
+    $ipsc3Target = trim((string) ($ipsc3Helper['target'] ?? ''));
+    $ipsc3State = $ipsc3Target !== ''
+        ? 'Connected: TG ' . $ipsc3Target
+        : 'Connected';
 }
 
 if ($managedDvSwitchMode === 'YSF' && $managedDvSwitchTarget !== '') {
@@ -1422,7 +1485,7 @@ $allstarConnectedNodes = enrich_allstar_connected_nodes($allstarConnectedNodes);
 $privateNodeLinkChecked = trim($dvSwitchNode) !== '' && !empty($liveAllstar['available']);
 $privateNodeLinked = $privateNodeLinkChecked && allstar_links_contain_node($allstarConnectedNodes, $dvSwitchNode);
 
-if ($privateNodeLinked && $managedDvSwitchMode === '') {
+if ($privateNodeLinked && $managedDvSwitchMode === '' && empty($m17Helper['active'])) {
     $runtime = external_dvswitch_runtime_status();
     $runtimeMode = normalize_mode((string) ($runtime['mode'] ?? ''));
     $runtimeTarget = trim((string) ($runtime['target'] ?? ''));
@@ -1488,6 +1551,7 @@ foreach ($allstarConnectedNodes as $link) {
 
 $bmActive = $dmrActiveNetwork === 'BM' || ($dmrNetwork === 'BM' && $dmrReady) || $bmReceive['active'];
 $tgifActive = $dmrActiveNetwork === 'TGIF' || ($dmrNetwork === 'TGIF' && $dmrReady) || $tgifd['active'];
+$ipsc3Active = !empty($ipsc3Helper['active']);
 $ysfActive = $managedDvSwitchMode === 'YSF' && $managedDvSwitchTarget !== '';
 $dstarActive = $managedDvSwitchMode === 'DSTAR' && $managedDvSwitchTarget !== '';
 $p25Active = $managedDvSwitchMode === 'P25' && $managedDvSwitchTarget !== '';
@@ -1503,12 +1567,14 @@ if ($privateNodeLinkLost) {
     $managedDvSwitchTarget = '';
     $bmActive = false;
     $tgifActive = false;
+    $ipsc3Active = false;
     $ysfActive = false;
     $dstarActive = false;
     $p25Active = false;
     $nxdnActive = false;
     $bmState = 'Idle';
     $tgifState = 'Idle';
+    $ipsc3State = 'Idle';
     $ysfState = 'Idle';
     $dstarState = 'Idle';
     $p25State = 'Idle';
@@ -1520,6 +1586,7 @@ $nodeTxOrDvSwitchKeyed = $nodeTxActive || $dvswitchNodeKeyed;
 
 $bmKeyed = $bmActive && $nodeTxOrDvSwitchKeyed;
 $tgifKeyed = $tgifActive && $nodeTxOrDvSwitchKeyed;
+$ipsc3Keyed = $ipsc3Active && $nodeTxOrDvSwitchKeyed;
 $ysfKeyed = $ysfActive && $nodeTxOrDvSwitchKeyed;
 $dstarKeyed = $dstarActive && $nodeTxOrDvSwitchKeyed;
 $p25Keyed = $p25Active && $nodeTxOrDvSwitchKeyed;
@@ -1604,6 +1671,29 @@ $activity[] = [
 ];
 
 $networkStatus = [
+    'm17' => [
+        'state' => !empty($m17Helper['active'])
+            ? 'Connected: ' . (string) ($m17Helper['target'] ?? 'M17-M17 C')
+            : (!empty($m17Helper['running']) ? 'Starting/Stopping' : (empty($m17Helper['ok']) ? 'Status unavailable' : 'Idle')),
+        'label' => !empty($m17Helper['active'])
+            ? 'Connected: ' . (string) ($m17Helper['target'] ?? 'M17-M17 C')
+            : (!empty($m17Helper['running']) ? 'Starting/Stopping' : (empty($m17Helper['ok']) ? 'Status unavailable' : 'Idle')),
+        'status' => trim((string) ($m17Helper['message'] ?? '')),
+        'active' => !empty($m17Helper['active']),
+        'running' => !empty($m17Helper['running']),
+        'ready' => !empty($m17Helper['ready']),
+        'audio_recovered' => !empty($m17Helper['audio_recovered']),
+        'keyed' => !empty($m17Helper['active']) && $nodeTxActive,
+        'target' => (string) ($m17Helper['target'] ?? ''),
+    ],
+    'ipsc3' => [
+        'state' => $ipsc3State,
+        'label' => $ipsc3State,
+        'status' => $ipsc3State,
+        'active' => $ipsc3Active,
+        'keyed' => $ipsc3Keyed,
+        'target' => trim((string) ($ipsc3Helper['target'] ?? '')),
+    ],
     'brandmeister' => [
         'state' => $bmState,
         'label' => $bmState,
@@ -1680,6 +1770,8 @@ $payload = [
         'dmr_ready' => $dmrReady,
         'dmr_active_network' => $dmrActiveNetwork,
         'dmr_active_target' => $dmrActiveTarget,
+        'ipsc3_server' => $ipsc3ActiveServer,
+        'ipsc3_slot' => $ipsc3ActiveSlot,
         'dvswitch_link_active' => $dvswitchLinkActive,
         'private_node_link_checked' => $privateNodeLinkChecked,
         'private_node_linked' => $privateNodeLinked,
@@ -1698,6 +1790,8 @@ $payload = [
     'dmr_ready' => $dmrReady,
     'dmr_active_network' => $dmrActiveNetwork,
     'dmr_active_target' => $dmrActiveTarget,
+    'ipsc3_server' => $ipsc3ActiveServer,
+    'ipsc3_slot' => $ipsc3ActiveSlot,
     'dvswitch_link_active' => $dvswitchLinkActive,
     'private_node_link_checked' => $privateNodeLinkChecked,
     'private_node_linked' => $privateNodeLinked,
@@ -1715,6 +1809,18 @@ $payload = [
         'version' => $bmReceive['version'],
     ],
 
+
+    'ipsc3d' => [
+        'available' => is_file(dirname(__DIR__) . '/ipsc3/alltune2-ipsc3d-helper.sh') && (is_file(dirname(__DIR__) . '/ipsc3/bin/ipsc3d-arm64') || is_file(dirname(__DIR__) . '/ipsc3/bin/ipsc3d-amd64')) && is_file(dirname(__DIR__) . '/ipsc3/config/ipsc3d.ini'),
+        'ok' => !empty($ipsc3Helper['ok']),
+        'active' => !empty($ipsc3Helper['active']),
+        'target' => trim((string) ($ipsc3Helper['target'] ?? '')),
+        'message' => trim((string) ($ipsc3Helper['message'] ?? '')),
+        'ipsc3d_running' => !empty($ipsc3Helper['ipsc3d_running']),
+        'analog_bridge' => trim((string) ($ipsc3Helper['analog_bridge'] ?? '')),
+        'private_node_linked' => !empty($ipsc3Helper['private_node_linked']),
+        'pid' => trim((string) ($ipsc3Helper['pid'] ?? '')),
+    ],
 
     'tgifd' => [
         'available' => $tgifd['available'],
@@ -1746,6 +1852,8 @@ $payload = [
     'favorites_count' => count($favorites),
 
     'networks' => $networkStatus,
+    'm17' => $networkStatus['m17'],
+    'ipsc3' => $networkStatus['ipsc3'],
 
     'brandmeister' => $networkStatus['brandmeister'],
     'tgif' => $networkStatus['tgif'],

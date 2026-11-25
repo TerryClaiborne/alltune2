@@ -68,6 +68,8 @@
         controlForm: document.getElementById('control-form'),
         targetInput: document.getElementById('target'),
         modeSelect: document.getElementById('mode'),
+        ipsc3Server: document.getElementById('ipsc3_server'),
+        ipsc3Slot: document.getElementById('ipsc3_slot'),
         autoloadCheckbox: document.getElementById('autoload_dvswitch'),
         autoloadModeSelect: document.getElementById('autoload_dvswitch_mode'),
         disconnectBeforeConnectCheckbox: document.getElementById('disconnect_before_connect'),
@@ -90,6 +92,8 @@
         statusDstar: document.getElementById('status-dstar'),
         statusP25: document.getElementById('status-p25'),
         statusNxdn: document.getElementById('status-nxdn'),
+        statusM17: document.getElementById('status-m17'),
+        statusIpsc3: document.getElementById('status-ipsc3'),
         statusAllstar: document.getElementById('status-allstar'),
         statusAllstarLinks: document.getElementById('status-allstar-links'),
         brandingTitle: document.getElementById('branding-title'),
@@ -106,6 +110,10 @@
         saveFavoriteDescription: document.getElementById('save-favorite-description'),
         saveFavoriteTargetValue: document.getElementById('save-favorite-target-value'),
         saveFavoriteModeValue: document.getElementById('save-favorite-mode-value'),
+        saveFavoriteIpsc3ServerRow: document.getElementById('save-favorite-ipsc3-server-row'),
+        saveFavoriteIpsc3ServerValue: document.getElementById('save-favorite-ipsc3-server-value'),
+        saveFavoriteIpsc3SlotRow: document.getElementById('save-favorite-ipsc3-slot-row'),
+        saveFavoriteIpsc3SlotValue: document.getElementById('save-favorite-ipsc3-slot-value'),
         saveFavoriteMessage: document.getElementById('save-favorite-message'),
     };
 
@@ -670,6 +678,7 @@
         }
 
         if (
+            upperStatus.startsWith('CONNECTED: M17 ') ||
             upperStatus.startsWith('CONNECTED: YSF TARGET') ||
             upperStatus.startsWith('CONNECTED: D-STAR TARGET') ||
             upperStatus.startsWith('CONNECTED: DSTAR TARGET') ||
@@ -682,7 +691,14 @@
             return;
         }
 
-        if (/^CONNECTED:\s+TG\s+/i.test(normalizedStatus) && (upperStatus.includes('(BM)') || upperStatus.includes('(TGIF)'))) {
+        if (
+            /^CONNECTED:\s+TG\s+/i.test(normalizedStatus) &&
+            (
+                upperStatus.includes('(BM)') ||
+                upperStatus.includes('(TGIF)') ||
+                upperStatus.includes('(IPSC3)')
+            )
+        ) {
             const signature = `connect:${dvswitchNode}`;
             markImmediateAudioEvent(signature);
             announceNodeConnected(dvswitchNode);
@@ -690,9 +706,11 @@
         }
 
         if (
+            upperStatus === 'DISCONNECTED: M17' ||
             upperStatus === 'DISCONNECTED: YSF' ||
             upperStatus === 'DISCONNECTED: BM' ||
             upperStatus === 'DISCONNECTED: TGIF' ||
+            upperStatus === 'DISCONNECTED: IPSC3' ||
             upperStatus === 'DISCONNECTED: D-STAR' ||
             upperStatus === 'DISCONNECTED: DSTAR' ||
             upperStatus === 'DISCONNECTED: P25' ||
@@ -720,7 +738,7 @@
             payload?.managed_dvswitch_target ?? system?.managed_dvswitch_target ?? ''
         ).trim();
 
-        if (mode === 'BM' || mode === 'TGIF') {
+        if (mode === 'BM' || mode === 'TGIF' || mode === 'IPSC3') {
             target = String(
                 payload?.dmr_active_target ?? system?.dmr_active_target ?? target
             ).trim();
@@ -733,6 +751,8 @@
             DSTAR: networks?.dstar,
             P25: networks?.p25,
             NXDN: networks?.nxdn,
+            M17: networks?.m17,
+            IPSC3: networks?.ipsc3,
         };
         const network = networkByMode[mode] || null;
         const privateLinked = system?.private_node_linked !== false;
@@ -976,7 +996,7 @@
 
     function modeForcesDvSwitch(mode) {
         const normalized = normalizeMode(mode);
-        return normalized === 'BM' || normalized === 'TGIF' || normalized === 'YSF' || normalized === 'DSTAR' || normalized === 'P25' || normalized === 'NXDN';
+        return normalized === 'BM' || normalized === 'TGIF' || normalized === 'YSF' || normalized === 'DSTAR' || normalized === 'P25' || normalized === 'NXDN' || normalized === 'M17' || normalized === 'IPSC3';
     }
 
     function syncAutoloadUiForMode(mode) {
@@ -984,7 +1004,13 @@
             return;
         }
 
-        const forced = modeForcesDvSwitch(mode);
+        const normalizedMode = normalizeMode(mode);
+        const forced = modeForcesDvSwitch(normalizedMode);
+
+        if (els.autoloadModeSelect) {
+            els.autoloadModeSelect.disabled = false;
+            els.autoloadModeSelect.title = '';
+        }
 
         if (forced) {
             if (state.manualAutoloadPreference === null) {
@@ -1029,6 +1055,8 @@
         }
 
         if (action === 'disconnect') {
+            // M17D owns the configured private DVSwitch node; its dedicated helper must perform teardown.
+            if (currentSelectedMode() === 'M17') return false;
             return currentDirectConnectedNodeCount() > 0;
         }
 
@@ -1275,7 +1303,13 @@
         return [...new Set(candidates.filter(Boolean))];
     }
 
-    function favoriteForModeTarget(mode, target, favorites = state.favoritesRaw) {
+    function favoriteForModeTarget(
+        mode,
+        target,
+        favorites = state.favoritesRaw,
+        ipsc3Server = null,
+        ipsc3Slot = null
+    ) {
         const normalizedMode = normalizeMode(mode);
         const candidates = favoriteTargetCandidates(normalizedMode, target);
 
@@ -1283,10 +1317,32 @@
             return null;
         }
 
-        return favorites.find((favorite) => (
-            candidates.includes(String(favorite?.target ?? favorite?.tg ?? '').trim())
-            && normalizeMode(favorite?.mode ?? 'BM') === normalizedMode
-        )) || null;
+        const normalizedServer = normalizedMode === 'IPSC3'
+            ? String(ipsc3Server ?? currentIpsc3Server() ?? 'us').toLowerCase()
+            : '';
+
+        const normalizedSlot = normalizedMode === 'IPSC3'
+            ? (String(ipsc3Slot ?? currentIpsc3Slot() ?? '1') === '2' ? '2' : '1')
+            : '';
+
+        return favorites.find((favorite) => {
+            if (
+                !candidates.includes(String(favorite?.target ?? favorite?.tg ?? '').trim())
+                || normalizeMode(favorite?.mode ?? 'BM') !== normalizedMode
+            ) {
+                return false;
+            }
+
+            if (normalizedMode !== 'IPSC3') {
+                return true;
+            }
+
+            const favoriteServer = String(favorite?.ipsc3_server ?? 'us').toLowerCase();
+            const favoriteSlot = String(favorite?.ipsc3_slot ?? '1') === '2' ? '2' : '1';
+
+            return favoriteServer === normalizedServer
+                && favoriteSlot === normalizedSlot;
+        }) || null;
     }
 
     function payloadDisplayParts(link) {
@@ -1376,7 +1432,21 @@
             };
         }
 
-        const favorite = favoriteForModeTarget(mode, parsed.target, favorites);
+        const activeIpsc3Server = normalizeMode(mode) === 'IPSC3'
+            ? String(networkPayload?.ipsc3_server ?? currentIpsc3Server() ?? 'us').toLowerCase()
+            : null;
+
+        const activeIpsc3Slot = normalizeMode(mode) === 'IPSC3'
+            ? (String(networkPayload?.ipsc3_slot ?? currentIpsc3Slot() ?? '1') === '2' ? '2' : '1')
+            : null;
+
+        const favorite = favoriteForModeTarget(
+            mode,
+            parsed.target,
+            favorites,
+            activeIpsc3Server,
+            activeIpsc3Slot
+        );
         const parts = favoriteDisplayParts(favorite);
 
         if (!favorite || parts.short === '') {
@@ -1702,6 +1772,41 @@
         return String(els.targetInput?.value || '').trim();
     }
 
+    function currentIpsc3Server() {
+        const server = String(els.ipsc3Server?.value || 'us').trim().toLowerCase();
+        return ['us', 'vk', 'freedmr_uk', 'uk', 'nz'].includes(server)
+            ? server
+            : 'us';
+    }
+
+    function ipsc3ServerLabel(server) {
+        const labels = {
+            us: 'US IPSC3',
+            vk: 'VKDMR Australia',
+            freedmr_uk: 'FreeDMR UK',
+            uk: 'UK IPSC3',
+            nz: 'New Zealand IPSC3',
+        };
+        return labels[String(server || 'us').toLowerCase()] || labels.us;
+    }
+
+    function currentIpsc3Slot() {
+        const slot = String(els.ipsc3Slot?.value || '1').trim();
+        return slot === '2' ? '2' : '1';
+    }
+
+    function syncIpsc3SlotUiForMode(mode) {
+        if (!els.ipsc3Slot) {
+            return;
+        }
+
+        const visible = normalizeMode(mode) === 'IPSC3';
+        els.ipsc3Slot.hidden = !visible;
+        if (els.ipsc3Server) {
+            els.ipsc3Server.hidden = !visible;
+        }
+    }
+
     function currentStatusText() {
         return els.systemStatus
             ? String(els.systemStatus.textContent || '').trim()
@@ -1763,6 +1868,8 @@
         [
             els.targetInput,
             els.modeSelect,
+            els.ipsc3Server,
+            els.ipsc3Slot,
             els.autoloadModeSelect,
             els.disconnectBeforeConnectCheckbox,
             els.audioAlertsCheckbox,
@@ -1859,6 +1966,8 @@
                 DSTAR: dataset.dstarConfigured === '1',
                 P25: dataset.p25Configured === '1',
                 NXDN: dataset.nxdnConfigured === '1',
+                M17: dataset.m17Configured === '1',
+                IPSC3: true,
             },
         };
     }
@@ -1906,6 +2015,9 @@
             return `NXDN is not configured on this system. Real MYNODE and DVSWITCH_NODE values plus NXDN_ENABLED=1 are required in ${configPath}, and /opt/MMDVM_Bridge/dvswitch.sh must exist. Connect is disabled until that is configured.`;
         }
 
+        if (normalized === 'M17') return 'M17D is not installed and verified on this development system. Connect remains disabled.';
+        if (normalized === 'IPSC3') return 'IPSC3D is not installed or enabled on this system.';
+
         return `This mode is not configured on this system. Update ${configPath} with real values before using it. Connect is disabled until configuration is complete.`;
     }
 
@@ -1947,6 +2059,8 @@
         const dstar = payload.networks?.dstar || payload.dstar || null;
         const p25 = payload.networks?.p25 || payload.p25 || null;
         const nxdn = payload.networks?.nxdn || payload.nxdn || null;
+        const m17 = payload.networks?.m17 || payload.m17 || null;
+        const ipsc3 = payload.networks?.ipsc3 || payload.ipsc3 || null;
 
         const explicitFlag =
             payload.dvswitch_link_active ??
@@ -1961,7 +2075,7 @@
         const lastMode = normalizeMode(payload.last_mode ?? system.last_mode ?? '');
         const autoload = !!(payload.autoload_dvswitch ?? system.autoload_dvswitch ?? false);
 
-        if (dmrReady || dmrNetwork !== '' || ['YSF', 'DSTAR', 'P25', 'NXDN'].includes(lastMode)) {
+        if (dmrReady || dmrNetwork !== '' || ['YSF', 'DSTAR', 'P25', 'NXDN', 'M17', 'IPSC3'].includes(lastMode)) {
             return true;
         }
 
@@ -1971,7 +2085,9 @@
             textLooksActive(ysf?.label || ysf?.state || ysf?.status) ||
             textLooksActive(dstar?.label || dstar?.state || dstar?.status) ||
             textLooksActive(p25?.label || p25?.state || p25?.status) ||
-            textLooksActive(nxdn?.label || nxdn?.state || nxdn?.status)
+            textLooksActive(nxdn?.label || nxdn?.state || nxdn?.status) ||
+            textLooksActive(m17?.label || m17?.state || m17?.status) ||
+            textLooksActive(ipsc3?.label || ipsc3?.state || ipsc3?.status)
         )) {
             return true;
         }
@@ -1982,7 +2098,9 @@
             textLooksActive(ysf?.label || ysf?.state || ysf?.status) ||
             textLooksActive(dstar?.label || dstar?.state || dstar?.status) ||
             textLooksActive(p25?.label || p25?.state || p25?.status) ||
-            textLooksActive(nxdn?.label || nxdn?.state || nxdn?.status)
+            textLooksActive(nxdn?.label || nxdn?.state || nxdn?.status) ||
+            textLooksActive(m17?.label || m17?.state || m17?.status) ||
+            textLooksActive(ipsc3?.label || ipsc3?.state || ipsc3?.status)
         ) {
             return true;
         }
@@ -2032,6 +2150,8 @@
         const dstarText = String(els.statusDstar?.textContent || '').trim();
         const p25Text = String(els.statusP25?.textContent || '').trim();
         const nxdnText = String(els.statusNxdn?.textContent || '').trim();
+        const m17Text = String(els.statusM17?.textContent || '').trim();
+        const ipsc3Text = String(els.statusIpsc3?.textContent || '').trim();
 
         if (
             textLooksActive(bmText) ||
@@ -2039,7 +2159,9 @@
             textLooksActive(ysfText) ||
             textLooksActive(dstarText) ||
             textLooksActive(p25Text) ||
-            textLooksActive(nxdnText)
+            textLooksActive(nxdnText) ||
+            textLooksActive(m17Text) ||
+            textLooksActive(ipsc3Text)
         ) {
             return true;
         }
@@ -2057,6 +2179,8 @@
         if (
             statusText.includes('(BM)') ||
             statusText.includes('(TGIF)') ||
+            statusText.includes('(IPSC3)') ||
+            statusText.includes('CONNECTED: M17 ') ||
             statusText.includes('CONNECTED: YSF TARGET') ||
             statusText.includes('CONNECTED: D-STAR TARGET') ||
             statusText.includes('CONNECTED: P25 TARGET') ||
@@ -2135,6 +2259,8 @@
             els.statusDstar,
             els.statusP25,
             els.statusNxdn,
+            els.statusM17,
+            els.statusIpsc3,
         ].map((element) => String(element?.textContent || '').trim());
 
         if (networkTexts.some((text) => textLooksActive(text))) {
@@ -2145,6 +2271,8 @@
         return (
             status.includes('(BM)') ||
             status.includes('(TGIF)') ||
+            status.includes('(IPSC3)') ||
+            status.includes('CONNECTED: M17 ') ||
             status.includes('CONNECTED: YSF TARGET') ||
             status.includes('CONNECTED: D-STAR TARGET') ||
             status.includes('CONNECTED: DSTAR TARGET') ||
@@ -2340,7 +2468,23 @@
                 extra: ' AllTune2 switches DVSwitch to NXDN and loads the configured private node automatically.',
                 disconnect: 'Disconnect clears the NXDN connection and returns DVSwitch to DMR mode.',
             },
+            M17: {
+                name: 'M17',
+                target: 'an M17 reflector/module',
+                extra: '',
+                disconnect: 'Disconnect stops the current M17 connection.',
+            },
+            IPSC3: {
+                name: 'IPSC3',
+                target: 'a talkgroup and choose TS1 or TS2',
+                extra: ' IPSC3 control TGs are server-specific; use the server’s published guidance.',
+                disconnect: 'Disconnect stops the current IPSC3 connection.',
+            },
         };
+
+        if (mode === 'M17') {
+            return 'M17 is a one-step connection supporting Transceive or Local Monitor. Choose the desired link mode before connecting. Enter an M17 reflector/module such as M17-432 H, or enter M17-M17# for the M17-M17 Parrot test. Parrot uses module Z internally and the special #PARROT destination; module Z itself is not the parrot. Load a target from Saved Favorites or press Connect. To change the target, enter or load the new one and press Connect again. You may also add AllStarLink or EchoLink connections while M17 is active. With Transceive, audio is exchanged with the private DVSwitch link. Local Monitor receives from that link without transmitting to it. Other connected links retain their own selected modes. Disconnect stops the current M17 connection.';
+        }
 
         if (managedModes[mode]) {
             const info = managedModes[mode];
@@ -2452,6 +2596,8 @@
             mode: normalizeMode(item?.mode ?? 'BM'),
             name: String(item?.name ?? ''),
             description: String(item?.description ?? item?.desc ?? '-'),
+            ipsc3_slot: String(item?.ipsc3_slot ?? ''),
+            ipsc3_server: String(item?.ipsc3_server ?? 'us'),
         })));
     }
 
@@ -2494,12 +2640,27 @@
             const name = escapeHtml(item.name ?? '');
             const description = escapeHtml(item.description ?? item.desc ?? '-');
             const mode = normalizeMode(item.mode ?? 'BM');
-            const modeDisplay = escapeHtml(favoriteModeLabel(mode));
+            const ipsc3Slot = mode === 'IPSC3'
+                ? (String(item.ipsc3_slot ?? '1') === '1' ? '1' : '2')
+                : '';
+            const ipsc3Server = mode === 'IPSC3'
+                ? String(item.ipsc3_server ?? 'us').toLowerCase()
+                : '';
+            const shortServers = {us: 'US', vk: 'VKDMR', freedmr_uk: 'FreeDMR', uk: 'UK', nz: 'NZ'};
+            const fullServers = {us: 'United States', vk: 'VKDMR Australia', freedmr_uk: 'FreeDMR UK', uk: 'United Kingdom', nz: 'New Zealand'};
+            const modeTitle = mode === 'IPSC3'
+                ? ` title="${escapeHtml(`IPSC3 ${fullServers[ipsc3Server] || fullServers.us} TS${ipsc3Slot}`)}"`
+                : '';
+            const modeDisplay = escapeHtml(
+                mode === 'IPSC3'
+                    ? `${favoriteModeLabel(mode)} ${shortServers[ipsc3Server] || shortServers.us} TS${ipsc3Slot}`
+                    : favoriteModeLabel(mode)
+            );
 
             return `
-                <tr data-target="${target}" data-mode="${escapeHtml(mode)}">
+                <tr data-target="${target}" data-mode="${escapeHtml(mode)}" data-ipsc3-slot="${escapeHtml(ipsc3Slot)}" data-ipsc3-server="${escapeHtml(ipsc3Server)}">
                     <td class="favorite-target">${target}</td>
-                    <td class="favorite-mode-cell"><span class="favorite-mode-badge">${modeDisplay}</span></td>
+                    <td class="favorite-mode-cell"><span class="favorite-mode-badge"${modeTitle}>${modeDisplay}</span></td>
                     <td class="favorite-name">${name}</td>
                     <td class="favorite-description">${description}</td>
                     <td class="favorite-action"><span class="load-button">Load</span></td>
@@ -2608,6 +2769,7 @@
             if (node === dvswitchNode) {
                 kind = modeForcesDvSwitch(state.activeManagedDvSwitchMode)
                     && state.activeManagedDvSwitchTarget !== '' ? 'dvswitch' : '';
+
             } else {
                 kind = /^3\d{6}$/.test(node) ? 'echo' : 'asl';
             }
@@ -3197,13 +3359,28 @@
         const dstar = payload.networks?.dstar || payload.dstar || null;
         const p25 = payload.networks?.p25 || payload.p25 || null;
         const nxdn = payload.networks?.nxdn || payload.nxdn || null;
+        const m17 = payload.networks?.m17 || payload.m17 || null;
+        const ipsc3 = payload.networks?.ipsc3 || payload.ipsc3 || null;
         const allstar = payload.allstar || payload.networks?.allstar || null;
-        state.activeManagedDvSwitchMode = normalizeMode(
+        const reportedManagedMode = normalizeMode(
             payload.managed_dvswitch_mode ?? system.managed_dvswitch_mode ?? ''
         );
-        state.activeManagedDvSwitchTarget = String(
+        const reportedManagedTarget = String(
             payload.managed_dvswitch_target ?? system.managed_dvswitch_target ?? ''
         ).trim();
+        const activeM17Target = payloadModeLooksActive(m17)
+            ? String(m17?.target || '').trim()
+            : '';
+
+        state.activeManagedDvSwitchMode =
+            reportedManagedMode !== ''
+                ? reportedManagedMode
+                : (activeM17Target !== '' ? 'M17' : '');
+
+        state.activeManagedDvSwitchTarget =
+            reportedManagedTarget !== ''
+                ? reportedManagedTarget
+                : activeM17Target;
         const directStatusCorrection = correctDirectStatusFromLive(statusText, allstar);
         statusText = directStatusCorrection.statusText;
         const liveStatusText = statusText;
@@ -3236,6 +3413,16 @@
         setStatusCardFromNetwork(els.statusNxdn, nxdn, 'NXDN', 'Idle', liveFavorites);
         applyKeyedStateToCard(els.statusNxdn, payloadModeLooksActive(nxdn) && dvswitchLinkLooksKeyed(allstar));
 
+        setStatusCardFromNetwork(els.statusM17, m17, 'M17', 'Idle', liveFavorites);
+        applyKeyedStateToCard(els.statusM17, !!m17?.keyed);
+
+        setStatusCardFromNetwork(els.statusIpsc3, ipsc3, 'IPSC3', 'Idle', liveFavorites);
+        applyKeyedStateToCard(
+            els.statusIpsc3,
+            payloadModeLooksActive(ipsc3) &&
+            (dvswitchLinkLooksKeyed(allstar) || !!ipsc3?.keyed)
+        );
+
         syncManagedConnectionAudio(payload, system, {
             brandmeister: bm,
             tgif,
@@ -3243,6 +3430,8 @@
             dstar,
             p25,
             nxdn,
+            m17,
+            ipsc3,
         });
         applyImmediateAllstarSnapshot(allstar);
         announceCorrectedDirectDisconnect(directStatusCorrection, previousSystemStatusText);
@@ -3274,6 +3463,7 @@
                 els.autoloadModeSelect.value = normalizeAutoloadMode(system.autoload_dvswitch_mode);
             }
         }
+        syncAutoloadUiForMode(currentSelectedMode());
 
         if (allowFieldSync && els.disconnectBeforeConnectCheckbox && !state.busy) {
             if (typeof payload.disconnect_before_connect !== 'undefined') {
@@ -3336,7 +3526,27 @@
         const dstar = payload.networks?.dstar || payload.dstar || null;
         const p25 = payload.networks?.p25 || payload.p25 || null;
         const nxdn = payload.networks?.nxdn || payload.nxdn || null;
+        const m17 = payload.networks?.m17 || payload.m17 || null;
+        const ipsc3 = payload.networks?.ipsc3 || payload.ipsc3 || null;
         const allstar = payload.allstar || payload.networks?.allstar || null;
+
+        const actionManagedMode = normalizeMode(
+            payload.managed_dvswitch_mode ?? system.managed_dvswitch_mode ?? ''
+        );
+        const actionManagedTarget = String(
+            payload.managed_dvswitch_target ?? system.managed_dvswitch_target ?? ''
+        ).trim();
+        const actionM17Target = payloadModeLooksActive(m17)
+            ? String(m17?.target || '').trim()
+            : '';
+
+        if (actionManagedMode !== '') {
+            state.activeManagedDvSwitchMode = actionManagedMode;
+            state.activeManagedDvSwitchTarget = actionManagedTarget;
+        } else if (actionM17Target !== '') {
+            state.activeManagedDvSwitchMode = 'M17';
+            state.activeManagedDvSwitchTarget = actionM17Target;
+        }
 
         if (bm) {
             setStatusCardFromNetwork(els.statusBm, bm, 'BM', 'Idle');
@@ -3368,6 +3578,20 @@
             applyKeyedStateToCard(els.statusNxdn, payloadModeLooksActive(nxdn) && dvswitchLinkLooksKeyed(allstar));
         }
 
+        if (m17) {
+            setStatusCardFromNetwork(els.statusM17, m17, 'M17', 'Idle');
+            applyKeyedStateToCard(els.statusM17, !!m17.keyed);
+        }
+
+        if (ipsc3) {
+            setStatusCardFromNetwork(els.statusIpsc3, ipsc3, 'IPSC3', 'Idle');
+            applyKeyedStateToCard(
+                els.statusIpsc3,
+                payloadModeLooksActive(ipsc3) &&
+                (dvswitchLinkLooksKeyed(allstar) || !!ipsc3.keyed)
+            );
+        }
+
         if (allstar) {
             applyImmediateAllstarSnapshot(allstar);
         }
@@ -3381,6 +3605,7 @@
                 els.autoloadModeSelect.value = normalizeAutoloadMode(system.autoload_dvswitch_mode);
             }
         }
+        syncAutoloadUiForMode(currentSelectedMode());
 
         if (els.disconnectBeforeConnectCheckbox) {
             if (typeof payload.disconnect_before_connect !== 'undefined') {
@@ -3596,6 +3821,8 @@
             tgNum: requestedTarget,
             mode: modeRequestValue(requestedUiMode),
             ui_mode: requestedUiMode,
+            ipsc3_slot: requestedUiMode === 'IPSC3' ? currentIpsc3Slot() : undefined,
+            ipsc3_server: requestedUiMode === 'IPSC3' ? currentIpsc3Server() : undefined,
             autoload_dvswitch: forcedAutoload ? 1 : (els.autoloadCheckbox.checked ? 1 : 0),
             autoload_dvswitch_mode: normalizeAutoloadMode(els.autoloadModeSelect.value),
             disconnect_before_connect: els.disconnectBeforeConnectCheckbox.checked ? 1 : 0,
@@ -4197,10 +4424,26 @@
 
             const target = row.getAttribute('data-target') || '';
             const mode = normalizeMode(row.getAttribute('data-mode') || 'BM');
+            const ipsc3Slot = row.getAttribute('data-ipsc3-slot') || '1';
+            const ipsc3Server = row.getAttribute('data-ipsc3-server') || 'us';
 
             holdUserSelection();
             els.targetInput.value = target;
             setSelectedModeValue(mode);
+
+            if (mode === 'IPSC3') {
+                if (els.ipsc3Server) {
+                    els.ipsc3Server.value =
+                        ['us', 'vk', 'freedmr_uk', 'uk', 'nz'].includes(ipsc3Server)
+                            ? ipsc3Server
+                            : 'us';
+                }
+                if (els.ipsc3Slot) {
+                    els.ipsc3Slot.value = ipsc3Slot === '1' ? '1' : '2';
+                }
+            }
+
+            syncIpsc3SlotUiForMode(mode);
             updateHelperText();
             updateButtonsFromStatus(currentStatusText());
             updateSaveFavoriteButtonState();
@@ -4279,9 +4522,15 @@
         return target;
     }
 
-    function findExistingFavorite(target, mode) {
+    function findExistingFavorite(target, mode, ipsc3Slot = null, ipsc3Server = null) {
         const normalizedTarget = String(target || '').trim();
         const normalizedMode = normalizeMode(mode || 'BM');
+        const normalizedSlot = normalizedMode === 'IPSC3'
+            ? (String(ipsc3Slot ?? currentIpsc3Slot()) === '1' ? '1' : '2')
+            : '';
+        const normalizedServer = normalizedMode === 'IPSC3'
+            ? String(ipsc3Server ?? currentIpsc3Server()).toLowerCase()
+            : '';
 
         if (normalizedTarget === '' || !Array.isArray(state.favoritesRaw)) {
             return null;
@@ -4290,6 +4539,13 @@
         return state.favoritesRaw.find((favorite) => (
             String(favorite?.target ?? favorite?.tg ?? '').trim() === normalizedTarget
             && normalizeMode(favorite?.mode ?? 'BM') === normalizedMode
+            && (
+                normalizedMode !== 'IPSC3'
+                || (
+                    (String(favorite?.ipsc3_slot ?? '1') === '1' ? '1' : '2') === normalizedSlot
+                    && String(favorite?.ipsc3_server ?? 'us').toLowerCase() === normalizedServer
+                )
+            )
         )) || null;
     }
 
@@ -4300,7 +4556,12 @@
 
         const target = String(els.targetInput.value || '').trim();
         const mode = normalizeMode(els.modeSelect.value || 'BM');
-        const existingFavorite = findExistingFavorite(target, mode);
+        const existingFavorite = findExistingFavorite(
+            target,
+            mode,
+            mode === 'IPSC3' ? currentIpsc3Slot() : null,
+            mode === 'IPSC3' ? currentIpsc3Server() : null
+        );
         const icon = els.saveFavoriteButton.querySelector('.control-save-icon');
         const text = els.saveFavoriteButton.querySelector('.control-save-text');
         const hasFavorite = !!existingFavorite && target !== '';
@@ -4342,6 +4603,20 @@
         const mode = normalizeMode(hasPrefill
             ? String(prefill.mode || 'BM')
             : String(els.modeSelect?.value || 'BM'));
+        const ipsc3Slot = mode === 'IPSC3'
+            ? (
+                hasPrefill
+                    ? (String(prefill.ipsc3_slot || '1') === '1' ? '1' : '2')
+                    : currentIpsc3Slot()
+            )
+            : '';
+        const ipsc3Server = mode === 'IPSC3'
+            ? (
+                hasPrefill
+                    ? String(prefill.ipsc3_server || 'us').toLowerCase()
+                    : currentIpsc3Server()
+            )
+            : '';
 
         if (target === '') {
             setSaveFavoriteMessage('Enter or load a TG / node before saving a favorite.', 'error');
@@ -4351,12 +4626,29 @@
         state.saveFavoriteTargetOverride = hasPrefill ? target : '';
         state.saveFavoriteModeOverride = hasPrefill ? mode : '';
 
-        const existingFavorite = findExistingFavorite(target, mode);
+        const existingFavorite = findExistingFavorite(
+            target,
+            mode,
+            ipsc3Slot,
+            mode === 'IPSC3' ? ipsc3Server : null
+        );
         const prefillName = hasPrefill ? String(prefill.name || '').trim() : '';
         const prefillDescription = hasPrefill ? String(prefill.description || '').trim() : '';
 
         els.saveFavoriteTargetValue.textContent = target;
         els.saveFavoriteModeValue.textContent = hasPrefill ? favoriteModeLabel(mode) : currentModeDisplayLabel();
+
+        const showIpsc3Details = mode === 'IPSC3';
+        if (els.saveFavoriteIpsc3ServerRow) els.saveFavoriteIpsc3ServerRow.hidden = !showIpsc3Details;
+        if (els.saveFavoriteIpsc3SlotRow) els.saveFavoriteIpsc3SlotRow.hidden = !showIpsc3Details;
+        if (els.saveFavoriteIpsc3ServerValue) {
+            els.saveFavoriteIpsc3ServerValue.textContent =
+                showIpsc3Details ? ipsc3ServerLabel(ipsc3Server) : '—';
+        }
+        if (els.saveFavoriteIpsc3SlotValue) {
+            els.saveFavoriteIpsc3SlotValue.textContent =
+                showIpsc3Details ? `TS${ipsc3Slot}` : '—';
+        }
 
         if (existingFavorite) {
             els.saveFavoriteName.value = String(existingFavorite.name ?? '');
@@ -4421,6 +4713,8 @@
         const mode = normalizeMode(state.saveFavoriteModeOverride || els.modeSelect.value || 'BM');
         const name = String(els.saveFavoriteName.value || '').trim();
         const description = String(els.saveFavoriteDescription.value || '').trim();
+        const ipsc3Slot = mode === 'IPSC3' ? currentIpsc3Slot() : '';
+        const ipsc3Server = mode === 'IPSC3' ? currentIpsc3Server() : '';
 
         if (target === '') {
             setSaveFavoriteMessage('Enter a TG / node / target before saving.', 'error');
@@ -4437,6 +4731,8 @@
             body.set('mode', mode);
             body.set('name', name);
             body.set('description', description);
+            body.set('ipsc3_slot', ipsc3Slot);
+            body.set('ipsc3_server', ipsc3Server);
 
             const payload = await requestJson(state.endpoints.favorites, {
                 method: 'POST',
@@ -4576,10 +4872,18 @@
                 holdUserSelection();
                 rememberPreferredAslUiMode(els.modeSelect.value);
                 syncAutoloadUiForMode(els.modeSelect.value);
+                syncIpsc3SlotUiForMode(els.modeSelect.value);
                 updateHelperText();
                 updateButtonsFromStatus(currentStatusText());
                 updateSaveFavoriteButtonState();
             });
+        }
+
+        if (els.ipsc3Server) {
+            els.ipsc3Server.addEventListener('change', updateSaveFavoriteButtonState);
+        }
+        if (els.ipsc3Slot) {
+            els.ipsc3Slot.addEventListener('change', updateSaveFavoriteButtonState);
         }
 
         if (els.connectButton) {
@@ -4685,6 +4989,7 @@
             state.manualAutoloadPreference = !!els.autoloadCheckbox.checked;
         }
         syncAutoloadUiForMode(currentSelectedMode());
+        syncIpsc3SlotUiForMode(currentSelectedMode());
         updateHelperText();
         updateDtmfButtonState();
         updateSaveFavoriteButtonState();

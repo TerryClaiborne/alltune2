@@ -399,7 +399,7 @@ tune_mode() {
   valid_target "$target" || fail_json "tune" "Invalid BM talkgroup/private target." "$target"
 
   # A running BM connection can retune in place, without disturbing
-  # Analog_Bridge or private node 1957. Cross-network transitions enter via
+  # Analog_Bridge or the configured private node. Cross-network transitions enter via
   # start (no running BMTD) and retain prepare_audio_path + link refresh.
   local pid
   pid="$(find_pid)"

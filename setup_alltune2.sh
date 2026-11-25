@@ -20,6 +20,12 @@ BMTD_DOCS_DIR="$BMTD_DIR/docs"
 TGIF_DIR="$APP_DIR/tgif"
 TGIF_CONFIG_DIR="$TGIF_DIR/config"
 TGIF_DOCS_DIR="$TGIF_DIR/docs"
+M17_DIR="$APP_DIR/m17d"
+M17_CONFIG_DIR="$M17_DIR/config"
+M17_DOCS_DIR="$M17_DIR/docs"
+IPSC3_DIR="$APP_DIR/ipsc3"
+IPSC3_CONFIG_DIR="$IPSC3_DIR/config"
+IPSC3_DOCS_DIR="$IPSC3_DIR/docs"
 TOOLS_DIR="$APP_DIR/tools"
 
 CONFIG_FILE="$APP_DIR/config.ini"
@@ -47,6 +53,31 @@ TGIF_BINARY="${TGIF_BINARY:-$TGIF_BINARY_ARM}"
 TGIF_COPYRIGHT_NOTICE="$TGIF_DOCS_DIR/TGIFD-COPYRIGHT-NOTICE.md"
 TGIF_LOG_FILE="$LOGS_DIR/tgifd.log"
 TGIFD_CONFIG_HAS_PLACEHOLDERS=0
+
+M17_HELPER="$M17_DIR/alltune2-m17d-helper.sh"
+M17_RUNNER="$M17_DIR/alltune2-m17d-runner.sh"
+M17_CONFIG_FILE="$M17_CONFIG_DIR/m17d.ini"
+M17_CONFIG_CREATED_THIS_RUN=0
+M17_CONFIG_EXAMPLE="$M17_CONFIG_DIR/m17d.ini.example"
+M17_BINARY_ARM="$M17_DIR/bin/m17d-arm64"
+# Keep the accepted historical AMD64 filename; do not rename it during this release.
+M17_BINARY_AMD="$M17_DIR/bin/m17amd64"
+M17_BINARY="${M17_BINARY:-$M17_BINARY_ARM}"
+M17_COPYRIGHT_NOTICE="$M17_DOCS_DIR/M17D-COPYRIGHT-NOTICE.md"
+M17_LOG_FILE="$LOGS_DIR/m17d.log"
+M17_CONFIG_HAS_PLACEHOLDERS=0
+
+IPSC3_HELPER="$IPSC3_DIR/alltune2-ipsc3d-helper.sh"
+IPSC3_CONFIG_FILE="$IPSC3_CONFIG_DIR/ipsc3d.ini"
+IPSC3_CONFIG_CREATED_THIS_RUN=0
+IPSC3_CONFIG_EXAMPLE="$IPSC3_CONFIG_DIR/ipsc3d.ini.example"
+IPSC3_BINARY_ARM="$IPSC3_DIR/bin/ipsc3d-arm64"
+IPSC3_BINARY_AMD="$IPSC3_DIR/bin/ipsc3d-amd64"
+IPSC3_BINARY="${IPSC3_BINARY:-$IPSC3_BINARY_ARM}"
+IPSC3_COPYRIGHT_NOTICE="$IPSC3_DOCS_DIR/IPSC3D-COPYRIGHT-NOTICE.md"
+IPSC3_LOG_FILE="$LOGS_DIR/ipsc3d.log"
+IPSC3_CONFIG_HAS_PLACEHOLDERS=0
+
 SETUP_COMPLETED=0
 SKIP_APT="${ALLTUNE2_SKIP_APT:-0}"
 
@@ -96,12 +127,16 @@ ANALOG_BRIDGE_INI="/opt/Analog_Bridge/Analog_Bridge.ini"
 ASTERISK_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk"
 BMTD_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-bmtd"
 TGIF_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-tgifd"
+M17_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-m17d"
+IPSC3_HELPER_SUDOERS_FILE="/etc/sudoers.d/alltune2-ipsc3d"
 MMDVM_BRIDGE_SUDOERS_FILE="/etc/sudoers.d/alltune2-mmdvm-bridge"
 ASTERISK_SERVICE_SUDOERS_FILE="/etc/sudoers.d/alltune2-asterisk-service"
 YSFGATEWAY_SUDOERS_FILE="/etc/sudoers.d/alltune2-ysfgateway"
 
 BMTD_LOGROTATE_FILE="/etc/logrotate.d/alltune2-bmtd"
 TGIF_LOGROTATE_FILE="/etc/logrotate.d/alltune2-tgifd"
+M17_LOGROTATE_FILE="/etc/logrotate.d/alltune2-m17d"
+IPSC3_LOGROTATE_FILE="/etc/logrotate.d/alltune2-ipsc3d"
 APACHE_SECURITY_CONF_NAME="alltune2-security"
 APACHE_SECURITY_CONF_FILE="/etc/apache2/conf-available/${APACHE_SECURITY_CONF_NAME}.conf"
 
@@ -109,6 +144,8 @@ EXPECTED_ASTERISK_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${ASTERISK_BIN}
 EXPECTED_BMTD_HELPER_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${BMTD_HELPER} *"
 SYSTEMCTL_BIN="/usr/bin/systemctl"
 EXPECTED_TGIF_HELPER_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${TGIF_HELPER} *"
+EXPECTED_M17_HELPER_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${M17_HELPER} *"
+EXPECTED_IPSC3_HELPER_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${IPSC3_HELPER} *"
 EXPECTED_MMDVM_BRIDGE_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start mmdvm_bridge.service"
 EXPECTED_ASTERISK_SERVICE_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} restart asterisk.service"
 EXPECTED_YSFGATEWAY_SUDOERS_RULE="${WEB_USER} ALL=(root) NOPASSWD: ${SYSTEMCTL_BIN} start ysfgateway.service, ${SYSTEMCTL_BIN} stop ysfgateway.service"
@@ -386,6 +423,7 @@ install_minimum_packages_if_possible() {
         logrotate
         openssl
         libstdc++6
+        libcodec2-1.2
         zlib1g
         libzstd1
     )
@@ -443,24 +481,34 @@ select_backend_binaries_for_arch() {
         arm64|aarch64)
             BMTD_BINARY="$BMTD_BINARY_ARM"
             TGIF_BINARY="$TGIF_BINARY_ARM"
+            M17_BINARY="$M17_BINARY_ARM"
+            IPSC3_BINARY="$IPSC3_BINARY_ARM"
             ;;
         amd64|x86_64)
             BMTD_BINARY="$BMTD_BINARY_AMD"
             TGIF_BINARY="$TGIF_BINARY_AMD"
+            M17_BINARY="$M17_BINARY_AMD"
+            IPSC3_BINARY="$IPSC3_BINARY_AMD"
             ;;
         *)
-            fail "Unsupported architecture for BMTD/TGIFD binaries: ${arch:-unknown}. Supported: arm64/aarch64 and amd64/x86_64."
+            fail "Unsupported architecture for AllTune2 native backends: ${arch:-unknown}. Supported: arm64/aarch64 and amd64/x86_64."
             ;;
     esac
 
     quiet_detail "Selected BMTD binary for ${arch}: $BMTD_BINARY"
     quiet_detail "Selected TGIFD binary for ${arch}: $TGIF_BINARY"
+    quiet_detail "Selected M17D binary for ${arch}: $M17_BINARY"
+    quiet_detail "Selected IPSC3D binary for ${arch}: $IPSC3_BINARY"
 }
 
 make_dirs() {
     log "Ensuring required directories exist..."
     mkdir -p "$PUBLIC_DIR" "$ASSETS_DIR" "$CSS_DIR" "$JS_DIR" "$API_DIR" "$APP_CODE_DIR"
-    mkdir -p "$DATA_DIR" "$DOCS_DIR" "$LOGS_DIR" "$RUN_DIR" "$BMTD_DIR" "$BMTD_CONFIG_DIR" "$BMTD_DOCS_DIR" "$TGIF_DIR" "$TGIF_CONFIG_DIR" "$TGIF_DOCS_DIR" "$TOOLS_DIR"
+    mkdir -p "$DATA_DIR" "$DOCS_DIR" "$LOGS_DIR" "$RUN_DIR" \
+        "$BMTD_DIR" "$BMTD_CONFIG_DIR" "$BMTD_DOCS_DIR" \
+        "$TGIF_DIR" "$TGIF_CONFIG_DIR" "$TGIF_DOCS_DIR" \
+        "$M17_DIR" "$M17_CONFIG_DIR" "$M17_DOCS_DIR" \
+        "$IPSC3_DIR" "$IPSC3_CONFIG_DIR" "$IPSC3_DOCS_DIR" "$TOOLS_DIR"
 }
 
 create_config_example() {
@@ -854,6 +902,7 @@ password=YOUR_BRANDMEISTER_HOTSPOT_PASSWORD
 
 [identity]
 dmr_id=YOUR_DMR_ID
+hotspot_radio_id=YOUR_BM_HOTSPOT_ID
 callsign=YOUR_CALLSIGN
 
 [tlv]
@@ -995,25 +1044,22 @@ sync_bmtd_config_from_system_if_safe() {
     local dvswitch_node=""
     local bm_password=""
     local gateway_dmr_id=""
+    local repeater_id=""
     local callsign=""
 
     mynode="$(config_value_or_empty MYNODE || true)"
     dvswitch_node="$(config_value_or_empty DVSWITCH_NODE || true)"
     bm_password="$(config_value_or_empty BM_SelfcarePassword || true)"
     gateway_dmr_id="$(ini_value_any_section "$ANALOG_BRIDGE_INI" gatewayDmrId || true)"
+    repeater_id="$(ini_value_any_section "$ANALOG_BRIDGE_INI" repeaterID || true)"
     if [[ -z "$gateway_dmr_id" ]]; then
-        gateway_dmr_id="$(ini_value_any_section "$ANALOG_BRIDGE_INI" repeaterID || true)"
+        gateway_dmr_id="$repeater_id"
     fi
-    callsign="$(ini_value_any_section "$ANALOG_BRIDGE_INI" gatewayCallsign || true)"
-    if [[ -z "$callsign" ]]; then
-        callsign="$(ini_value_any_section "$DVSWITCH_INI" gatewayCallsign || true)"
-    fi
-    if [[ -z "$callsign" ]]; then
-        callsign="$(ini_value_any_section "$DVSWITCH_INI" callsign || true)"
-    fi
+    callsign="$(discover_callsign || true)"
 
     bmtd_ini_set_if_placeholder_or_missing "brandmeister" "password" "$bm_password"
     bmtd_ini_set_if_placeholder_or_missing "identity" "dmr_id" "$gateway_dmr_id"
+    bmtd_ini_set_if_placeholder_or_missing "identity" "hotspot_radio_id" "$repeater_id"
     bmtd_ini_set_if_placeholder_or_missing "identity" "callsign" "$callsign"
     bmtd_ini_set_if_placeholder_or_missing "private_node" "mynode" "$mynode"
     bmtd_ini_set_if_placeholder_or_missing "private_node" "private_node" "$dvswitch_node"
@@ -1041,6 +1087,392 @@ check_bmtd_config_content() {
         warn "bmtd.ini does not define dmr_id. BMTD will not identify correctly."
     fi
 }
+
+
+backend_ini_set_if_placeholder_or_missing() {
+    local file="$1"
+    local section="$2"
+    local key="$3"
+    local value="$4"
+    local quote_value="${5:-0}"
+
+    [[ -n "$value" ]] || return 0
+    is_placeholder_value "$value" && return 0
+
+    python3 - "$file" "$section" "$key" "$value" "$quote_value" <<'PYBACKENDINI'
+import pathlib
+import sys
+
+path = pathlib.Path(sys.argv[1])
+section, key, value, quote_value = sys.argv[2:6]
+text = path.read_text() if path.exists() else ""
+lines = text.splitlines()
+
+placeholder_tokens = (
+    "", "YOUR", "Your", "CHANGE_ME", "PLACEHOLDER", "YOURCALL",
+    "YOUR_CALLSIGN", "YOUR_DMR_ID", "YOUR_GATEWAY_DMR_ID", "YOUR_HOTSPOT_ID",
+    "YOUR_ALLSTAR_NODE", "YOUR_DVSWITCH_NODE", "000000000"
+)
+
+def placeholder(v):
+    raw = v.strip().strip('"')
+    return raw == "" or any(token in raw for token in placeholder_tokens if token)
+
+def render(v):
+    raw = v.strip().strip('"')
+    if quote_value == "1":
+        raw = raw.replace('\\', '\\\\').replace('"', '\\"')
+        return f'"{raw}"'
+    return v.strip()
+
+start = None
+end = len(lines)
+for i, line in enumerate(lines):
+    if line.strip().lower() == f"[{section}]".lower():
+        start = i
+        for j in range(i + 1, len(lines)):
+            t = lines[j].strip()
+            if t.startswith("[") and t.endswith("]"):
+                end = j
+                break
+        break
+
+changed = False
+if start is None:
+    if lines and lines[-1].strip():
+        lines.append("")
+    lines.extend([f"[{section}]", f"{key}={render(value)}"])
+    changed = True
+else:
+    found = None
+    for i in range(start + 1, end):
+        if "=" not in lines[i]:
+            continue
+        left, right = lines[i].split("=", 1)
+        if left.strip().lower() == key.lower():
+            found = i
+            if placeholder(right):
+                lines[i] = f"{key}={render(value)}"
+                changed = True
+            break
+    if found is None:
+        lines.insert(end, f"{key}={render(value)}")
+        changed = True
+
+if changed:
+    path.write_text("\n".join(lines).rstrip() + "\n")
+PYBACKENDINI
+}
+
+discover_callsign() {
+    local callsign=""
+    callsign="$(ini_value_any_section "$ANALOG_BRIDGE_INI" gatewayCallsign || true)"
+    [[ -n "$callsign" ]] || callsign="$(ini_value_any_section "$DVSWITCH_INI" gatewayCallsign || true)"
+    [[ -n "$callsign" ]] || callsign="$(ini_value_any_section "$DVSWITCH_INI" callsign || true)"
+    [[ -n "$callsign" ]] || callsign="$(ini_value_any_section "$MMDVM_BRIDGE_INI" Callsign || true)"
+    printf '%s\n' "$callsign"
+}
+
+discover_private_usrp_tuple() {
+    local private_node="$1"
+    [[ "$private_node" =~ ^[0-9]+$ ]] || return 0
+    [[ -r /etc/asterisk/rpt.conf ]] || return 0
+
+    python3 - /etc/asterisk/rpt.conf "$private_node" <<'PYUSRP'
+import re, sys
+path, node = sys.argv[1:3]
+section = None
+for raw in open(path, encoding="utf-8", errors="replace"):
+    line = raw.split(';',1)[0].strip()
+    if not line:
+        continue
+    m = re.match(r'^\[([^]]+)\]$', line)
+    if m:
+        section = m.group(1).strip()
+        continue
+    if section != node or '=' not in line:
+        continue
+    key, value = [x.strip() for x in line.split('=',1)]
+    if key.lower() != 'rxchannel':
+        continue
+    m = re.match(r'^USRP/([^:]+):(\d+):(\d+)$', value, re.I)
+    if m:
+        print('\t'.join(m.groups()))
+        raise SystemExit(0)
+PYUSRP
+}
+
+create_m17d_config_example_if_missing() {
+    if [[ ! -f "$M17_CONFIG_EXAMPLE" ]]; then
+        log "Creating starter m17d.ini.example..."
+        mkdir -p "$M17_CONFIG_DIR"
+        cat > "$M17_CONFIG_EXAMPLE" <<'EOFM17INI'
+[identity]
+callsign = YOUR_CALLSIGN
+
+[private_node]
+mynode = YOUR_ALLSTAR_NODE
+private_node = YOUR_DVSWITCH_PRIVATE_NODE
+asterisk_bin = /usr/sbin/asterisk
+analog_bridge_service = analog_bridge
+
+[usrp]
+host = 127.0.0.1
+listen_port = 34001
+send_port = 32001
+
+[audio]
+rx_gain = 2.5
+
+[logging]
+log_file = /var/www/html/alltune2/logs/m17d.log
+packet_debug = false
+
+[runtime]
+ready_file = /run/alltune2-m17-ready
+retune_file = /run/alltune2-m17-retune
+retune_ack_file = /run/alltune2-m17-retune-ack
+state_file = /var/www/html/alltune2/run/alltune2-m17d.state
+EOFM17INI
+    fi
+    chmod 0644 "$M17_CONFIG_EXAMPLE"
+    chown root:root "$M17_CONFIG_EXAMPLE"
+}
+
+create_m17d_config_if_missing() {
+    M17_CONFIG_CREATED_THIS_RUN=0
+    if [[ -f "$M17_CONFIG_FILE" ]]; then
+        log "Live m17d.ini already exists. Preserving current values."
+    elif [[ -f "$M17_CONFIG_EXAMPLE" ]]; then
+        cp -f "$M17_CONFIG_EXAMPLE" "$M17_CONFIG_FILE"
+        M17_CONFIG_CREATED_THIS_RUN=1
+    else
+        fail "Neither $M17_CONFIG_FILE nor $M17_CONFIG_EXAMPLE exists."
+    fi
+    chmod 0640 "$M17_CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$M17_CONFIG_FILE"
+}
+
+sync_m17d_config_from_system_if_safe() {
+    [[ "$M17_CONFIG_CREATED_THIS_RUN" == "1" ]] || return 0
+    local mynode dvswitch_node callsign usrp host listen send
+    mynode="$(config_value_or_empty MYNODE || true)"
+    dvswitch_node="$(config_value_or_empty DVSWITCH_NODE || true)"
+    callsign="$(discover_callsign || true)"
+
+    backend_ini_set_if_placeholder_or_missing "$M17_CONFIG_FILE" identity callsign "$callsign"
+    backend_ini_set_if_placeholder_or_missing "$M17_CONFIG_FILE" private_node mynode "$mynode"
+    backend_ini_set_if_placeholder_or_missing "$M17_CONFIG_FILE" private_node private_node "$dvswitch_node"
+
+    usrp="$(discover_private_usrp_tuple "$dvswitch_node" || true)"
+    if [[ -n "$usrp" ]]; then
+        IFS=$'\t' read -r host listen send <<<"$usrp"
+        backend_ini_set_if_placeholder_or_missing "$M17_CONFIG_FILE" usrp host "$host"
+        backend_ini_set_if_placeholder_or_missing "$M17_CONFIG_FILE" usrp listen_port "$listen"
+        backend_ini_set_if_placeholder_or_missing "$M17_CONFIG_FILE" usrp send_port "$send"
+    fi
+
+    chmod 0640 "$M17_CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$M17_CONFIG_FILE"
+}
+
+create_ipsc3d_config_example_if_missing() {
+    if [[ ! -f "$IPSC3_CONFIG_EXAMPLE" ]]; then
+        log "Creating starter ipsc3d.ini.example..."
+        mkdir -p "$IPSC3_CONFIG_DIR"
+        cat > "$IPSC3_CONFIG_EXAMPLE" <<'EOFIPSC3INI'
+[general]
+log_file = /var/www/html/alltune2/logs/ipsc3d.log
+
+[logging]
+# Packet-level DMRD diagnostics are disabled during normal operation.
+packet_debug = false
+
+[identity]
+callsign = YOURCALL
+dmr_id = YOUR_DMR_ID
+hotspot_radio_id = YOUR_HOTSPOT_ID
+
+[ipsc3]
+host = us.ipsc3.net
+port = 55555
+security_key = PASSWORD
+startup_tg = 777
+default_slot = 1
+options = 
+server = us
+
+[behavior]
+receive_timeout_ms = 1000
+keepalive_seconds = 5
+protocol_assert_seconds = 30
+soft_refresh_trigger_missed = 2
+max_missed = 5
+reconnect_delay_seconds = 5
+
+[network]
+local_bind_port = 0
+
+[tlv]
+rx_port = 31103
+tx_host = 127.0.0.1
+tx_port = 31100
+timeout_ms = 500
+inbound_slot = 2
+
+[private_node]
+enabled = true
+asterisk_bin = /usr/sbin/asterisk
+mynode = YOUR_ALLSTAR_NODE
+private_node = YOUR_PRIVATE_NODE
+autoload_mode = transceive
+
+[mmdvm]
+slots = 4
+
+[server_us]
+label = US IPSC3
+host = us.ipsc3.net
+port = 55555
+security_key = PASSWORD
+
+[server_vk]
+label = VKDMR Australia
+host = ipsc3.vkdmr.com
+port = 55555
+security_key = PASSWORD
+
+[server_freedmr_uk]
+label = FreeDMR UK
+host = ipsc3.freedmr.uk
+port = 55555
+security_key = PASSWORD
+
+[server_uk]
+label = UK IPSC3
+host = uk.ipsc3.net
+port = 55555
+security_key = PASSWORD
+
+[server_nz]
+label = New Zealand IPSC3
+host = zl.ipsc3.net
+port = 55555
+security_key = PASSWORD
+EOFIPSC3INI
+    fi
+    chmod 0644 "$IPSC3_CONFIG_EXAMPLE"
+    chown root:root "$IPSC3_CONFIG_EXAMPLE"
+}
+
+create_ipsc3d_config_if_missing() {
+    IPSC3_CONFIG_CREATED_THIS_RUN=0
+    if [[ -f "$IPSC3_CONFIG_FILE" ]]; then
+        log "Live ipsc3d.ini already exists. Preserving current values."
+    elif [[ -f "$IPSC3_CONFIG_EXAMPLE" ]]; then
+        cp -f "$IPSC3_CONFIG_EXAMPLE" "$IPSC3_CONFIG_FILE"
+        IPSC3_CONFIG_CREATED_THIS_RUN=1
+    else
+        fail "Neither $IPSC3_CONFIG_FILE nor $IPSC3_CONFIG_EXAMPLE exists."
+    fi
+    chmod 0640 "$IPSC3_CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$IPSC3_CONFIG_FILE"
+}
+
+sync_ipsc3d_config_from_system_if_safe() {
+    [[ "$IPSC3_CONFIG_CREATED_THIS_RUN" == "1" ]] || return 0
+    local mynode dvswitch_node callsign gateway_dmr_id repeater_id
+    mynode="$(config_value_or_empty MYNODE || true)"
+    dvswitch_node="$(config_value_or_empty DVSWITCH_NODE || true)"
+    callsign="$(discover_callsign || true)"
+    gateway_dmr_id="$(ini_value_any_section "$ANALOG_BRIDGE_INI" gatewayDmrId || true)"
+    repeater_id="$(ini_value_any_section "$ANALOG_BRIDGE_INI" repeaterID || true)"
+
+    backend_ini_set_if_placeholder_or_missing "$IPSC3_CONFIG_FILE" identity callsign "$callsign"
+    backend_ini_set_if_placeholder_or_missing "$IPSC3_CONFIG_FILE" identity dmr_id "$gateway_dmr_id"
+    # IPSC3 uses the local repeater/hotspot metadata ID directly. Do NOT apply TGIF's +1 rule here.
+    backend_ini_set_if_placeholder_or_missing "$IPSC3_CONFIG_FILE" identity hotspot_radio_id "$repeater_id"
+    backend_ini_set_if_placeholder_or_missing "$IPSC3_CONFIG_FILE" private_node mynode "$mynode"
+    backend_ini_set_if_placeholder_or_missing "$IPSC3_CONFIG_FILE" private_node private_node "$dvswitch_node"
+
+    chmod 0640 "$IPSC3_CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$IPSC3_CONFIG_FILE"
+}
+
+check_ini_example_schema_required() {
+    local live="$1" example="$2" label="$3"
+    python3 - "$live" "$example" "$label" <<'PYSCHEMA'
+import configparser, sys
+live, example, label = sys.argv[1:4]
+def load(path):
+    c=configparser.ConfigParser(interpolation=None)
+    with open(path, encoding='utf-8') as f: c.read_file(f)
+    return c
+l=load(live); e=load(example)
+missing=[]
+for section in e.sections():
+    if not l.has_section(section):
+        missing.append(f'[{section}]')
+        continue
+    for key in e[section].keys():
+        if not l.has_option(section,key): missing.append(f'[{section}] {key}')
+if missing:
+    raise SystemExit(f"{label} live config is missing example schema keys: " + ', '.join(missing))
+PYSCHEMA
+}
+
+check_m17d_config_content() {
+    M17_CONFIG_HAS_PLACEHOLDERS=0
+    if grep -Eq 'YOUR|CHANGE_ME|PLACEHOLDER|000000000' "$M17_CONFIG_FILE"; then
+        M17_CONFIG_HAS_PLACEHOLDERS=1
+        quiet_detail "m17d.ini still contains placeholders. Review before first M17 connect."
+    fi
+    check_ini_example_schema_required "$M17_CONFIG_FILE" "$M17_CONFIG_EXAMPLE" M17D || fail "M17D config schema validation failed."
+}
+
+check_ipsc3d_config_content() {
+    IPSC3_CONFIG_HAS_PLACEHOLDERS=0
+    if grep -Eq 'YOUR|CHANGE_ME|PLACEHOLDER|000000000' "$IPSC3_CONFIG_FILE"; then
+        IPSC3_CONFIG_HAS_PLACEHOLDERS=1
+        quiet_detail "ipsc3d.ini still contains placeholders. Review before first IPSC3 connect."
+    fi
+    check_ini_example_schema_required "$IPSC3_CONFIG_FILE" "$IPSC3_CONFIG_EXAMPLE" IPSC3D || fail "IPSC3D config schema validation failed."
+}
+
+prepare_native_binary() {
+    local label="$1" helper="$2" binary="$3"
+    [[ -f "$helper" ]] || fail "$label helper not found: $helper"
+    [[ -f "$binary" ]] || fail "$label binary not found: $binary"
+    chmod 0755 "$binary"
+    chown root:root "$binary"
+    [[ -x "$binary" ]] || fail "$label binary is not executable: $binary"
+    if command -v ldd >/dev/null 2>&1; then
+        if ldd "$binary" 2>/dev/null | grep -q 'not found'; then
+            ldd "$binary" 2>/dev/null || true
+            fail "$label binary has missing runtime libraries. Setup installed the supported runtime packages, but this binary still has unresolved dependencies."
+        fi
+    fi
+}
+
+prepare_m17d_binary() { prepare_native_binary M17D "$M17_HELPER" "$M17_BINARY"; }
+prepare_ipsc3d_binary() { prepare_native_binary IPSC3D "$IPSC3_HELPER" "$IPSC3_BINARY"; }
+
+stop_existing_native_backend() {
+    local label="$1" helper="$2" selected="$3" arm="$4" amd="$5"
+    if [[ -x "$helper" ]]; then "$helper" stop >/dev/null 2>&1 || true; fi
+    for binary in "$selected" "$arm" "$amd"; do
+        [[ -n "$binary" ]] && pkill -f "$binary" >/dev/null 2>&1 || true
+    done
+    sleep 1
+    for binary in "$selected" "$arm" "$amd"; do
+        if [[ -n "$binary" ]] && pgrep -f "$binary" >/dev/null 2>&1; then
+            fail "$label process is still running after stop attempt: $binary"
+        fi
+    done
+}
+
+stop_existing_m17d_if_running() { stop_existing_native_backend M17D "$M17_HELPER" "$M17_BINARY" "$M17_BINARY_ARM" "$M17_BINARY_AMD"; }
+stop_existing_ipsc3d_if_running() { stop_existing_native_backend IPSC3D "$IPSC3_HELPER" "$IPSC3_BINARY" "$IPSC3_BINARY_ARM" "$IPSC3_BINARY_AMD"; }
 
 prepare_bmtd_binary() {
     log "Checking shipped BMTD binary..."
@@ -1183,6 +1615,17 @@ check_required_repo_files() {
         "$TGIF_BINARY"
         "$TGIF_CONFIG_EXAMPLE"
         "$TGIF_COPYRIGHT_NOTICE"
+        "$M17_HELPER"
+        "$M17_RUNNER"
+        "$M17_BINARY_ARM"
+        "$M17_BINARY_AMD"
+        "$M17_CONFIG_EXAMPLE"
+        "$M17_COPYRIGHT_NOTICE"
+        "$IPSC3_HELPER"
+        "$IPSC3_BINARY_ARM"
+        "$IPSC3_BINARY_AMD"
+        "$IPSC3_CONFIG_EXAMPLE"
+        "$IPSC3_COPYRIGHT_NOTICE"
     )
 
     local missing=0
@@ -1200,6 +1643,25 @@ check_required_repo_files() {
     fi
 
     log "Required repo files look present."
+}
+
+check_release_runtime_paths() {
+    log "Checking release runtime paths..."
+
+    local files=(
+        "$APP_DIR/api/connect.php"
+        "$APP_DIR/api/status.php"
+        "$M17_HELPER"
+        "$M17_RUNNER"
+        "$IPSC3_HELPER"
+    )
+    local file
+    for file in "${files[@]}"; do
+        [[ -f "$file" ]] || continue
+        if grep -qF '/alltune2-dev' "$file"; then
+            fail "Development-only /alltune2-dev path remains in release runtime file: $file"
+        fi
+    done
 }
 
 check_optional_files() {
@@ -1286,6 +1748,8 @@ set_permissions() {
         "$DOCS_DIR"
         "$TOOLS_DIR"
         "$BMTD_DIR"
+        "$M17_DIR"
+        "$IPSC3_DIR"
     )
     local dir
     for dir in "${readonly_dirs[@]}"; do
@@ -1327,7 +1791,13 @@ set_permissions() {
     chmod 0755 "$TGIF_HELPER"
     chown root:root "$TGIF_HELPER"
 
-    for file in "$TGIF_BINARY_ARM" "$TGIF_BINARY_AMD"; do
+    chmod 0755 "$M17_HELPER" "$M17_RUNNER"
+    chown root:root "$M17_HELPER" "$M17_RUNNER"
+
+    chmod 0755 "$IPSC3_HELPER"
+    chown root:root "$IPSC3_HELPER"
+
+    for file in "$TGIF_BINARY_ARM" "$TGIF_BINARY_AMD" "$M17_BINARY_ARM" "$M17_BINARY_AMD" "$IPSC3_BINARY_ARM" "$IPSC3_BINARY_AMD"; do
         if [[ -f "$file" ]]; then
             chmod 0755 "$file"
             chown root:root "$file"
@@ -1379,6 +1849,19 @@ set_permissions() {
         chmod 0644 "$TGIF_COPYRIGHT_NOTICE"
         chown root:root "$TGIF_COPYRIGHT_NOTICE"
     fi
+
+    for dir in "$M17_CONFIG_DIR" "$IPSC3_CONFIG_DIR"; do
+        chmod 0755 "$dir"
+        chown root:"$WEB_GROUP" "$dir"
+    done
+    chmod 0640 "$M17_CONFIG_FILE" "$IPSC3_CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$M17_CONFIG_FILE" "$IPSC3_CONFIG_FILE"
+    chmod 0644 "$M17_CONFIG_EXAMPLE" "$IPSC3_CONFIG_EXAMPLE"
+    chown root:root "$M17_CONFIG_EXAMPLE" "$IPSC3_CONFIG_EXAMPLE"
+
+    for file in "$M17_COPYRIGHT_NOTICE" "$IPSC3_COPYRIGHT_NOTICE"; do
+        if [[ -f "$file" ]]; then chmod 0644 "$file"; chown root:root "$file"; fi
+    done
 }
 
 install_validated_sudoers_file() {
@@ -1412,11 +1895,15 @@ create_or_update_sudoers_files() {
     [[ -x "$ASTERISK_BIN" ]] || fail "Asterisk binary not found at $ASTERISK_BIN"
     [[ -x "$BMTD_HELPER" ]] || fail "BMTD helper is not executable: $BMTD_HELPER"
     [[ -x "$TGIF_HELPER" ]] || fail "TGIF helper is not executable: $TGIF_HELPER"
+    [[ -x "$M17_HELPER" ]] || fail "M17D helper is not executable: $M17_HELPER"
+    [[ -x "$IPSC3_HELPER" ]] || fail "IPSC3D helper is not executable: $IPSC3_HELPER"
     [[ -x "$SYSTEMCTL_BIN" ]] || fail "systemctl not found at $SYSTEMCTL_BIN"
 
     install_validated_sudoers_file "$ASTERISK_SUDOERS_FILE" "$EXPECTED_ASTERISK_SUDOERS_RULE"
     install_validated_sudoers_file "$BMTD_HELPER_SUDOERS_FILE" "$EXPECTED_BMTD_HELPER_SUDOERS_RULE"
     install_validated_sudoers_file "$TGIF_HELPER_SUDOERS_FILE" "$EXPECTED_TGIF_HELPER_SUDOERS_RULE"
+    install_validated_sudoers_file "$M17_HELPER_SUDOERS_FILE" "$EXPECTED_M17_HELPER_SUDOERS_RULE"
+    install_validated_sudoers_file "$IPSC3_HELPER_SUDOERS_FILE" "$EXPECTED_IPSC3_HELPER_SUDOERS_RULE"
     install_validated_sudoers_file "$MMDVM_BRIDGE_SUDOERS_FILE" "$EXPECTED_MMDVM_BRIDGE_SUDOERS_RULE"
     install_validated_sudoers_file "$ASTERISK_SERVICE_SUDOERS_FILE" "$EXPECTED_ASTERISK_SERVICE_SUDOERS_RULE"
     install_validated_sudoers_file "$YSFGATEWAY_SUDOERS_FILE" "$EXPECTED_YSFGATEWAY_SUDOERS_RULE"
@@ -1452,6 +1939,9 @@ check_shell_syntax() {
     bash -n "$SCRIPT_PATH" || fail "Shell syntax check failed: $SCRIPT_PATH"
     bash -n "$BMTD_HELPER" || fail "Shell syntax check failed: $BMTD_HELPER"
     bash -n "$TGIF_HELPER" || fail "Shell syntax check failed: $TGIF_HELPER"
+    bash -n "$M17_HELPER" || fail "Shell syntax check failed: $M17_HELPER"
+    bash -n "$M17_RUNNER" || fail "Shell syntax check failed: $M17_RUNNER"
+    bash -n "$IPSC3_HELPER" || fail "Shell syntax check failed: $IPSC3_HELPER"
 
     log "Shell syntax checks passed."
 }
@@ -1476,6 +1966,22 @@ check_bmtd_runtime_files() {
     [[ -f "$BMTD_CONFIG_EXAMPLE" ]] || fail "Missing BMTD config example: $BMTD_CONFIG_EXAMPLE"
 
     log "BMTD runtime checks passed."
+}
+
+
+check_m17d_runtime_files() {
+    [[ -x "$M17_BINARY" ]] || fail "M17D binary missing or not executable: $M17_BINARY"
+    [[ -x "$M17_HELPER" ]] || fail "Missing/executable M17D helper: $M17_HELPER"
+    [[ -x "$M17_RUNNER" ]] || fail "Missing/executable M17D runner: $M17_RUNNER"
+    [[ -f "$M17_CONFIG_EXAMPLE" ]] || fail "Missing M17D config example: $M17_CONFIG_EXAMPLE"
+    [[ -f "$M17_COPYRIGHT_NOTICE" ]] || fail "Missing M17D copyright notice: $M17_COPYRIGHT_NOTICE"
+}
+
+check_ipsc3d_runtime_files() {
+    [[ -x "$IPSC3_BINARY" ]] || fail "IPSC3D binary missing or not executable: $IPSC3_BINARY"
+    [[ -x "$IPSC3_HELPER" ]] || fail "Missing/executable IPSC3D helper: $IPSC3_HELPER"
+    [[ -f "$IPSC3_CONFIG_EXAMPLE" ]] || fail "Missing IPSC3D config example: $IPSC3_CONFIG_EXAMPLE"
+    [[ -f "$IPSC3_COPYRIGHT_NOTICE" ]] || fail "Missing IPSC3D copyright notice: $IPSC3_COPYRIGHT_NOTICE"
 }
 
 check_config_content() {
@@ -1520,6 +2026,14 @@ warn_if_placeholder_values_remain() {
 
     if grep -Eq "$placeholders_regex" "$BMTD_CONFIG_FILE"; then
         quiet_detail "bmtd.ini still contains placeholder values. BMTD may not work until it is reviewed."
+    fi
+
+    if grep -Eq 'YOUR|CHANGE_ME|PLACEHOLDER|000000000' "$M17_CONFIG_FILE"; then
+        quiet_detail "m17d.ini still contains placeholder values. M17D will need review before first use."
+    fi
+
+    if grep -Eq 'YOUR|CHANGE_ME|PLACEHOLDER|000000000' "$IPSC3_CONFIG_FILE"; then
+        quiet_detail "ipsc3d.ini still contains placeholder values. IPSC3D will need review before first use."
     fi
 
     if ! grep -Eq 'MYNODE[[:space:]]*=' "$CONFIG_FILE"; then
@@ -1687,6 +2201,8 @@ create_or_update_logrotate_files() {
 
     ensure_log_file_if_missing "$BMTD_LOG_FILE"
     ensure_log_file_if_missing "$TGIF_LOG_FILE"
+    ensure_log_file_if_missing "$M17_LOG_FILE"
+    ensure_log_file_if_missing "$IPSC3_LOG_FILE"
     normalize_tgifd_log_path
 
     local default_one_day_rule
@@ -1704,6 +2220,12 @@ create_or_update_logrotate_files() {
 
     install_logrotate_rule_without_duplicates "$TGIF_LOGROTATE_FILE" "$default_one_day_rule" \
         "$TGIF_LOG_FILE"
+
+    install_logrotate_rule_without_duplicates "$M17_LOGROTATE_FILE" "$default_one_day_rule" \
+        "$M17_LOG_FILE"
+
+    install_logrotate_rule_without_duplicates "$IPSC3_LOGROTATE_FILE" "$default_one_day_rule" \
+        "$IPSC3_LOG_FILE"
 
     if command -v logrotate >/dev/null 2>&1; then
         if logrotate -d /etc/logrotate.conf >/dev/null 2>&1; then
@@ -1749,7 +2271,7 @@ create_or_update_apache_security_conf() {
     </FilesMatch>
 </Directory>
 
-<DirectoryMatch "^$APP_DIR/(\.git|app|data|docs|logs|run|tools|tgif|bmtd)(/|$)">
+<DirectoryMatch "^$APP_DIR/(\.git|app|data|docs|logs|run|tools|tgif|bmtd|m17d|ipsc3)(/|$)">
     Require all denied
 </DirectoryMatch>
 EOF
@@ -2022,6 +2544,8 @@ check_sudoers_requirement() {
     grep -qF "$EXPECTED_BMTD_HELPER_SUDOERS_RULE" "$BMTD_HELPER_SUDOERS_FILE"         || fail "Expected BMTD sudoers rule not found in $BMTD_HELPER_SUDOERS_FILE"
 
     grep -qF "$EXPECTED_TGIF_HELPER_SUDOERS_RULE" "$TGIF_HELPER_SUDOERS_FILE"         || fail "Expected TGIF helper sudoers rule not found in $TGIF_HELPER_SUDOERS_FILE"
+    grep -qF "$EXPECTED_M17_HELPER_SUDOERS_RULE" "$M17_HELPER_SUDOERS_FILE"           || fail "Expected M17D helper sudoers rule not found in $M17_HELPER_SUDOERS_FILE"
+    grep -qF "$EXPECTED_IPSC3_HELPER_SUDOERS_RULE" "$IPSC3_HELPER_SUDOERS_FILE"       || fail "Expected IPSC3D helper sudoers rule not found in $IPSC3_HELPER_SUDOERS_FILE"
 
     grep -qF "$EXPECTED_MMDVM_BRIDGE_SUDOERS_RULE" "$MMDVM_BRIDGE_SUDOERS_FILE"         || fail "Expected MMDVM_Bridge sudoers rule not found in $MMDVM_BRIDGE_SUDOERS_FILE"
 
@@ -2032,6 +2556,8 @@ check_sudoers_requirement() {
     visudo -cf "$ASTERISK_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $ASTERISK_SUDOERS_FILE"
     visudo -cf "$BMTD_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $BMTD_HELPER_SUDOERS_FILE"
     visudo -cf "$TGIF_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $TGIF_HELPER_SUDOERS_FILE"
+    visudo -cf "$M17_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $M17_HELPER_SUDOERS_FILE"
+    visudo -cf "$IPSC3_HELPER_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $IPSC3_HELPER_SUDOERS_FILE"
     visudo -cf "$MMDVM_BRIDGE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $MMDVM_BRIDGE_SUDOERS_FILE"
     visudo -cf "$ASTERISK_SERVICE_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $ASTERISK_SERVICE_SUDOERS_FILE"
     visudo -cf "$YSFGATEWAY_SUDOERS_FILE" >/dev/null || fail "Sudoers file failed validation: $YSFGATEWAY_SUDOERS_FILE"
@@ -2039,6 +2565,8 @@ check_sudoers_requirement() {
     check_web_user_sudo_allowed "Asterisk CLI permission" "$ASTERISK_BIN"
     check_web_user_sudo_allowed "BMTD helper permission" "$BMTD_HELPER"
     check_web_user_sudo_allowed "TGIFD helper permission" "$TGIF_HELPER"
+    check_web_user_sudo_allowed "M17D helper permission" "$M17_HELPER"
+    check_web_user_sudo_allowed "IPSC3D helper permission" "$IPSC3_HELPER"
     check_web_user_sudo_allowed "MMDVM_Bridge start" "$SYSTEMCTL_BIN" start mmdvm_bridge.service
     check_web_user_sudo_allowed "YSFGateway start" "$SYSTEMCTL_BIN" start ysfgateway.service
     check_web_user_sudo_allowed "YSFGateway stop" "$SYSTEMCTL_BIN" stop ysfgateway.service
@@ -2118,12 +2646,47 @@ check_bmtd_helper_cli() {
     fi
 }
 
+
+check_native_helper_cli() {
+    local label="$1" helper="$2" sudoers_file="$3" placeholders="$4"
+    local output=""
+    if [[ "$placeholders" == "1" ]]; then
+        quiet_detail "$label helper runtime status check skipped because its new private config still contains placeholders."
+        return 0
+    fi
+    if output="$(sudo "$helper" status 2>&1)"; then
+        helper_status_output_has_action_status "$output" || quiet_detail "$label root helper status returned non-standard output: $output"
+    else
+        quiet_detail "$label root helper status returned non-zero: $output"
+    fi
+    if output="$(sudo -u "$WEB_USER" sudo -n "$helper" status 2>&1)"; then
+        helper_status_output_has_action_status "$output" || fail "$label helper web-user sudo check returned unexpected output: $output"
+    else
+        fail "$label helper web-user sudo check failed. Verify $sudoers_file. Output: $output"
+    fi
+}
+
+check_m17_helper_cli() { check_native_helper_cli M17D "$M17_HELPER" "$M17_HELPER_SUDOERS_FILE" "$M17_CONFIG_HAS_PLACEHOLDERS"; }
+check_ipsc3_helper_cli() { check_native_helper_cli IPSC3D "$IPSC3_HELPER" "$IPSC3_HELPER_SUDOERS_FILE" "$IPSC3_CONFIG_HAS_PLACEHOLDERS"; }
+
+detect_lan_ip() {
+    local ip=""
+    if command -v ip >/dev/null 2>&1; then
+        ip="$(ip -4 route get 1.1.1.1 2>/dev/null | awk '{for(i=1;i<=NF;i++) if($i=="src"){print $(i+1); exit}}' || true)"
+    fi
+    if [[ -z "$ip" ]]; then
+        ip="$(hostname -I 2>/dev/null | awk '{print $1}' || true)"
+    fi
+    printf '%s\n' "$ip"
+}
+
 show_summary() {
     local version="unknown"
     local web_login="Disabled"
     local apache_security="Not installed"
     local auth_enabled=""
     local auth_hash=""
+    local lan_ip=""
 
     if [[ -f "$VERSION_FILE" ]]; then
         version="$(tr -d '
@@ -2156,6 +2719,8 @@ show_summary() {
     echo "Apache security: $apache_security"
     echo "BM backend:      BMTD"
     echo "TGIF backend:    TGIFD"
+    echo "M17 backend:     M17D"
+    echo "IPSC3 backend:   IPSC3D"
     if [[ "$INSTALLER_MODE" != "verbose" ]]; then
         echo "Installer log:   $QUIET_COMMAND_LOG"
     fi
@@ -2169,12 +2734,29 @@ show_summary() {
     else
         echo "TGIFD config:    Checked"
     fi
+    if [[ "${M17_CONFIG_HAS_PLACEHOLDERS:-0}" == "1" ]]; then
+        echo "M17D config:     Review before first M17 connect ($M17_CONFIG_FILE)"
+    else
+        echo "M17D config:     Checked"
+    fi
+    if [[ "${IPSC3_CONFIG_HAS_PLACEHOLDERS:-0}" == "1" ]]; then
+        echo "IPSC3D config:   Review before first IPSC3 connect ($IPSC3_CONFIG_FILE)"
+    else
+        echo "IPSC3D config:   Checked"
+    fi
     echo
 
     echo "Notes:"
     echo "- Existing config.ini, favorites.txt, and web login settings are preserved."
     echo "- New installs should review config files if placeholders are shown above."
-    echo "- Open /alltune2/public/ and test your enabled modes."
+    lan_ip="$(detect_lan_ip)"
+    if [[ -n "$lan_ip" ]]; then
+        echo "Open in your browser: http://${lan_ip}/alltune2/public/"
+    else
+        echo "Open in your browser: /alltune2/public/"
+    fi
+    echo "Set or change the AllTune2 web password with:"
+    echo "sudo /var/www/html/alltune2/setup_alltune2.sh --set-admin-password"
     echo
 }
 
@@ -2207,6 +2789,10 @@ main() {
 
     require_debian_13
 
+    echo
+    echo "Please wait while AllTune2 installs. This may take some time."
+    echo
+
     step "Installing/checking minimum runtime prerequisites..."
     install_minimum_packages_if_possible
     check_runtime_tools
@@ -2215,13 +2801,16 @@ main() {
 
     step "Checking repo and system dependencies..."
     check_required_repo_files
+    check_release_runtime_paths
     check_optional_files
     check_dvswitch_dependencies
     check_bmtd_helper_local_paths
 
-    step "Checking BMTD/TGIFD binaries..."
+    step "Checking native backend binaries..."
     prepare_bmtd_binary
     prepare_tgifd_binary
+    prepare_m17d_binary
+    prepare_ipsc3d_binary
 
     step "Preparing application files..."
     make_dirs
@@ -2240,9 +2829,19 @@ main() {
     create_tgifd_config_if_missing
     sync_tgifd_config_from_system_if_safe
 
-    step "Stopping any active BMTD/TGIFD after preflight checks..."
+    step "Preparing M17D/IPSC3D configuration..."
+    create_m17d_config_example_if_missing
+    create_m17d_config_if_missing
+    sync_m17d_config_from_system_if_safe
+    create_ipsc3d_config_example_if_missing
+    create_ipsc3d_config_if_missing
+    sync_ipsc3d_config_from_system_if_safe
+
+    step "Stopping any active native backends after preflight checks..."
     stop_existing_bmtd_if_running
     stop_existing_tgifd_if_running
+    stop_existing_m17d_if_running
+    stop_existing_ipsc3d_if_running
 
     step "Applying permissions and sudoers..."
     set_permissions
@@ -2258,15 +2857,21 @@ main() {
     check_bmtd_binary
     check_tgifd_runtime_files
     check_tgifd_binary
+    check_m17d_runtime_files
+    check_ipsc3d_runtime_files
     check_config_content
     check_bmtd_config_content
     check_tgifd_config_content
+    check_m17d_config_content
+    check_ipsc3d_config_content
     warn_if_placeholder_values_remain
     check_external_config_hints
     check_sudoers_requirement
     check_status_endpoint_cli
     check_bmtd_helper_cli
     check_tgif_helper_cli
+    check_m17_helper_cli
+    check_ipsc3_helper_cli
 
     SETUP_COMPLETED=1
     show_summary

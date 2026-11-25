@@ -1,0 +1,27 @@
+[identity]
+callsign = YOUR_CALLSIGN
+
+[private_node]
+mynode = YOUR_ALLSTAR_NODE
+private_node = YOUR_DVSWITCH_PRIVATE_NODE
+asterisk_bin = /usr/sbin/asterisk
+analog_bridge_service = analog_bridge
+
+[usrp]
+host = 127.0.0.1
+listen_port = 34001
+send_port = 32001
+
+[audio]
+rx_gain = 2.5
+
+[logging]
+log_file = /var/www/html/alltune2/logs/m17d.log
+packet_debug = false
+
+[runtime]
+ready_file = /run/alltune2-m17-ready
+retune_file = /run/alltune2-m17-retune
+retune_ack_file = /run/alltune2-m17-retune-ack
+state_file = /var/www/html/alltune2/run/alltune2-m17d.state
+

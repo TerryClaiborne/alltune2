@@ -2,9 +2,9 @@
 
 ### One dashboard for AllStarLink 3 and your digital networks
 
-AllTune2 is a browser-based radio control center for **Debian 13 (ASL3)** on **ARM64/aarch64** (including compatible Raspberry Pi systems) and **AMD64/x86_64**. It lets you manage BrandMeister, TGIF, YSF, D-Star, P25, NXDN, AllStarLink, and EchoLink from one place, with saved Favorites, Live Status, spoken audio alerts, and Local Monitor / Transceive controls.
+AllTune2 is a browser-based radio control center for **Debian 13 (ASL3)** on **ARM64/aarch64** (including compatible Raspberry Pi systems) and **AMD64/x86_64**. It lets you manage BrandMeister, TGIF, M17, IPSC3, YSF, D-Star, P25, NXDN, AllStarLink, and EchoLink from one place, with saved Favorites, Live Status, spoken audio alerts, and Local Monitor / Transceive controls.
 
-**AllTune2 does not replace AllStarLink, Asterisk, Analog_Bridge, or your existing DVSwitch installation.** BrandMeister uses the native **BMTD** backend and TGIF uses the native **TGIFD** backend. These paths do not use STFU, HBLink, or the old MMDVM_Bridge DMR sections. YSF, D-Star, P25, and NXDN still depend on your already-working DVSwitch / MMDVM_Bridge setup. M17 is not included.
+**AllTune2 does not replace AllStarLink, Asterisk, Analog_Bridge, or your existing DVSwitch installation.** BrandMeister uses the native **BMTD** backend, TGIF uses the native **TGIFD** backend, M17 uses the native **M17D** backend, and IPSC3 uses the native **IPSC3D** backend. These paths do not use STFU, HBLink, or the old MMDVM_Bridge DMR sections. YSF, D-Star, P25, and NXDN still depend on your already-working DVSwitch / MMDVM_Bridge setup.
 
 <p align="center"><a href="screenshot.png"><img src="screenshot.png" alt="AllTune2 dark dashboard" width="850"></a></p>
 <p align="center"><em>Dark dashboard</em></p>
@@ -18,7 +18,7 @@ AllTune2 is a browser-based radio control center for **Debian 13 (ASL3)** on **A
 - **Analog_Bridge** running with a working local audio path.
 - Apache and PHP for the web dashboard.
 - For **YSF, D-Star, P25, and NXDN**, the underlying DVSwitch/MMDVM_Bridge modes must already work before you enable them in AllTune2.
-- Correct BrandMeister and/or TGIF credentials for the networks you use.
+- Correct BrandMeister, TGIF, and/or IPSC3 credentials for the networks you use.
 
 Do not change a working `/opt/MMDVM_Bridge/MMDVM_Bridge.ini` `[General] Id` just because BMTD and TGIFD use separate backends. Leave the existing ID alone if YSF, D-Star, P25, or NXDN are already working.
 
@@ -33,7 +33,7 @@ cd /var/www/html/alltune2
 sudo ./setup_alltune2.sh
 ```
 
-The installer detects architecture, selects the matching BMTD/TGIFD binaries, creates missing local config files from examples (preserving any that already exist), sets helper permissions and sudoers rules, configures Apache protections, and runs basic runtime checks. It may take longer on slower hardware such as a Raspberry Pi 3.
+The installer detects architecture, selects the matching BMTD/TGIFD/M17D/IPSC3D binaries, installs required runtime packages such as Codec2 for M17D, creates missing local config files from examples (preserving any that already exist), sets helper permissions and sudoers rules, configures Apache protections, and runs basic runtime checks. It may take longer on slower hardware such as a Raspberry Pi 3.
 
 After setup, review and edit the live configuration files listed below before connecting.
 
@@ -72,6 +72,8 @@ Live configuration lives under `/var/www/html/alltune2`. Replace the example val
 | `config.ini` | Main node, private digital node, optional networks, web login | `config.ini.example` |
 | `bmtd/config/bmtd.ini` | BrandMeister credentials, BMTD identity, TLV ports | `bmtd/config/bmtd.ini.example` |
 | `tgif/config/tgifd.ini` | TGIF security key, TGIFD identity, TLV ports | `tgif/config/tgifd.ini.example` |
+| `m17d/config/m17d.ini` | M17D identity, private-node settings, USRP ports, audio/runtime paths | `m17d/config/m17d.ini.example` |
+| `ipsc3/config/ipsc3d.ini` | IPSC3 credentials, IPSC3D identity, server selection, TLV/private-node settings | `ipsc3/config/ipsc3d.ini.example` |
 
 ### 1. Main settings — `config.ini`
 
@@ -146,7 +148,7 @@ tx_host=127.0.0.1
 tx_port=31100
 ```
 
-BrandMeister hotspot ID is typically your base DMR ID plus a suffix (example: base `3220008` → hotspot `322000811`). Use the ID actually registered for your BrandMeister connection. Do not reuse the TGIFD hotspot ID unless it is also correct for BrandMeister.
+BrandMeister hotspot ID is typically your base DMR ID plus a suffix (example: base `1234567` → hotspot `123456711`). Use the ID actually registered for your BrandMeister connection. Do not reuse the TGIFD hotspot ID unless it is also correct for BrandMeister.
 
 ### 3. TGIF — `tgifd.ini`
 
@@ -197,14 +199,124 @@ slots=2
 
 When changing the startup talkgroup, keep `startup_tg` and the `StartRef` value inside `options` consistent.
 
+### 4. M17 — `m17d.ini`
+
+File: `/var/www/html/alltune2/m17d/config/m17d.ini`
+
+The installer creates this file from the supplied example when it is missing and attempts to populate the callsign, main AllStarLink node, and private digital node from the existing AllTune2 / DVSwitch configuration. Preserve the remaining supplied settings unless your local audio path requires something different.
+
+| Section | Setting | Purpose / example |
+|---|---|---|
+| `[identity]` | `callsign` | Your callsign |
+| `[private_node]` | `mynode` | Must match `MYNODE` in `config.ini` |
+| `[private_node]` | `private_node` | Must match `DVSWITCH_NODE` in `config.ini` |
+| `[private_node]` | `asterisk_bin` | Normally `/usr/sbin/asterisk` |
+| `[private_node]` | `analog_bridge_service` | Normally `analog_bridge` |
+| `[usrp]` | `host` | Normally `127.0.0.1` |
+| `[usrp]` | `listen_port` / `send_port` | Normally `34001` / `32001` |
+| `[audio]` | `rx_gain` | M17 receive gain; supplied default is `2.5` |
+| `[logging]` | `log_file` | Production M17D log path |
+| `[runtime]` | `ready_file` / `retune_file` / `retune_ack_file` / `state_file` | Runtime coordination/state paths; keep the supplied production paths |
+
+Representative values:
+
+```ini
+[identity]
+callsign=YOUR_CALLSIGN
+
+[private_node]
+mynode=YOUR_ALLSTAR_NODE
+private_node=YOUR_DVSWITCH_NODE
+asterisk_bin=/usr/sbin/asterisk
+analog_bridge_service=analog_bridge
+
+[usrp]
+host=127.0.0.1
+listen_port=34001
+send_port=32001
+
+[audio]
+rx_gain=2.5
+
+[logging]
+log_file=/var/www/html/alltune2/logs/m17d.log
+packet_debug=false
+
+[runtime]
+ready_file=/run/alltune2-m17-ready
+retune_file=/run/alltune2-m17-retune
+retune_ack_file=/run/alltune2-m17-retune-ack
+state_file=/var/www/html/alltune2/run/alltune2-m17d.state
+```
+
+M17D temporarily uses the configured Analog_Bridge USRP audio path while connected. Leave a working `/opt/Analog_Bridge/Analog_Bridge.ini` unchanged; AllTune2 does not require an M17-specific edit to that file.
+
+### 5. IPSC3 — `ipsc3d.ini`
+
+File: `/var/www/html/alltune2/ipsc3/config/ipsc3d.ini`
+
+The installer creates this file from the supplied example when it is missing and attempts to populate the callsign, gateway DMR ID, hotspot/repeater ID, main AllStarLink node, and private digital node from the existing AllTune2 / DVSwitch configuration. Review the selected server and security key before connecting.
+
+| Section | Setting | Purpose / example |
+|---|---|---|
+| `[identity]` | `callsign` | Your callsign |
+| `[identity]` | `dmr_id` | Your base/gateway DMR ID |
+| `[identity]` | `hotspot_radio_id` | Separate repeater/hotspot ID used by the local digital path |
+| `[ipsc3]` | `server` | Selects one of the supplied server sections, e.g. `us` |
+| `[ipsc3]` | `host` / `port` | Active IPSC3 server address and port |
+| `[ipsc3]` | `security_key` | IPSC3 network security key |
+| `[ipsc3]` | `startup_tg` | Initial talkgroup, e.g. `777` |
+| `[ipsc3]` | `default_slot` | Default slot used by IPSC3D |
+| `[private_node]` | `mynode` / `private_node` | Must match `config.ini` |
+| `[private_node]` | `autoload_mode` | Normally `transceive` |
+| `[tlv]` | `rx_port` / `tx_port` | Normally `31103` / `31100` |
+| `[tlv]` | `inbound_slot` | Keep the supplied value unless your local configuration requires otherwise |
+| `[mmdvm]` | `slots` | Metadata used by IPSC3D; keep the supplied value unless required otherwise |
+
+Representative values (not a complete replacement file):
+
+```ini
+[identity]
+callsign=YOUR_CALLSIGN
+dmr_id=YOUR_GATEWAY_DMR_ID
+hotspot_radio_id=YOUR_HOTSPOT_RADIO_ID
+
+[ipsc3]
+host=us.ipsc3.net
+port=55555
+security_key=PASSWORD
+startup_tg=777
+default_slot=1
+options=
+server=us
+
+[private_node]
+enabled=true
+asterisk_bin=/usr/sbin/asterisk
+mynode=YOUR_ALLSTAR_NODE
+private_node=YOUR_DVSWITCH_NODE
+autoload_mode=transceive
+
+[tlv]
+rx_port=31103
+tx_host=127.0.0.1
+tx_port=31100
+timeout_ms=500
+inbound_slot=2
+```
+
+Keep `dmr_id` and `hotspot_radio_id` as separate values. IPSC3D uses the gateway DMR ID for the network/session identity and the hotspot/repeater ID for the local digital-radio metadata path.
+
 ### Backends and architectures
 
 | Network | ARM64/aarch64 binary | AMD64/x86_64 binary |
 |---|---|---|
 | BrandMeister (BMTD) | `bmtd/bin/bmtd` | `bmtd/bin/bmtdamd` |
 | TGIF (TGIFD) | `tgif/bin/tgifd` | `tgif/bin/tgifdamd` |
+| M17 (M17D) | `m17d/bin/m17d-arm64` | `m17d/bin/m17amd64` |
+| IPSC3 (IPSC3D) | `ipsc3/bin/ipsc3d-arm64` | `ipsc3/bin/ipsc3d-amd64` |
 
-The installer selects the correct binary for the machine. Both binaries are required whenever private native backend code changes.
+The installer selects the correct binary for the machine. ARM64 and AMD64 binaries are required whenever private native backend code changes.
 
 ## Open the dashboard
 
@@ -245,6 +357,8 @@ Normal setup and update leave existing authentication settings unchanged. The in
 |---|---|
 | **BrandMeister** | Talkgroup number or Favorite. Private calls: append one `#` to a DMR ID. Select another TG and Connect to change. |
 | **TGIF** | Talkgroup number or Favorite. Select another TG and Connect to change. |
+| **M17** | Reflector and module selection or Favorite. M17D uses the native M17 backend and the configured private-node audio path. |
+| **IPSC3** | Talkgroup number or Favorite. Select another TG and Connect to change; the active IPSC3 server is selected in `ipsc3d.ini`. |
 | **YSF** | Room or reflector that already works on the base system. |
 | **D-Star** | Reflector; requires `DSTAR_ENABLED=1` and a working base mode. |
 | **P25** | Destination; requires `P25_ENABLED=1` and a working base mode. |
@@ -278,6 +392,8 @@ Your personal list is stored at `/var/www/html/alltune2/data/favorites.txt`. A n
 |---|---|
 | **BrandMeister does not connect** | `config.ini`, `bmtd/config/bmtd.ini`, `logs/bmtd.log`. Run `sudo /var/www/html/alltune2/bmtd/alltune2-bmtd-helper.sh status`. Verify host, port, password, DMR ID, and hotspot ID. |
 | **TGIF does not connect or inbound audio is unreliable** | `tgif/config/tgifd.ini`, `logs/tgifd.log`. Run `sudo /var/www/html/alltune2/tgif/alltune2-tgifd-helper.sh status`. Confirm `security_key`, IDs, `startup_tg`/`options`, and `[tlv] inbound_slot=2`. |
+| **M17 does not connect or audio is missing** | `m17d/config/m17d.ini`, `logs/m17d.log`. Run `sudo /var/www/html/alltune2/m17d/alltune2-m17d-helper.sh status`. Confirm callsign, node values, USRP ports, Codec2 runtime, and that Analog_Bridge is healthy when M17D is inactive. |
+| **IPSC3 does not connect or audio/identity is wrong** | `ipsc3/config/ipsc3d.ini`, `logs/ipsc3d.log`. Run `sudo /var/www/html/alltune2/ipsc3/alltune2-ipsc3d-helper.sh status`. Confirm server/security key, gateway DMR ID, separate hotspot/repeater ID, node values, and TLV settings. |
 | **YSF / D-Star / P25 / NXDN missing** | Confirm the base MMDVM_Bridge/DVSwitch mode works, the enable flag is set, node values are correct, and `/opt/MMDVM_Bridge/dvswitch.sh` exists. |
 | **Choppy or broken audio** | Restart Analog_Bridge after disconnecting active calls: `sudo systemctl restart analog_bridge`. |
 | **Login not working** | Review the auth lines in `config.ini` and use `--set-admin-password`. Do not hand-edit the hash. |
@@ -291,6 +407,8 @@ Do not commit live configuration, credentials, state, or personal Favorites:
 - `/var/www/html/alltune2/config.ini`
 - `/var/www/html/alltune2/bmtd/config/bmtd.ini`
 - `/var/www/html/alltune2/tgif/config/tgifd.ini`
+- `/var/www/html/alltune2/m17d/config/m17d.ini`
+- `/var/www/html/alltune2/ipsc3/config/ipsc3d.ini`
 - `/var/www/html/alltune2/data/favorites.txt`
 
 Do not change these underlying files unless required for your already-working DVSwitch system: `/opt/Analog_Bridge/Analog_Bridge.ini`, `/opt/MMDVM_Bridge/DVSwitch.ini`, `/opt/MMDVM_Bridge/MMDVM_Bridge.ini`.

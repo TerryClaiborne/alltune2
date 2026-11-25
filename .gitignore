@@ -56,3 +56,9 @@ tgif/*.log.*
 data/favorites.txt
 
 bmtd/config/bmtd.ini
+
+# IPSC3D private runtime configuration
+ipsc3/config/ipsc3d.ini
+
+# M17D private runtime configuration
+m17d/config/m17d.ini

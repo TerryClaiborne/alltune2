@@ -529,16 +529,16 @@ select.control {
 
 .status-grid {
     display: grid;
-    grid-template-columns: repeat(3, minmax(0, 1fr));
-    gap: 7px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 6px;
 }
 
 .status-box {
     background: var(--bg-status);
     border: 1px solid var(--border-soft);
     border-radius: 12px;
-    padding: 6px 8px;
-    min-height: 50px;
+    padding: 4px 8px;
+    min-height: 43px;
 }
 
 .status-box-wide {
@@ -4284,4 +4284,116 @@ html[data-theme="dark"] .favorites-manage-table th {
     background: linear-gradient(180deg, #224d83 0%, #14233b 100%) !important;
     border-bottom-color: #3b557d !important;
     box-shadow: inset 0 -1px 0 #4a9dff !important;
+}
+
+/* M17-IPSC3-FAVORITES-IDENTITIES */
+.favorites-network-line .net-m17 { color: #d7b8ff; }
+.favorites-network-line .net-ipsc3 { color: #ffcd85; }
+
+.favorites-table tbody tr[data-mode="M17"] .favorite-mode-badge {
+    background: rgba(112, 58, 210, 0.40);
+    border-color: #bd9aff;
+    color: #eadcff;
+}
+.favorites-table tbody tr[data-mode="IPSC3"] .favorite-mode-badge {
+    background: rgba(180, 105, 0, 0.38);
+    border-color: #ffbb59;
+    color: #ffe3b2;
+}
+
+html[data-theme="light"] .favorites-table tbody tr[data-mode="M17"] .favorite-mode-badge {
+    background: #e8dcff;
+    border-color: #7031b5;
+    color: #54218c;
+}
+html[data-theme="light"] .favorites-table tbody tr[data-mode="IPSC3"] .favorite-mode-badge {
+    background: #fff0d3;
+    border-color: #b3650a;
+    color: #844100;
+}
+
+
+/* IPSC3 compact top-row controls */
+#ipsc3_slot {
+    width: 72px;
+    min-width: 72px;
+    max-width: 72px;
+}
+
+.control-save-favorite-button {
+    width: 118px;
+    min-width: 118px;
+    max-width: 118px;
+    padding: 0 8px;
+    gap: 5px;
+}
+
+.control-save-icon {
+    font-size: 1.15rem;
+}
+
+.control-save-text {
+    font-size: 0.68rem;
+    line-height: 1;
+    text-align: center;
+}
+
+@media (max-width: 760px) {
+    #ipsc3_server,
+    #ipsc3_slot,
+    .control-save-favorite-button {
+        width: 100%;
+        min-width: 0;
+        max-width: none;
+    }
+}
+
+/* IPSC3: Target / Network / Server / TS / Link Mode / Favorite */
+#ipsc3_server {
+    width: 72px;
+    min-width: 72px;
+    max-width: 72px;
+}
+
+.control-top-row:has(#ipsc3_slot:not([hidden])) {
+    grid-template-columns:
+        minmax(78px, 0.70fr)
+        minmax(116px, 1fr)
+        72px
+        80px
+        116px
+        78px;
+    gap: 8px;
+}
+
+.control-top-row:has(#ipsc3_slot:not([hidden])) #ipsc3_server {
+    width: 72px;
+    min-width: 72px;
+    max-width: 72px;
+}
+
+.control-top-row:has(#ipsc3_slot:not([hidden])) #ipsc3_slot {
+    width: 80px;
+    min-width: 80px;
+    max-width: 80px;
+    padding-left: 8px;
+    padding-right: 24px;
+}
+
+.control-top-row:has(#ipsc3_slot:not([hidden])) #autoload_dvswitch_mode {
+    min-width: 116px;
+}
+
+.control-top-row:has(#ipsc3_slot:not([hidden])) .control-save-favorite-button {
+    width: 78px;
+    min-width: 78px;
+    max-width: 78px;
+    padding-left: 2px;
+    padding-right: 2px;
+    gap: 1px;
+}
+
+/* IPSC3: do not stretch Control Center taller than its contents */
+.card:has(#ipsc3_slot:not([hidden])) {
+    align-self: start;
 }
