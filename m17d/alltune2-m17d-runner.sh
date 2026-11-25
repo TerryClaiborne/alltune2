@@ -137,9 +137,16 @@ flock -n 9 || fail 'Another M17 streaming service is running'
 [[ -r "$CONFIG" ]] || fail "M17D config missing: $CONFIG"
 [[ "$(sha256sum "$BIN" | awk '{print $1}')" == "$EXPECTED_SHA256" ]] || fail "M17D binary hash mismatch; no live start"
 [[ -f /etc/asterisk/rpt.conf ]] || fail 'Missing rpt.conf'
-# Require the configured public/private node definitions.
-grep -Fqx "$NODE = radio@127.0.0.1/$NODE,NONE" /etc/asterisk/rpt.conf || fail "$NODE registration differs"
-grep -Fqx "$PRIVATE = radio@127.0.0.1:4569/$PRIVATE,NONE" /etc/asterisk/rpt.conf || fail "$PRIVATE registration differs"
+# Require valid configured public/private local node definitions.
+# ASL3 installations may use an explicit local IAX port (for example 4568)
+# or omit the port, so do not hard-code a node-specific IAX registration form.
+node_registration_present() {
+ local check_node="$1"
+ grep -Eq "^[[:space:]]*${check_node}[[:space:]]*=[[:space:]]*radio@127\\.0\\.0\\.1(:[0-9]+)?/${check_node},NONE([[:space:]]*(;.*)?)?$" /etc/asterisk/rpt.conf
+}
+
+node_registration_present "$NODE" || fail "$NODE local registration not found"
+node_registration_present "$PRIVATE" || fail "$PRIVATE local registration not found"
 grep -Fqx "rxchannel = USRP/$USRP_HOST:$USRP_LISTEN_PORT:$USRP_SEND_PORT" /etc/asterisk/rpt.conf || fail "$PRIVATE USRP configuration differs"
 out=$(links "$PRIVATE") || fail "Cannot query links for $PRIVATE"
 echo "$out"
