@@ -553,6 +553,139 @@ create_config_if_missing() {
     chown root:"$WEB_GROUP" "$CONFIG_FILE"
 }
 
+discover_alltune2_nodes_from_rpt() {
+    [[ -r /etc/asterisk/rpt.conf ]] || return 0
+
+    python3 - /etc/asterisk/rpt.conf <<'PYNODES'
+import re
+import sys
+
+path = sys.argv[1]
+
+sections = {}
+section = None
+
+with open(path, encoding="utf-8", errors="replace") as f:
+    for raw in f:
+        line = raw.split(";", 1)[0].strip()
+        if not line:
+            continue
+
+        m = re.match(r'^\[([0-9]+)\](?:\(.*\))?$', line)
+        if m:
+            section = m.group(1)
+            sections.setdefault(section, {})
+            continue
+
+        if section and "=" in line:
+            key, value = [x.strip() for x in line.split("=", 1)]
+            sections[section][key.lower()] = value
+
+private_nodes = []
+public_nodes = []
+
+for node, values in sections.items():
+    rx = values.get("rxchannel", "")
+    if re.match(r'^USRP/', rx, re.I):
+        private_nodes.append(node)
+    elif rx:
+        public_nodes.append(node)
+
+if len(private_nodes) != 1:
+    raise SystemExit(
+        "ERROR: expected exactly one numeric USRP private-node section in rpt.conf; "
+        f"found {private_nodes}"
+    )
+
+private = private_nodes[0]
+
+# Require a matching local registration for candidates.
+registrations = set()
+with open(path, encoding="utf-8", errors="replace") as f:
+    for raw in f:
+        line = raw.split(";", 1)[0].strip()
+        m = re.match(
+            r'^([0-9]+)\s*=\s*radio@127\.0\.0\.1(?::[0-9]+)?/([0-9]+),NONE$',
+            line,
+            re.I,
+        )
+        if m and m.group(1) == m.group(2):
+            registrations.add(m.group(1))
+
+public_nodes = [
+    n for n in public_nodes
+    if n != private and n in registrations
+]
+
+if len(public_nodes) != 1:
+    raise SystemExit(
+        "ERROR: expected exactly one usable public AllStar node section in rpt.conf; "
+        f"found {public_nodes}"
+    )
+
+print(public_nodes[0] + "\t" + private)
+PYNODES
+}
+
+sync_new_main_config_from_system_if_safe() {
+    local current_node current_private discovered mynode dvswitch_node
+
+    current_node="$(config_value_or_empty MYNODE || true)"
+    current_private="$(config_value_or_empty DVSWITCH_NODE || true)"
+
+    # Existing configured installations are never rewritten here.
+    if [[ "$current_node" != "YOUR NODE" || "$current_private" != "YOUR DVSWITCH NODE" ]]; then
+        return 0
+    fi
+
+    discovered="$(discover_alltune2_nodes_from_rpt)" || fail "Unable to discover fresh-install AllStar/DVSwitch nodes from /etc/asterisk/rpt.conf."
+
+    IFS=$'\t' read -r mynode dvswitch_node <<<"$discovered"
+
+    [[ "$mynode" =~ ^[0-9]+$ ]] || fail "Fresh-install public AllStar node discovery failed."
+    [[ "$dvswitch_node" =~ ^[0-9]+$ ]] || fail "Fresh-install DVSwitch private-node discovery failed."
+
+    python3 - "$CONFIG_FILE" "$mynode" "$dvswitch_node" <<'PYCONFIG'
+from pathlib import Path
+import re
+import sys
+
+path = Path(sys.argv[1])
+mynode = sys.argv[2]
+private = sys.argv[3]
+
+text = path.read_text()
+
+text, n1 = re.subn(
+    r'(?m)^MYNODE\s*=\s*"YOUR NODE"\s*$',
+    f'MYNODE="{mynode}"',
+    text,
+    count=1,
+)
+
+text, n2 = re.subn(
+    r'(?m)^DVSWITCH_NODE\s*=\s*"YOUR DVSWITCH NODE"\s*$',
+    f'DVSWITCH_NODE="{private}"',
+    text,
+    count=1,
+)
+
+if n1 != 1 or n2 != 1:
+    raise SystemExit(
+        f"ERROR: expected fresh-install placeholders were not replaced cleanly "
+        f"(MYNODE={n1}, DVSWITCH_NODE={n2})"
+    )
+
+path.write_text(text)
+PYCONFIG
+
+    chmod 0640 "$CONFIG_FILE"
+    chown root:"$WEB_GROUP" "$CONFIG_FILE"
+
+    quiet_detail "Discovered fresh-install AllStar node: $mynode"
+    quiet_detail "Discovered fresh-install DVSwitch private node: $dvswitch_node"
+}
+
 create_favorites_if_missing() {
     if [[ ! -f "$FAVORITES_FILE" ]]; then
         log "Creating shared favorites file..."
@@ -2816,6 +2949,7 @@ main() {
     make_dirs
     create_config_example
     create_config_if_missing
+    sync_new_main_config_from_system_if_safe
     ensure_auth_config_defaults
     create_favorites_if_missing
 
