@@ -12,11 +12,11 @@ CONFIG="$ROOT/config/m17d.ini"
 case "$(uname -m)" in
  aarch64|arm64)
   BIN="$ROOT/bin/m17d-arm64"
-  EXPECTED_SHA256=ff1993270094bb52da0b88f2a229b21182c0bc9bcab8746a5f788b2a9de47259
+  EXPECTED_SHA256=c451ca20ac21a68c94a39eedca001b4085a0702e3af154d260a91d62710a9289
   ;;
  x86_64|amd64)
   BIN="$ROOT/bin/m17amd64"
-  EXPECTED_SHA256=82ba4b964a36a2ba58ab5d8ec5d35326d78992aedeb639f98e80a40c989aa887
+  EXPECTED_SHA256=1122b3ae6ffabfc53e22c1bd74614b1d875a2c522dc593694a0a22670a4268a7
   ;;
  *)
   echo "STOP: unsupported M17D architecture: $(uname -m)" >&2

@@ -1356,6 +1356,8 @@ send_port = 32001
 
 [audio]
 rx_gain = 2.5
+tx_gain = 1.0
+agc_enabled = false
 
 [logging]
 log_file = /var/www/html/alltune2/logs/m17d.log
@@ -1384,6 +1386,95 @@ create_m17d_config_if_missing() {
     fi
     chmod 0640 "$M17_CONFIG_FILE"
     chown root:"$WEB_GROUP" "$M17_CONFIG_FILE"
+}
+
+ensure_m17d_audio_defaults_if_missing() {
+    python3 - "$M17_CONFIG_FILE" <<'PYM17DEFAULTS'
+def merge_m17_audio(data):
+    import re
+    lines = data.splitlines(keepends=True)
+    newline = b"\r\n" if b"\r\n" in data else b"\n"
+    headers = []
+
+    for i, line in enumerate(lines):
+        m = re.fullmatch(
+            rb"[ \t]*\[([^\]\r\n]+)\][ \t]*(?:\r?\n)?",
+            line
+        )
+        if m:
+            headers.append((i, m.group(1).lower()))
+
+    audio = [i for i, name in headers if name == b"audio"]
+    if len(audio) > 1:
+        raise ValueError("Duplicate [audio] sections")
+
+    defaults = (
+        (b"tx_gain", b"1.0"),
+        (b"agc_enabled", b"false"),
+    )
+
+    if not audio:
+        suffix = b"" if not data or data.endswith(b"\n") else newline
+        return (
+            data + suffix + b"[audio]" + newline +
+            b"".join(k + b" = " + v + newline for k, v in defaults)
+        )
+
+    start = audio[0] + 1
+    end = next(
+        (i for i, name in headers if i >= start),
+        len(lines)
+    )
+    body = b"".join(lines[start:end])
+
+    missing = [
+        (k, v) for k, v in defaults
+        if not re.search(rb"(?im)^[ \t]*" + k + rb"[ \t]*=", body)
+    ]
+    if not missing:
+        return data
+
+    pos = end
+    while pos > start and not lines[pos - 1].strip():
+        pos -= 1
+
+    prefix = (
+        newline if pos > 0 and not lines[pos - 1].endswith(b"\n")
+        else b""
+    )
+    lines.insert(
+        pos,
+        prefix + b"".join(
+            k + b" = " + v + newline for k, v in missing
+        )
+    )
+    return b"".join(lines)
+
+from pathlib import Path
+import os, sys
+
+path = Path(sys.argv[1])
+if path.is_symlink() or not path.is_file():
+    raise SystemExit("STOP: Unsafe M17 configuration")
+
+original = path.read_bytes()
+updated = merge_m17_audio(original)
+
+if updated != original:
+    temp = path.with_name(".m17d.ini.audio-update")
+    if temp.exists():
+        raise SystemExit("STOP: Temporary M17 file exists")
+
+    st = path.stat()
+    try:
+        with temp.open("xb") as output:
+            output.write(updated)
+        os.chown(temp, st.st_uid, st.st_gid)
+        os.chmod(temp, st.st_mode & 0o7777)
+        os.replace(temp, path)
+    finally:
+        temp.unlink(missing_ok=True)
+PYM17DEFAULTS
 }
 
 sync_m17d_config_from_system_if_safe() {
@@ -2967,6 +3058,7 @@ main() {
     create_m17d_config_example_if_missing
     create_m17d_config_if_missing
     sync_m17d_config_from_system_if_safe
+    ensure_m17d_audio_defaults_if_missing
     create_ipsc3d_config_example_if_missing
     create_ipsc3d_config_if_missing
     sync_ipsc3d_config_from_system_if_safe

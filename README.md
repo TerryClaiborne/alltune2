@@ -215,6 +215,8 @@ The installer creates this file from the supplied example when it is missing and
 | `[usrp]` | `host` | Normally `127.0.0.1` |
 | `[usrp]` | `listen_port` / `send_port` | Normally `34001` / `32001` |
 | `[audio]` | `rx_gain` | M17 receive gain; supplied default is `2.5` |
+| `[audio]` | `tx_gain` | M17 transmit gain; default is `1.0` |
+| `[audio]` | `agc_enabled` | Optional receive AGC; default is `false` |
 | `[logging]` | `log_file` | Production M17D log path |
 | `[runtime]` | `ready_file` / `retune_file` / `retune_ack_file` / `state_file` | Runtime coordination/state paths; keep the supplied production paths |
 
@@ -237,6 +239,8 @@ send_port=32001
 
 [audio]
 rx_gain=2.5
+tx_gain=1.0
+agc_enabled=false
 
 [logging]
 log_file=/var/www/html/alltune2/logs/m17d.log
@@ -248,6 +252,8 @@ retune_file=/run/alltune2-m17-retune
 retune_ack_file=/run/alltune2-m17-retune-ack
 state_file=/var/www/html/alltune2/run/alltune2-m17d.state
 ```
+
+**Note:** AllTune2 supports native M17 operation. M17-DMR cross-mode operation is not supported.
 
 M17D temporarily uses the configured Analog_Bridge USRP audio path while connected. Leave a working `/opt/Analog_Bridge/Analog_Bridge.ini` unchanged; AllTune2 does not require an M17-specific edit to that file.
 

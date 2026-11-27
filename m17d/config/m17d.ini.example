@@ -14,6 +14,8 @@ send_port = 32001
 
 [audio]
 rx_gain = 2.5
+tx_gain = 1.0
+agc_enabled = false
 
 [logging]
 log_file = /var/www/html/alltune2/logs/m17d.log
