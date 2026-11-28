@@ -148,7 +148,7 @@ tx_host=127.0.0.1
 tx_port=31100
 ```
 
-BrandMeister hotspot ID is typically your base DMR ID plus a suffix (example: base `1234567` → hotspot `123456711`). Use the ID actually registered for your BrandMeister connection. Do not reuse the TGIFD hotspot ID unless it is also correct for BrandMeister.
+**BrandMeister hotspot ID:** A common example is base DMR ID `1234567` with the `11` suffix, giving hotspot ID `123456711`. Enter the hotspot ID registered for your BrandMeister connection; do not substitute your TGIF hotspot ID.
 
 ### 3. TGIF — `tgifd.ini`
 
@@ -196,6 +196,8 @@ inbound_slot=2
 [mmdvm]
 slots=2
 ```
+
+**TGIF hotspot ID:** In the AllTune2 example, the TGIF hotspot ID is the BrandMeister hotspot ID **+1**: base DMR ID `1234567` → BrandMeister hotspot ID `123456711` → TGIF hotspot ID `123456712`. Enter `123456712` as `hotspot_radio_id` only if that is the ID assigned or configured for your TGIF connection; otherwise use your actual TGIF hotspot ID.
 
 When changing the startup talkgroup, keep `startup_tg` and the `StartRef` value inside `options` consistent.
 
